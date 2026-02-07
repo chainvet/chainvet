@@ -3,13 +3,13 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use crate::analysis::{ResolvedCallGraph, ResolvedTarget};
 use crate::cfg::{Block, CfgFunction};
 use crate::ir::{IrCallOption, IrInstr, IrPlace, IrValue, IrVar};
-use crate::norm::{CallOption, ExprKind, Function, NormalizedAst, StmtKind};
+use crate::norm::{CallOption, ExprKind, Function, NormalizedAst, Span, StmtKind};
 
 #[derive(Debug, Clone)]
 pub struct TaintSummary {
     pub function_id: u32,
     pub tainted_vars: Vec<String>,
-    pub tainted_calls: Vec<u32>,
+    pub tainted_calls: Vec<Span>,
     pub uses_source: bool,
 }
 
@@ -230,8 +230,8 @@ fn analyze_function(ast: &NormalizedAst, cfg: &CfgFunction, func: &Function) -> 
         }
     }
 
-    let mut tainted_calls: Vec<u32> = tainted_calls.into_iter().collect();
-    tainted_calls.sort_unstable();
+    let mut tainted_calls: Vec<Span> = tainted_calls.into_iter().collect();
+    tainted_calls.sort_by_key(|span| span.start);
     TaintSummary {
         function_id: func.id,
         tainted_vars,
@@ -402,7 +402,7 @@ fn apply_block(
     block: &Block,
     state: &mut BitSet,
     temp_taint: &mut HashMap<u32, bool>,
-    tainted_calls: &mut HashSet<u32>,
+    tainted_calls: &mut HashSet<Span>,
     uses_source: &mut bool,
 ) {
     temp_taint.clear();
@@ -479,6 +479,7 @@ fn apply_block(
                 callee,
                 args,
                 options,
+                span,
                 ..
             } => {
                 let mut tainted =
@@ -504,7 +505,7 @@ fn apply_block(
                     set_var_taint(var, tainted, names, state, temp_taint);
                 }
                 if tainted {
-                    tainted_calls.insert(call_site_id(block.id, instr_index));
+                    tainted_calls.insert(*span);
                 }
             }
             IrInstr::Emit { expr, .. } | IrInstr::Eval { expr, .. } => {

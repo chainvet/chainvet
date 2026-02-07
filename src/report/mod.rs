@@ -142,7 +142,7 @@ fn build_report(output: &FrontendOutput) -> Report {
         tainted_calls += summary.tainted_calls.len();
     }
 
-    let findings = detectors::run_detectors(&output.ast, &call_graph);
+    let findings = detectors::run_detectors(&output.ast, &call_graph, &taint);
     let finding_counts = build_finding_counts(&findings);
     let report_findings = build_report_findings(output, &findings);
     let summaries = analysis::summary::summarize(&output.ast, &resolved);
@@ -239,6 +239,10 @@ fn build_finding_counts(findings: &[Finding]) -> Vec<ReportCount> {
         FindingKind::Delegatecall,
         FindingKind::UncheckedCall,
         FindingKind::Selfdestruct,
+        FindingKind::TimestampDependency,
+        FindingKind::Shadowing,
+        FindingKind::Reentrancy,
+        FindingKind::TaintedCall,
     ] {
         let mut count = 0;
         for finding in findings {

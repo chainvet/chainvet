@@ -16,6 +16,10 @@ pub enum FindingKind {
     Delegatecall,
     UncheckedCall,
     Selfdestruct,
+    TimestampDependency,
+    Shadowing,
+    Reentrancy,
+    TaintedCall,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -32,6 +36,10 @@ impl FindingKind {
             FindingKind::Delegatecall => "delegatecall",
             FindingKind::UncheckedCall => "unchecked-call",
             FindingKind::Selfdestruct => "selfdestruct",
+            FindingKind::TimestampDependency => "timestamp-dependency",
+            FindingKind::Shadowing => "shadowing",
+            FindingKind::Reentrancy => "reentrancy",
+            FindingKind::TaintedCall => "tainted-call",
         }
     }
 }
@@ -46,12 +54,34 @@ impl Severity {
     }
 }
 
-pub fn run_detectors(ast: &NormalizedAst, call_graph: &CallGraph) -> Vec<Finding> {
+use crate::analysis::taint::TaintSummary;
+
+pub fn run_detectors(ast: &NormalizedAst, call_graph: &CallGraph, taint_summaries: &[TaintSummary]) -> Vec<Finding> {
     let mut findings = Vec::new();
     findings.extend(detect_tx_origin(ast));
     findings.extend(detect_delegatecall(call_graph));
     findings.extend(detect_unchecked_low_level_calls(ast));
     findings.extend(detect_selfdestruct(call_graph));
+    findings.extend(detect_timestamp_dependency(ast));
+    findings.extend(detect_shadowing(ast));
+    findings.extend(detect_reentrancy(ast));
+    findings.extend(detect_taint(ast, taint_summaries));
+    findings
+}
+
+fn detect_taint(ast: &NormalizedAst, summaries: &[TaintSummary]) -> Vec<Finding> {
+    let mut findings = Vec::new();
+    for summary in summaries {
+        for span in &summary.tainted_calls {
+            findings.push(Finding {
+                kind: FindingKind::TaintedCall,
+                severity: Severity::High,
+                message: "call with tainted arguments".to_string(),
+                span: *span,
+                function: Some(summary.function_id),
+            });
+        }
+    }
     findings
 }
 
@@ -145,7 +175,7 @@ fn walk_expr(ast: &NormalizedAst, expr_id: u32, function_id: u32, findings: &mut
         return;
     };
 
-    if is_tx_origin(expr) {
+    if is_tx_origin(ast, expr) {
         findings.push(Finding {
             kind: FindingKind::TxOrigin,
             severity: Severity::Medium,
@@ -211,18 +241,32 @@ fn walk_expr(ast: &NormalizedAst, expr_id: u32, function_id: u32, findings: &mut
     }
 }
 
-fn is_tx_origin(expr: &crate::norm::Expr) -> bool {
-    let Some(chain) = expr.meta.chain.as_deref() else {
-        return false;
-    };
-    if chain.len() != 2 {
-        return false;
+fn is_tx_origin(ast: &NormalizedAst, expr: &crate::norm::Expr) -> bool {
+    // Check chain
+    if let Some(chain) = expr.meta.chain.as_deref() {
+        if chain.len() == 2 {
+            if let (ChainSegment::Ident(first), ChainSegment::Member(second)) = (&chain[0], &chain[1]) {
+                if first == "tx" && second == "origin" {
+                    return true;
+                }
+            }
+        }
     }
-    matches!(
-        (&chain[0], &chain[1]),
-        (ChainSegment::Ident(first), ChainSegment::Member(second))
-            if first == "tx" && second == "origin"
-    )
+    
+    // Check Member access struct
+    if let ExprKind::Member { base, field } = &expr.kind {
+        if field == "origin" {
+             if let Some(base_expr) = ast.expressions.get(*base as usize) {
+                if let ExprKind::Ident(base_name) = &base_expr.kind {
+                    if base_name == "tx" {
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+    
+    false
 }
 
 fn detect_delegatecall(call_graph: &CallGraph) -> Vec<Finding> {
@@ -360,4 +404,362 @@ fn detect_selfdestruct(call_graph: &CallGraph) -> Vec<Finding> {
         }
     }
     findings
+}
+
+fn detect_timestamp_dependency(ast: &NormalizedAst) -> Vec<Finding> {
+    let mut findings = Vec::new();
+    for func in &ast.functions {
+        if let Some(body) = func.body {
+            check_timestamp_in_stmt(ast, body, func.id, &mut findings);
+        }
+    }
+    findings
+}
+
+fn check_timestamp_in_stmt(
+    ast: &NormalizedAst,
+    stmt_id: u32,
+    function_id: u32,
+    findings: &mut Vec<Finding>,
+) {
+    let Some(stmt) = ast.statements.get(stmt_id as usize) else {
+        return;
+    };
+
+    match &stmt.kind {
+        StmtKind::If { cond, then_id, else_id } => {
+            if contains_timestamp(ast, *cond) {
+                findings.push(Finding {
+                    kind: FindingKind::TimestampDependency,
+                    severity: Severity::Low,
+                    message: "use of block.timestamp or now in conditional".to_string(),
+                    span: stmt.span,
+                    function: Some(function_id),
+                });
+            }
+            check_timestamp_in_stmt(ast, *then_id, function_id, findings);
+            if let Some(else_id) = else_id {
+                check_timestamp_in_stmt(ast, *else_id, function_id, findings);
+            }
+        }
+        StmtKind::While { cond, body } => {
+            if contains_timestamp(ast, *cond) {
+                findings.push(Finding {
+                    kind: FindingKind::TimestampDependency,
+                    severity: Severity::Low,
+                    message: "use of block.timestamp or now in loop condition".to_string(),
+                    span: stmt.span,
+                    function: Some(function_id),
+                });
+            }
+            check_timestamp_in_stmt(ast, *body, function_id, findings);
+        }
+        StmtKind::Expr(expr_id) => {
+            if contains_timestamp(ast, *expr_id) {
+                findings.push(Finding {
+                    kind: FindingKind::TimestampDependency,
+                    severity: Severity::Low,
+                    message: "use of block.timestamp or now in expression statement".to_string(),
+                    span: stmt.span,
+                    function: Some(function_id),
+                });
+            }
+        }
+        StmtKind::VarDecl { init: Some(init_id), .. } => {
+             if contains_timestamp(ast, *init_id) {
+                findings.push(Finding {
+                    kind: FindingKind::TimestampDependency,
+                    severity: Severity::Low,
+                    message: "assignment of block.timestamp or now".to_string(),
+                    span: stmt.span,
+                    function: Some(function_id),
+                });
+            }
+        }
+        StmtKind::Block(stmts) => {
+            for child in stmts {
+                check_timestamp_in_stmt(ast, *child, function_id, findings);
+            }
+        }
+        _ => {}
+    }
+}
+
+
+
+fn detect_shadowing(ast: &NormalizedAst) -> Vec<Finding> {
+    let mut findings = Vec::new();
+    
+    for func in &ast.functions {
+        if let Some(body) = func.body {
+            let mut local_vars = std::collections::HashSet::new();
+            
+            // Add function parameters to scope
+            for param_name in &func.params {
+                local_vars.insert(param_name.clone());
+            }
+            
+            // Check for shadowing in function body
+            check_shadowing_in_stmt(ast, body, func.id, func.contract, &mut local_vars, &mut findings);
+        }
+    }
+    
+    findings
+}
+
+fn check_shadowing_in_stmt(
+    ast: &NormalizedAst,
+    stmt_id: u32,
+    function_id: u32,
+    contract_id: Option<u32>,
+    local_vars: &mut std::collections::HashSet<String>,
+    findings: &mut Vec<Finding>,
+) {
+    let Some(stmt) = ast.statements.get(stmt_id as usize) else {
+        return;
+    };
+
+    match &stmt.kind {
+        StmtKind::VarDecl { names, .. } => {
+            for name in names {
+                // Check if shadows local variable
+                if local_vars.contains(name) {
+                    findings.push(Finding {
+                        kind: FindingKind::Shadowing,
+                        severity: Severity::Medium,
+                        message: format!("variable '{name}' shadows existing local variable"),
+                        span: stmt.span,
+                        function: Some(function_id),
+                    });
+                }
+                
+                // Check if shadows state variable
+                if let Some(cid) = contract_id {
+                    for state_var in &ast.state_vars {
+                        if state_var.contract == cid && state_var.name == *name {
+                            findings.push(Finding {
+                                kind: FindingKind::Shadowing,
+                                severity: Severity::Medium,
+                                message: format!("variable '{name}' shadows state variable"),
+                                span: stmt.span,
+                                function: Some(function_id),
+                            });
+                        }
+                    }
+                }
+                
+                local_vars.insert(name.clone());
+            }
+        }
+        StmtKind::Block(stmts) => {
+            for child in stmts {
+                check_shadowing_in_stmt(ast, *child, function_id, contract_id, local_vars, findings);
+            }
+        }
+        StmtKind::If { then_id, else_id, .. } => {
+            check_shadowing_in_stmt(ast, *then_id, function_id, contract_id, local_vars, findings);
+            if let Some(else_id) = else_id {
+                check_shadowing_in_stmt(ast, *else_id, function_id, contract_id, local_vars, findings);
+            }
+        }
+        StmtKind::While { body, .. } | StmtKind::DoWhile { body, .. } => {
+            check_shadowing_in_stmt(ast, *body, function_id, contract_id, local_vars, findings);
+        }
+        StmtKind::For { init, body, .. } => {
+            if let Some(init) = init {
+                check_shadowing_in_stmt(ast, *init, function_id, contract_id, local_vars, findings);
+            }
+            check_shadowing_in_stmt(ast, *body, function_id, contract_id, local_vars, findings);
+        }
+        _ => {}
+    }
+}
+
+fn detect_reentrancy(ast: &NormalizedAst) -> Vec<Finding> {
+    let mut findings = Vec::new();
+    
+    for func in &ast.functions {
+        if let Some(body) = func.body {
+            check_reentrancy_in_stmt(ast, body, func.id, &mut findings);
+        }
+    }
+    
+    findings
+}
+
+fn check_reentrancy_in_stmt(
+    ast: &NormalizedAst,
+    stmt_id: u32,
+    function_id: u32,
+    findings: &mut Vec<Finding>,
+) {
+    let Some(stmt) = ast.statements.get(stmt_id as usize) else {
+        return;
+    };
+
+    if let StmtKind::Block(stmts) = &stmt.kind {
+        // Look for pattern: external call followed by state update
+        for i in 0..stmts.len() {
+            let stmt_id = stmts[i];
+            let Some(current_stmt) = ast.statements.get(stmt_id as usize) else {
+                continue;
+            };
+            
+            // Check if this statement contains an external call
+            if contains_external_call(ast, current_stmt) {
+                // Look ahead for state updates within next 5 statements
+                for j in (i + 1)..stmts.len().min(i + 6) {
+                    let next_stmt_id = stmts[j];
+                    let Some(next_stmt) = ast.statements.get(next_stmt_id as usize) else {
+                        continue;
+                    };
+                    
+                    if contains_state_update(ast, next_stmt) {
+                        findings.push(Finding {
+                            kind: FindingKind::Reentrancy,
+                            severity: Severity::High,
+                            message: "potential reentrancy: state update after external call".to_string(),
+                            span: current_stmt.span,
+                            function: Some(function_id),
+                        });
+                        break;
+                    }
+                }
+            }
+            
+            // Recursively check nested blocks
+            check_reentrancy_in_stmt(ast, stmt_id, function_id, findings);
+        }
+    } else {
+        // Check other statement types that might contain blocks
+        match &stmt.kind {
+            StmtKind::If { then_id, else_id, .. } => {
+                check_reentrancy_in_stmt(ast, *then_id, function_id, findings);
+                if let Some(else_id) = else_id {
+                    check_reentrancy_in_stmt(ast, *else_id, function_id, findings);
+                }
+            }
+            StmtKind::While { body, .. } | StmtKind::DoWhile { body, .. } => {
+                check_reentrancy_in_stmt(ast, *body, function_id, findings);
+            }
+            StmtKind::For { body, .. } => {
+                check_reentrancy_in_stmt(ast, *body, function_id, findings);
+            }
+            _ => {}
+        }
+    }
+}
+
+fn contains_timestamp(ast: &NormalizedAst, expr_id: u32) -> bool {
+    let Some(expr) = ast.expressions.get(expr_id as usize) else {
+        return false;
+    };
+
+    // Check for "now" identifier
+    if let ExprKind::Ident(name) = &expr.kind {
+        if name == "now" {
+            return true;
+        }
+    }
+
+    // Check for block.timestamp via Chain
+    if let Some(chain) = expr.meta.chain.as_deref() {
+        if chain.len() == 2 {
+            if let (ChainSegment::Ident(base), ChainSegment::Member(member)) = (&chain[0], &chain[1]) {
+                if base == "block" && member == "timestamp" {
+                    return true;
+                }
+            }
+        }
+    }
+    
+    // Check for block.timestamp via Member access
+    if let ExprKind::Member { base, field } = &expr.kind {
+        if field == "timestamp" {
+            if let Some(base_expr) = ast.expressions.get(*base as usize) {
+                if let ExprKind::Ident(base_name) = &base_expr.kind {
+                    if base_name == "block" {
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+
+    // Recursively check sub-expressions
+    match &expr.kind {
+        ExprKind::Binary { lhs, rhs, .. } => {
+            contains_timestamp(ast, *lhs) || contains_timestamp(ast, *rhs)
+        }
+        ExprKind::Unary { expr, .. } => contains_timestamp(ast, *expr),
+        ExprKind::Member { base, .. } => contains_timestamp(ast, *base),
+        ExprKind::Tuple(entries) => entries.iter().any(|e| contains_timestamp(ast, *e)),
+        ExprKind::Call { callee, args } => {
+            contains_timestamp(ast, *callee) || args.iter().any(|arg| contains_timestamp(ast, *arg))
+        }
+        ExprKind::CallOptions { callee, options } => {
+            contains_timestamp(ast, *callee) || options.iter().any(|opt| match opt {
+                crate::norm::CallOption::Value(e) | crate::norm::CallOption::Gas(e) | crate::norm::CallOption::Salt(e) => contains_timestamp(ast, *e),
+            })
+        }
+        ExprKind::Assign { lhs, rhs, .. } => {
+            contains_timestamp(ast, *lhs) || contains_timestamp(ast, *rhs)
+        }
+        ExprKind::Index { base, index } => {
+            contains_timestamp(ast, *base) || index.map_or(false, |i| contains_timestamp(ast, i))
+        }
+        ExprKind::Conditional { cond, then_expr, else_expr } => {
+            contains_timestamp(ast, *cond) || contains_timestamp(ast, *then_expr) || contains_timestamp(ast, *else_expr)
+        }
+        _ => false,
+    }
+}
+
+fn contains_external_call(ast: &NormalizedAst, stmt: &crate::norm::Stmt) -> bool {
+    match &stmt.kind {
+        StmtKind::Expr(expr_id) => check_expr_for_call(ast, *expr_id),
+        StmtKind::VarDecl { init: Some(expr_id), .. } => check_expr_for_call(ast, *expr_id),
+        _ => false,
+    }
+}
+
+fn check_expr_for_call(ast: &NormalizedAst, expr_id: u32) -> bool {
+    if let Some(expr) = ast.expressions.get(expr_id as usize) {
+        // Check for call with value option (e.g., .call{value: ...})
+        if let ExprKind::CallOptions { options, .. } = &expr.kind {
+            for opt in options {
+                if matches!(opt, crate::norm::CallOption::Value(_)) {
+                    return true;
+                }
+            }
+        }
+        
+        // Check for low-level calls
+        if let Some(call) = &expr.meta.call {
+            if let crate::norm::CallTarget::Member { name, .. } = &call.target {
+                if matches!(name.as_str(), "call" | "delegatecall" | "send") {
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
+fn contains_state_update(ast: &NormalizedAst, stmt: &crate::norm::Stmt) -> bool {
+    match &stmt.kind {
+        StmtKind::Expr(expr_id) => check_expr_for_state_update(ast, *expr_id),
+        StmtKind::VarDecl { .. } => false,
+        _ => false,
+    }
+}
+
+fn check_expr_for_state_update(ast: &NormalizedAst, expr_id: u32) -> bool {
+    if let Some(expr) = ast.expressions.get(expr_id as usize) {
+        // Check for assignment expressions
+        if matches!(&expr.kind, ExprKind::Assign { .. }) {
+            return true;
+        }
+    }
+    false
 }

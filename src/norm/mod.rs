@@ -11,7 +11,7 @@ pub type VarId = u32;
 pub type StmtId = u32;
 pub type ExprId = u32;
 
-#[derive(Debug, Clone, Copy, Default, Serialize)]
+#[derive(Debug, Clone, Copy, Default, Serialize, PartialEq, Eq, Hash)]
 pub struct Span {
     pub file: FileId,
     pub start: u32,
