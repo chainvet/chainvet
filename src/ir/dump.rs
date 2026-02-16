@@ -61,7 +61,9 @@ fn fmt_instr(instr: &IrInstr) -> String {
             }
         }
         IrInstr::Assign { dest, src, .. } => format!("{} = {}", fmt_var(dest), fmt_value(src)),
-        IrInstr::Store { dest, src, .. } => format!("store {} = {}", fmt_place(dest), fmt_value(src)),
+        IrInstr::Store { dest, src, .. } => {
+            format!("store {} = {}", fmt_place(dest), fmt_value(src))
+        }
         IrInstr::Load { dest, src, .. } => format!("{} = load {}", fmt_var(dest), fmt_place(src)),
         IrInstr::Binary {
             dest, op, lhs, rhs, ..
@@ -192,7 +194,10 @@ fn fmt_place(place: &IrPlace) -> String {
             root,
             class,
         } => {
-            let index = index.as_ref().map(fmt_value).unwrap_or_else(|| "_".to_string());
+            let index = index
+                .as_ref()
+                .map(fmt_value)
+                .unwrap_or_else(|| "_".to_string());
             let mut out = format!("{}[{}]", fmt_value(base), index);
             if let Some(root) = root {
                 let _ = write!(out, " [root={}]", root);

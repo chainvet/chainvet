@@ -249,10 +249,8 @@ fn build_edges(cfg: &CfgFunction) -> (Vec<Vec<usize>>, Vec<Vec<usize>>) {
     let mut preds = vec![Vec::new(); cfg.blocks.len()];
     let mut succs = vec![Vec::new(); cfg.blocks.len()];
     for edge in &cfg.edges {
-        let (Some(&from), Some(&to)) = (
-            id_to_index.get(&edge.from),
-            id_to_index.get(&edge.to),
-        ) else {
+        let (Some(&from), Some(&to)) = (id_to_index.get(&edge.from), id_to_index.get(&edge.to))
+        else {
             continue;
         };
         preds[to].push(from);
@@ -361,9 +359,9 @@ fn collect_expr_names(ast: &NormalizedAst, expr_id: u32, names: &mut NameIndex) 
             collect_expr_names(ast, *callee, names);
             for option in options {
                 match option {
-                    CallOption::Value(expr)
-                    | CallOption::Gas(expr)
-                    | CallOption::Salt(expr) => collect_expr_names(ast, *expr, names),
+                    CallOption::Value(expr) | CallOption::Gas(expr) | CallOption::Salt(expr) => {
+                        collect_expr_names(ast, *expr, names)
+                    }
                 }
             }
         }
@@ -390,9 +388,7 @@ fn collect_expr_names(ast: &NormalizedAst, expr_id: u32, names: &mut NameIndex) 
             collect_expr_names(ast, *then_expr, names);
             collect_expr_names(ast, *else_expr, names);
         }
-        ExprKind::Literal(_)
-        | ExprKind::New { .. }
-        | ExprKind::Unknown => {}
+        ExprKind::Literal(_) | ExprKind::New { .. } | ExprKind::Unknown => {}
     }
 }
 
@@ -408,7 +404,9 @@ fn apply_block(
     temp_taint.clear();
     for (instr_index, instr) in block.instrs.iter().enumerate() {
         match instr {
-            IrInstr::Declare { names: vars, init, .. } => {
+            IrInstr::Declare {
+                names: vars, init, ..
+            } => {
                 let tainted = init
                     .as_ref()
                     .map(|value| {
@@ -426,22 +424,18 @@ fn apply_block(
                 }
             }
             IrInstr::Assign { dest, src, .. } => {
-                let tainted = value_taint(src, names, contract_name, state, temp_taint, uses_source);
+                let tainted =
+                    value_taint(src, names, contract_name, state, temp_taint, uses_source);
                 set_var_taint(dest, tainted, names, state, temp_taint);
             }
             IrInstr::Store { dest, src, .. } => {
-                let tainted = value_taint(src, names, contract_name, state, temp_taint, uses_source);
-                set_place_taint(
-                    dest,
-                    tainted,
-                    names,
-                    contract_name,
-                    state,
-                    temp_taint,
-                );
+                let tainted =
+                    value_taint(src, names, contract_name, state, temp_taint, uses_source);
+                set_place_taint(dest, tainted, names, contract_name, state, temp_taint);
             }
             IrInstr::Load { dest, src, .. } => {
-                let tainted = place_taint(src, names, contract_name, state, temp_taint, uses_source);
+                let tainted =
+                    place_taint(src, names, contract_name, state, temp_taint, uses_source);
                 set_var_taint(dest, tainted, names, state, temp_taint);
             }
             IrInstr::Binary { dest, lhs, rhs, .. } => {
@@ -466,10 +460,24 @@ fn apply_block(
             } => {
                 let mut tainted =
                     value_taint(cond, names, contract_name, state, temp_taint, uses_source);
-                if value_taint(then_val, names, contract_name, state, temp_taint, uses_source) {
+                if value_taint(
+                    then_val,
+                    names,
+                    contract_name,
+                    state,
+                    temp_taint,
+                    uses_source,
+                ) {
                     tainted = true;
                 }
-                if value_taint(else_val, names, contract_name, state, temp_taint, uses_source) {
+                if value_taint(
+                    else_val,
+                    names,
+                    contract_name,
+                    state,
+                    temp_taint,
+                    uses_source,
+                ) {
                     tainted = true;
                 }
                 set_var_taint(dest, tainted, names, state, temp_taint);
@@ -552,9 +560,7 @@ fn call_option_taint(
     uses_source: &mut bool,
 ) -> bool {
     match option {
-        IrCallOption::Value(value)
-        | IrCallOption::Gas(value)
-        | IrCallOption::Salt(value) => {
+        IrCallOption::Value(value) | IrCallOption::Gas(value) | IrCallOption::Salt(value) => {
             value_taint(value, names, contract_name, state, temp_taint, uses_source)
         }
     }
@@ -575,7 +581,10 @@ fn value_taint(
     }
     match value {
         IrValue::Literal(_) | IrValue::Unknown => false,
-        IrValue::Var(IrVar::Named(name)) => names.idx(name).map(|idx| state.contains(idx)).unwrap_or(false),
+        IrValue::Var(IrVar::Named(name)) => names
+            .idx(name)
+            .map(|idx| state.contains(idx))
+            .unwrap_or(false),
         IrValue::Var(IrVar::Temp(id)) => temp_taint.get(id).copied().unwrap_or(false),
     }
 }

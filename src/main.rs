@@ -2,16 +2,16 @@ mod analysis;
 mod cfg;
 
 mod frontend;
+mod fuzzing;
 mod ir;
 mod norm;
 mod report;
 mod ssa;
-mod util;
 mod symbolic;
-mod fuzzing;
+mod util;
 
-use crate::util::error::Result;
 use crate::util::error::Error;
+use crate::util::error::Result;
 
 fn main() {
     if let Err(err) = run() {

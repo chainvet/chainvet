@@ -137,10 +137,8 @@ fn build_block_edges(cfg: &CfgFunction) -> (Vec<Vec<usize>>, Vec<Vec<usize>>) {
     let mut preds = vec![Vec::new(); cfg.blocks.len()];
     let mut succs = vec![Vec::new(); cfg.blocks.len()];
     for edge in &cfg.edges {
-        let (Some(&from), Some(&to)) = (
-            id_to_index.get(&edge.from),
-            id_to_index.get(&edge.to),
-        ) else {
+        let (Some(&from), Some(&to)) = (id_to_index.get(&edge.from), id_to_index.get(&edge.to))
+        else {
             continue;
         };
         preds[to].push(from);
@@ -486,10 +484,7 @@ fn compute_idom(dom: &[HashSet<usize>], reachable: &[bool]) -> Vec<Option<usize>
     idom
 }
 
-fn compute_dominance_frontier(
-    succs: &[Vec<usize>],
-    idom: &[Option<usize>],
-) -> Vec<HashSet<usize>> {
+fn compute_dominance_frontier(succs: &[Vec<usize>], idom: &[Option<usize>]) -> Vec<HashSet<usize>> {
     let n = succs.len();
     let mut df = vec![HashSet::new(); n];
     for b in 0..n {
@@ -628,11 +623,7 @@ fn rename_variables(
         id
     }
 
-    fn current_def(
-        stacks: &[Vec<DefId>],
-        defs: &[SsaDef],
-        var_idx: usize,
-    ) -> Option<(DefId, u32)> {
+    fn current_def(stacks: &[Vec<DefId>], defs: &[SsaDef], var_idx: usize) -> Option<(DefId, u32)> {
         let def_id = stacks[var_idx].last().copied()?;
         let version = defs.get(def_id as usize).map(|def| def.version)?;
         Some((def_id, version))
@@ -703,8 +694,15 @@ fn rename_variables(
                 let Some(var_idx) = vars.get(&name) else {
                     continue;
                 };
-                let def_id =
-                    new_def(defs, stacks, next_version, var_idx, block_id, Some(instr_index), false);
+                let def_id = new_def(
+                    defs,
+                    stacks,
+                    next_version,
+                    var_idx,
+                    block_id,
+                    Some(instr_index),
+                    false,
+                );
                 defs[def_id as usize].var = name.clone();
                 instr_defs.push(def_id);
                 pushed.push(var_idx);
@@ -982,9 +980,9 @@ fn collect_place_read_uses(
 
 fn collect_call_option_uses(option: &IrCallOption, uses: &mut Vec<(String, Option<u32>)>) {
     match option {
-        IrCallOption::Value(value)
-        | IrCallOption::Gas(value)
-        | IrCallOption::Salt(value) => collect_uses_value(value, uses),
+        IrCallOption::Value(value) | IrCallOption::Gas(value) | IrCallOption::Salt(value) => {
+            collect_uses_value(value, uses)
+        }
     }
 }
 
@@ -1003,11 +1001,11 @@ fn is_contract_receiver_value(value: &IrValue, contract_name: Option<&str>) -> b
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{cfg, ir};
     use crate::norm::{
         Expr, ExprKind, ExprMeta, Function, FunctionKind, Literal, Mutability, NormalizedAst,
         SourceFile, Span, Stmt, StmtKind, Visibility,
     };
+    use crate::{cfg, ir};
 
     #[test]
     fn ssa_phi_on_if_else() {

@@ -117,10 +117,7 @@ fn build_edges(blocks: &[Block]) -> Vec<Edge> {
         return edges;
     }
 
-    let terminators: Vec<Terminator> = blocks
-        .iter()
-        .map(block_terminator)
-        .collect();
+    let terminators: Vec<Terminator> = blocks.iter().map(block_terminator).collect();
 
     let (if_map, loop_end_by_header, loop_header_by_end, try_map) = match_control(&terminators);
     let loop_context = build_loop_context(&terminators);
@@ -363,11 +360,7 @@ fn build_catch_to_end(try_map: &HashMap<usize, TryInfo>) -> HashMap<usize, usize
 
 fn next_index(idx: usize, len: usize) -> Option<usize> {
     let next = idx + 1;
-    if next < len {
-        Some(next)
-    } else {
-        None
-    }
+    if next < len { Some(next) } else { None }
 }
 
 #[cfg(test)]

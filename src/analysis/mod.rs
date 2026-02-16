@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
-pub mod taint;
-pub mod summary;
 pub mod detectors;
+pub mod summary;
+pub mod taint;
 
 use crate::norm::{CallMeta, CallTarget, ExprKind, NormalizedAst, Span, StmtKind};
 
@@ -217,10 +217,7 @@ fn walk_expr(ast: &NormalizedAst, expr_id: u32, function_id: u32, sites: &mut Ve
             walk_expr(ast, *then_expr, function_id, sites);
             walk_expr(ast, *else_expr, function_id, sites);
         }
-        ExprKind::Literal(_)
-        | ExprKind::Ident(_)
-        | ExprKind::New { .. }
-        | ExprKind::Unknown => {}
+        ExprKind::Literal(_) | ExprKind::Ident(_) | ExprKind::New { .. } | ExprKind::Unknown => {}
     }
 }
 
@@ -272,7 +269,9 @@ fn resolve_target(
 ) -> ResolvedTarget {
     match target {
         CallTarget::Direct { name } => resolve_direct(name, caller_contract, index),
-        CallTarget::Member { receiver, name } => resolve_member(receiver, name, caller_contract, index),
+        CallTarget::Member { receiver, name } => {
+            resolve_member(receiver, name, caller_contract, index)
+        }
         CallTarget::Unknown => ResolvedTarget::Unknown,
     }
 }
