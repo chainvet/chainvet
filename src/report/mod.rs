@@ -39,6 +39,7 @@ struct CallResolution {
     resolved: usize,
     ambiguous: usize,
     external: usize,
+    builtin: usize,
     unknown: usize,
 }
 
@@ -112,6 +113,7 @@ fn build_report(output: &FrontendOutput) -> Report {
         resolved: 0,
         ambiguous: 0,
         external: 0,
+        builtin: 0,
         unknown: 0,
     };
     for edge in &resolved.edges {
@@ -119,6 +121,7 @@ fn build_report(output: &FrontendOutput) -> Report {
             ResolvedTarget::Function(_) => resolution.resolved += 1,
             ResolvedTarget::Ambiguous(_) => resolution.ambiguous += 1,
             ResolvedTarget::External(_) => resolution.external += 1,
+            ResolvedTarget::Builtin(_) => resolution.builtin += 1,
             ResolvedTarget::Unknown => resolution.unknown += 1,
         }
     }
@@ -171,7 +174,7 @@ fn build_report(output: &FrontendOutput) -> Report {
 
 fn print_text(report: &Report) -> Result<()> {
     println!(
-        "mode: {}, files: {}, functions: {}, cfgs: {}, calls: {}, resolved: {}, ambiguous: {}, external: {}, unknown: {}, findings: {}",
+        "mode: {}, files: {}, functions: {}, cfgs: {}, calls: {}, resolved: {}, ambiguous: {}, external: {}, builtin: {}, unknown: {}, findings: {}",
         report.mode,
         report.files,
         report.functions,
@@ -180,6 +183,7 @@ fn print_text(report: &Report) -> Result<()> {
         report.call_resolution.resolved,
         report.call_resolution.ambiguous,
         report.call_resolution.external,
+        report.call_resolution.builtin,
         report.call_resolution.unknown,
         report.findings.len()
     );

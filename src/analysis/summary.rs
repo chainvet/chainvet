@@ -51,6 +51,7 @@ pub fn summarize(ast: &NormalizedAst, resolved: &ResolvedCallGraph) -> Vec<Funct
         };
         match &edge.target {
             ResolvedTarget::External(_) => summary.external_calls += 1,
+            ResolvedTarget::Builtin(_) => {}
             ResolvedTarget::Ambiguous(_) | ResolvedTarget::Unknown => summary.unresolved_calls += 1,
             ResolvedTarget::Function(_) => {}
         }

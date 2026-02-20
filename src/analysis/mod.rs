@@ -44,6 +44,7 @@ pub enum ResolvedTarget {
     Function(u32),
     Ambiguous(Vec<u32>),
     External(String),
+    Builtin(String),
     Unknown,
 }
 
@@ -287,6 +288,9 @@ fn resolve_direct(name: &str, caller_contract: Option<u32>, index: &CallIndex) -
     if let Some(ids) = index.by_name.get(name) {
         return pack_ids(ids);
     }
+    if is_builtin_direct_call(name) {
+        return ResolvedTarget::Builtin(name.to_string());
+    }
     ResolvedTarget::Unknown
 }
 
@@ -331,6 +335,52 @@ fn pack_ids(ids: &[u32]) -> ResolvedTarget {
         1 => ResolvedTarget::Function(ids[0]),
         _ => ResolvedTarget::Ambiguous(ids.to_vec()),
     }
+}
+
+fn is_builtin_direct_call(name: &str) -> bool {
+    matches!(
+        name,
+        "require"
+            | "assert"
+            | "revert"
+            | "selfdestruct"
+            | "suicide"
+            | "keccak256"
+            | "sha256"
+            | "ripemd160"
+            | "ecrecover"
+            | "addmod"
+            | "mulmod"
+            | "blockhash"
+            | "gasleft"
+            | "payable"
+    ) || is_primitive_type_name(name)
+}
+
+fn is_primitive_type_name(name: &str) -> bool {
+    if matches!(name, "address" | "bool" | "string" | "bytes" | "byte") {
+        return true;
+    }
+
+    if let Some(bits) = name.strip_prefix("uint") {
+        return bits.is_empty() || parse_bits(bits);
+    }
+    if let Some(bits) = name.strip_prefix("int") {
+        return bits.is_empty() || parse_bits(bits);
+    }
+    if let Some(width) = name.strip_prefix("bytes") {
+        if let Ok(value) = width.parse::<u16>() {
+            return (1..=32).contains(&value);
+        }
+    }
+    false
+}
+
+fn parse_bits(bits: &str) -> bool {
+    let Ok(value) = bits.parse::<u16>() else {
+        return false;
+    };
+    value >= 8 && value <= 256 && value % 8 == 0
 }
 
 fn build_outgoing_index(edges: &[CallEdge]) -> HashMap<u32, Vec<usize>> {
