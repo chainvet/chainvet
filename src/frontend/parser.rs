@@ -65,8 +65,8 @@ pub fn load_via_parser(path: &str) -> Result<NormalizedAst> {
 
 fn parse_file_tree_sitter(file: &SourceFile, ast: &mut NormalizedAst) -> bool {
     let mut parser = Parser::new();
-    let language = solidity_language();
-    if parser.set_language(&language).is_err() {
+    let language = ts_solidity::LANGUAGE;
+    if parser.set_language(&language.into()).is_err() {
         return false;
     }
     let tree = match parser.parse(&file.source, None) {
@@ -228,13 +228,6 @@ struct TsContext<'a> {
     parsed_any: bool,
 }
 
-fn solidity_language() -> tree_sitter::Language {
-    let func = ts_solidity::LANGUAGE.into_raw();
-    let ptr = unsafe { func() };
-    // tree-sitter 0.22 lacks LanguageFn conversions; cast raw pointer into Language.
-    unsafe { std::mem::transmute::<*const (), tree_sitter::Language>(ptr) }
-}
-
 fn walk_ts_node(node: Node, contract_id: Option<u32>, ctx: &mut TsContext) {
     let kind = node.kind();
     if is_ts_contract_definition(kind) {
@@ -262,7 +255,12 @@ fn walk_ts_node(node: Node, contract_id: Option<u32>, ctx: &mut TsContext) {
 fn is_ts_contract_definition(kind: &str) -> bool {
     matches!(
         kind,
-        "contract_definition" | "interface_definition" | "library_definition"
+        "contract_definition"
+            | "interface_definition"
+            | "library_definition"
+            | "contract_declaration"
+            | "interface_declaration"
+            | "library_declaration"
     )
 }
 
@@ -275,6 +273,7 @@ fn is_ts_function_definition(kind: &str) -> bool {
             | "receive_function"
             | "fallback_definition"
             | "receive_definition"
+            | "fallback_receive_definition"
     )
 }
 
@@ -344,7 +343,7 @@ fn parse_ts_state_var(node: Node, contract_id: Option<u32>, ctx: &mut TsContext)
 
 fn parse_ts_function(node: Node, contract_id: Option<u32>, ctx: &mut TsContext) {
     let name = find_ts_name(node, ctx.source);
-    let kind = function_kind_from_node(node, name.as_deref());
+    let kind = function_kind_from_node(node, name.as_deref(), ctx.source);
     let (visibility, mutability) = parse_visibility_mutability_text(node, ctx.source);
     let params = parse_ts_param_list(node, ctx);
     let returns = parse_ts_return_list(node, ctx);
@@ -373,11 +372,26 @@ fn parse_ts_function(node: Node, contract_id: Option<u32>, ctx: &mut TsContext) 
     ctx.parsed_any = true;
 }
 
-fn function_kind_from_node(node: Node, name: Option<&str>) -> FunctionKind {
+fn function_kind_from_node(node: Node, name: Option<&str>, source: &[u8]) -> FunctionKind {
     match node.kind() {
         "constructor_definition" => FunctionKind::Constructor,
         "fallback_function" | "fallback_definition" => FunctionKind::Fallback,
         "receive_function" | "receive_definition" => FunctionKind::Receive,
+        "fallback_receive_definition" => {
+            let Ok(text) = node.utf8_text(source) else {
+                return FunctionKind::Unknown;
+            };
+            let trimmed = text.trim_start();
+            if trimmed.starts_with("fallback") {
+                FunctionKind::Fallback
+            } else if trimmed.starts_with("receive") {
+                FunctionKind::Receive
+            } else if trimmed.starts_with("function") {
+                FunctionKind::Fallback
+            } else {
+                FunctionKind::Unknown
+            }
+        }
         _ => match name {
             Some("constructor") => FunctionKind::Constructor,
             Some("fallback") => FunctionKind::Fallback,
@@ -500,7 +514,10 @@ fn parse_ts_block(node: Node, ctx: &mut TsContext) -> u32 {
 fn parse_ts_statement(node: Node, ctx: &mut TsContext) -> Option<u32> {
     let span = span_from_node(node, ctx.file_id);
     match node.kind() {
-        "block" => Some(parse_ts_block(node, ctx)),
+        "statement" => node
+            .named_child(0)
+            .and_then(|child| parse_ts_statement(child, ctx)),
+        "block" | "block_statement" | "function_body" => Some(parse_ts_block(node, ctx)),
         "expression_statement" => {
             let expr = first_ts_expr_child(node).map(|expr| parse_ts_expr(expr, ctx));
             let expr_id = expr.unwrap_or_else(|| push_expr(ctx.ast, Expr::unknown(span)));
@@ -527,7 +544,7 @@ fn parse_ts_statement(node: Node, ctx: &mut TsContext) -> Option<u32> {
         "continue_statement" => Some(push_stmt(ctx.ast, StmtKind::Continue, span)),
         "variable_declaration_statement" => parse_ts_var_decl(node, ctx),
         "try_statement" => parse_ts_try(node, ctx),
-        "inline_assembly_statement" => Some(push_stmt(
+        "inline_assembly_statement" | "assembly_statement" => Some(push_stmt(
             ctx.ast,
             StmtKind::InlineAsm { language: None },
             span,
@@ -548,6 +565,7 @@ fn parse_ts_if(node: Node, ctx: &mut TsContext) -> Option<u32> {
     let then_node = node
         .child_by_field_name("consequence")
         .or_else(|| node.child_by_field_name("then"))
+        .or_else(|| node.child_by_field_name("body"))
         .or_else(|| find_named_child(node, "block"));
     let else_node = node
         .child_by_field_name("alternative")
@@ -555,7 +573,12 @@ fn parse_ts_if(node: Node, ctx: &mut TsContext) -> Option<u32> {
     let then_id = then_node
         .and_then(|child| parse_ts_statement(child, ctx))
         .unwrap_or_else(|| push_stmt(ctx.ast, StmtKind::Block(Vec::new()), span));
-    let else_id = else_node.and_then(|child| parse_ts_statement(child, ctx));
+    let else_id = else_node.and_then(|child| {
+        child
+            .child_by_field_name("body")
+            .and_then(|body| parse_ts_statement(body, ctx))
+            .or_else(|| parse_ts_statement(child, ctx))
+    });
     Some(push_stmt(
         ctx.ast,
         StmtKind::If {
@@ -609,10 +632,17 @@ fn parse_ts_for(node: Node, ctx: &mut TsContext) -> Option<u32> {
     let span = span_from_node(node, ctx.file_id);
     let init = node
         .child_by_field_name("initialization")
+        .or_else(|| node.child_by_field_name("initial"))
         .and_then(|child| parse_ts_statement(child, ctx));
     let cond = node
         .child_by_field_name("condition")
-        .and_then(|child| Some(parse_ts_expr(child, ctx)));
+        .and_then(|child| {
+            if is_ts_expr_node(child.kind()) {
+                Some(parse_ts_expr(child, ctx))
+            } else {
+                first_ts_expr_child(child).map(|expr| parse_ts_expr(expr, ctx))
+            }
+        });
     let step = node
         .child_by_field_name("update")
         .and_then(|child| Some(parse_ts_expr(child, ctx)));
@@ -836,16 +866,18 @@ fn parse_ts_expr(node: Node, ctx: &mut TsContext) -> u32 {
             )
         }
         "assignment_expression" => {
-            let lhs = node
+            let lhs_node = node
                 .child_by_field_name("left")
-                .or_else(|| first_ts_expr_child(node))
+                .or_else(|| first_ts_expr_child(node));
+            let rhs_node = node
+                .child_by_field_name("right")
+                .or_else(|| second_ts_expr_child(node));
+            let lhs = lhs_node
                 .map(|expr| parse_ts_expr(expr, ctx))
                 .unwrap_or_else(|| {
                     push_expr(ctx.ast, Expr::unknown(span_from_node(node, ctx.file_id)))
                 });
-            let rhs = node
-                .child_by_field_name("right")
-                .or_else(|| second_ts_expr_child(node))
+            let rhs = rhs_node
                 .map(|expr| parse_ts_expr(expr, ctx))
                 .unwrap_or_else(|| {
                     push_expr(ctx.ast, Expr::unknown(span_from_node(node, ctx.file_id)))
@@ -853,6 +885,11 @@ fn parse_ts_expr(node: Node, ctx: &mut TsContext) -> u32 {
             let op = node
                 .child_by_field_name("operator")
                 .and_then(|child| node_text(child, ctx.source))
+                .or_else(|| {
+                    lhs_node
+                        .zip(rhs_node)
+                        .and_then(|(lhs, rhs)| infix_op_between(lhs, rhs, ctx.source))
+                })
                 .unwrap_or_else(|| "=".to_string());
             push_expr(
                 ctx.ast,
@@ -863,17 +900,49 @@ fn parse_ts_expr(node: Node, ctx: &mut TsContext) -> u32 {
                 },
             )
         }
-        "binary_expression" => {
-            let lhs = node
+        "augmented_assignment_expression" => {
+            let lhs_node = node
                 .child_by_field_name("left")
-                .or_else(|| first_ts_expr_child(node))
+                .or_else(|| first_ts_expr_child(node));
+            let rhs_node = node
+                .child_by_field_name("right")
+                .or_else(|| second_ts_expr_child(node));
+            let lhs = lhs_node
                 .map(|expr| parse_ts_expr(expr, ctx))
                 .unwrap_or_else(|| {
                     push_expr(ctx.ast, Expr::unknown(span_from_node(node, ctx.file_id)))
                 });
-            let rhs = node
+            let rhs = rhs_node
+                .map(|expr| parse_ts_expr(expr, ctx))
+                .unwrap_or_else(|| {
+                    push_expr(ctx.ast, Expr::unknown(span_from_node(node, ctx.file_id)))
+                });
+            let op = lhs_node
+                .zip(rhs_node)
+                .and_then(|(lhs, rhs)| infix_op_between(lhs, rhs, ctx.source))
+                .unwrap_or_else(|| "+=".to_string());
+            push_expr(
+                ctx.ast,
+                Expr {
+                    kind: ExprKind::Assign { op, lhs, rhs },
+                    span: span_from_node(node, ctx.file_id),
+                    meta: ExprMeta::default(),
+                },
+            )
+        }
+        "binary_expression" => {
+            let lhs_node = node
+                .child_by_field_name("left")
+                .or_else(|| first_ts_expr_child(node));
+            let rhs_node = node
                 .child_by_field_name("right")
-                .or_else(|| second_ts_expr_child(node))
+                .or_else(|| second_ts_expr_child(node));
+            let lhs = lhs_node
+                .map(|expr| parse_ts_expr(expr, ctx))
+                .unwrap_or_else(|| {
+                    push_expr(ctx.ast, Expr::unknown(span_from_node(node, ctx.file_id)))
+                });
+            let rhs = rhs_node
                 .map(|expr| parse_ts_expr(expr, ctx))
                 .unwrap_or_else(|| {
                     push_expr(ctx.ast, Expr::unknown(span_from_node(node, ctx.file_id)))
@@ -881,6 +950,11 @@ fn parse_ts_expr(node: Node, ctx: &mut TsContext) -> u32 {
             let op = node
                 .child_by_field_name("operator")
                 .and_then(|child| node_text(child, ctx.source))
+                .or_else(|| {
+                    lhs_node
+                        .zip(rhs_node)
+                        .and_then(|(lhs, rhs)| infix_op_between(lhs, rhs, ctx.source))
+                })
                 .unwrap_or_else(|| "?".to_string());
             push_expr(
                 ctx.ast,
@@ -1066,6 +1140,14 @@ fn parse_ts_expr(node: Node, ctx: &mut TsContext) -> u32 {
                     push_expr(ctx.ast, Expr::unknown(span_from_node(node, ctx.file_id)))
                 })
         }
+        "expression" => {
+            let inner = first_ts_expr_child(node);
+            inner
+                .map(|expr| parse_ts_expr(expr, ctx))
+                .unwrap_or_else(|| {
+                    push_expr(ctx.ast, Expr::unknown(span_from_node(node, ctx.file_id)))
+                })
+        }
         _ => push_expr(ctx.ast, Expr::unknown(span_from_node(node, ctx.file_id))),
     }
 }
@@ -1175,7 +1257,9 @@ fn third_ts_expr_child(node: Node) -> Option<Node> {
 fn is_ts_expr_node(kind: &str) -> bool {
     matches!(
         kind,
-        "identifier"
+        "expression"
+            | "augmented_assignment_expression"
+            | "identifier"
             | "number_literal"
             | "integer_literal"
             | "string_literal"
@@ -1272,6 +1356,18 @@ fn find_named_child<'a>(node: Node<'a>, kind: &str) -> Option<Node<'a>> {
 
 fn node_text(node: Node, source: &[u8]) -> Option<String> {
     node.utf8_text(source).ok().map(|text| text.to_string())
+}
+
+fn infix_op_between(lhs: Node, rhs: Node, source: &[u8]) -> Option<String> {
+    if rhs.start_byte() <= lhs.end_byte() {
+        return None;
+    }
+    let slice = source.get(lhs.end_byte()..rhs.start_byte())?;
+    let text = std::str::from_utf8(slice).ok()?.trim();
+    if text.is_empty() {
+        return None;
+    }
+    Some(text.to_string())
 }
 
 fn span_from_node(node: Node, file_id: u32) -> Span {
@@ -2991,6 +3087,18 @@ fn is_keyword(value: &str) -> bool {
 mod tests {
     use super::*;
 
+    fn parse_tree_sitter(source: &str) -> NormalizedAst {
+        let file = SourceFile {
+            id: 0,
+            path: "test.sol".to_string(),
+            source: source.to_string(),
+        };
+        let mut ast = NormalizedAst::from_sources(vec![file.clone()]);
+        let parsed = parse_file_tree_sitter(&file, &mut ast);
+        assert!(parsed, "tree-sitter parser should parse the source");
+        ast
+    }
+
     fn parse_legacy(source: &str) -> NormalizedAst {
         let file = SourceFile {
             id: 0,
@@ -3139,6 +3247,74 @@ mod tests {
             has_local_owner_decl,
             "local var declaration should be present for shadowing checks"
         );
+    }
+
+    #[test]
+    fn tree_sitter_parser_preserves_parenthesized_return_binary_nesting() {
+        let src = r#"
+            contract C {
+                function f(uint256 amount, uint256 parts, uint256 factor) public pure returns (uint256) {
+                    return (amount / parts) * factor;
+                }
+            }
+        "#;
+        let ast = parse_tree_sitter(src);
+        let function = ast
+            .functions
+            .iter()
+            .find(|func| func.name.as_deref() == Some("f"))
+            .expect("function f");
+        let body = function.body.expect("function body");
+        let body_stmt = ast.statements.get(body as usize).expect("body statement");
+        let StmtKind::Block(stmts) = &body_stmt.kind else {
+            panic!("expected block body");
+        };
+        let return_stmt_id = stmts
+            .iter()
+            .find_map(|stmt_id| {
+                let stmt = ast.statements.get(*stmt_id as usize)?;
+                if matches!(stmt.kind, StmtKind::Return(_)) {
+                    Some(*stmt_id)
+                } else {
+                    None
+                }
+            })
+            .expect("return statement");
+        let return_stmt = ast
+            .statements
+            .get(return_stmt_id as usize)
+            .expect("return statement node");
+        let StmtKind::Return(Some(expr_id)) = return_stmt.kind else {
+            panic!("expected return expression");
+        };
+
+        let top_expr = ast
+            .expressions
+            .get(expr_id as usize)
+            .expect("top-level return expression");
+        let (top_lhs, top_rhs) = match &top_expr.kind {
+            ExprKind::Binary { op, lhs, rhs } => {
+                assert_eq!(op, "*", "top-level return expression should be multiplication");
+                (*lhs, *rhs)
+            }
+            _ => panic!("expected binary expression at return top-level"),
+        };
+
+        let lhs_expr = ast.expressions.get(top_lhs as usize).expect("lhs expression");
+        match &lhs_expr.kind {
+            ExprKind::Binary { op, .. } => {
+                assert_eq!(op, "/", "lhs should preserve nested division expression");
+            }
+            _ => panic!("expected nested binary expression on multiplication lhs"),
+        }
+
+        let rhs_expr = ast.expressions.get(top_rhs as usize).expect("rhs expression");
+        match &rhs_expr.kind {
+            ExprKind::Ident(name) => {
+                assert_eq!(name, "factor");
+            }
+            _ => panic!("expected identifier rhs for multiplication"),
+        }
     }
 }
 
