@@ -48,7 +48,7 @@ fn main() {
 
 fn print_usage() {
     eprintln!(
-        "usage: static-analyzer [--static|--symbolic|--fuzzing] <path> [--json|--text|--format <json|text>] [--dump-ir <text|json>]"
+        "usage: static-analyzer [--static|--symbolic|--fuzzing] <path> [--json|--text|--format <json|text>] [--dump-ir <text|json|tuple>]"
     );
 }
 
@@ -102,6 +102,7 @@ fn run() -> Result<()> {
                 let ir_format = match value.as_str() {
                     "json" => ir::DumpFormat::Json,
                     "text" => ir::DumpFormat::Text,
+                    "tuple" => ir::DumpFormat::Tuple,
                     _ => return Err(Error::msg(format!("unknown IR format: {value}"))),
                 };
                 dump_ir = Some(ir_format);

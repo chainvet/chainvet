@@ -38,9 +38,14 @@ Key files:
 - `src/cfg/mod.rs`: block splitting and control-flow edge construction
 - `src/ssa/mod.rs`: SSA, phi insertion, def/use links
 
-## IR Model (Tuple-Style Mental Model)
+## IR Model (Conceptual Tuple-Style Schema)
 
-Rust uses enums, but this tuple view is useful while designing engines:
+Rust uses enums internally. The tuples below are the conceptual IR schema and now also the literal instruction format emitted by `--dump-ir tuple`.
+
+- `--dump-ir text` prints an assembly-like debug view from `src/ir/dump.rs`
+- `--dump-ir json` prints the serialized Rust enums/structs via `serde`
+- `--dump-ir tuple` prints the tuple notation shown below
+- Engine code should treat `src/ir/mod.rs` as the canonical type definition
 
 ```text
 # -- IR Instructions ---------------------------------------------------
@@ -329,7 +334,76 @@ cargo run -- --static <path-to-solidity> --dump-ir text
 
 # json dump
 cargo run -- --static <path-to-solidity> --dump-ir json
+
+# tuple dump
+cargo run -- --static <path-to-solidity> --dump-ir tuple
 ```
+
+`text`, `json`, and `tuple` are all concrete debug formats. `tuple` matches the instruction/value/place/control notation shown earlier.
+
+Current `text` dump shape:
+
+```text
+fn calc (id 3, source 3) {
+  block 0:
+    t0 = load counter@storage
+    t1 = x + t0
+    declare local = t1
+    t2 = local > number(10)
+    if t2
+    t3 = local * number(2)
+    local = t3
+    else
+    t4 = local + number(1)
+    local = t4
+    endif
+    return local
+}
+```
+
+Current `json` dump shape:
+
+```json
+{
+  "Load": {
+    "dest": { "Temp": 0 },
+    "src": {
+      "Var": {
+        "var": { "Named": "counter" },
+        "class": "Storage"
+      }
+    },
+    "span": { "file": 0, "start": 0, "end": 0 }
+  }
+}
+```
+
+Current `tuple` dump shape:
+
+```text
+fn calc (id 3, source 3) {
+  block 0:
+    ("load", ("temp", 0), ("place_var", ("named", "counter"), "storage"))
+    ("binary", ("temp", 1), "+", ("var", ("named", "x")), ("var", ("temp", 0)))
+    ("declare", ["local"], ("var", ("temp", 1)))
+    ("binary", ("temp", 2), ">", ("var", ("named", "local")), ("lit", "number", "10"))
+    ("control", ("if", ("var", ("temp", 2))))
+    ("binary", ("temp", 3), "*", ("var", ("named", "local")), ("lit", "number", "2"))
+    ("assign", ("named", "local"), ("var", ("temp", 3)))
+    ("control", ("else"))
+    ("binary", ("temp", 4), "+", ("var", ("named", "local")), ("lit", "number", "1"))
+    ("assign", ("named", "local"), ("var", ("temp", 4)))
+    ("control", ("endif"))
+    ("return", [("var", ("named", "local"))])
+}
+```
+
+If you are comparing a CLI dump to the tuple schema above, map them like this:
+
+- `("load", dest_var, src_place)` -> `t0 = load counter@storage` in text, or `{ "Load": { ... } }` in json
+- `("store", dest_place, src_value)` -> `store counter@storage = t1`
+- `("binary", dest_var, op, lhs, rhs)` -> `t1 = x + t0`
+- `("control", ("if", cond))` -> `if t2`
 
 Use dumps to validate:
 
