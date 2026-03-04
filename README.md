@@ -53,6 +53,7 @@ cargo run -- <path> --json
 
 # Dump IR for debugging
 cargo run -- <path> --dump-ir text
+cargo run -- <path> --dump-ir tuple
 ```
 
 ## Contributor Guide

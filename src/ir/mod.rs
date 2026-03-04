@@ -1,8 +1,8 @@
-pub mod lower;
 pub mod dump;
+pub mod lower;
 
+pub use dump::{DumpFormat, dump_module};
 pub use lower::lower_module;
-pub use dump::{dump_module, DumpFormat};
 
 use crate::norm::{Literal, Span};
 use serde::Serialize;
@@ -32,8 +32,13 @@ pub struct IrBlock {
 
 #[derive(Debug, Clone, Serialize)]
 pub enum IrInstr {
-    Nop { span: Span },
-    Eval { expr: IrValue, span: Span },
+    Nop {
+        span: Span,
+    },
+    Eval {
+        expr: IrValue,
+        span: Span,
+    },
     Declare {
         names: Vec<String>,
         init: Option<IrValue>,
@@ -82,10 +87,22 @@ pub enum IrInstr {
         else_val: IrValue,
         span: Span,
     },
-    Emit { expr: IrValue, span: Span },
-    Return { values: Vec<IrValue>, span: Span },
-    Control { kind: ControlKind, span: Span },
-    InlineAsm { language: Option<String>, span: Span },
+    Emit {
+        expr: IrValue,
+        span: Span,
+    },
+    Return {
+        values: Vec<IrValue>,
+        span: Span,
+    },
+    Control {
+        kind: ControlKind,
+        span: Span,
+    },
+    InlineAsm {
+        language: Option<String>,
+        span: Span,
+    },
 }
 
 #[derive(Debug, Clone, Serialize)]

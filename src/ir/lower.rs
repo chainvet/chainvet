@@ -2,11 +2,13 @@ use crate::ir::{
     ControlKind, IrBlock, IrCallOption, IrFunction, IrInstr, IrModule, IrPlace, IrValue, IrVar,
     PlaceClass,
 };
-use crate::norm::symbols::{build_function_symbols, NameResolution, SymbolTable};
+use crate::norm::symbols::{NameResolution, SymbolTable, build_function_symbols};
 use crate::norm::{CallOption, ExprKind, Literal, NormalizedAst, Span, StmtKind};
 
 pub fn lower_module(ast: &NormalizedAst) -> IrModule {
-    let mut module = IrModule { functions: Vec::new() };
+    let mut module = IrModule {
+        functions: Vec::new(),
+    };
 
     for func in &ast.functions {
         let id = module.functions.len() as u32;
@@ -67,7 +69,16 @@ fn lower_stmt(stmt_id: u32, ast: &NormalizedAst, instrs: &mut Vec<IrInstr>, ctx:
                         for _ in 0..ctx.return_count {
                             temps.push(new_temp(ctx));
                         }
-                        lower_call_with_dests(expr, callee, args, temps.clone(), stmt.span, ast, instrs, ctx);
+                        lower_call_with_dests(
+                            expr,
+                            callee,
+                            args,
+                            temps.clone(),
+                            stmt.span,
+                            ast,
+                            instrs,
+                            ctx,
+                        );
                         temps.into_iter().map(IrValue::Var).collect()
                     } else {
                         lower_return_values(*expr_id, ast, instrs, ctx)
@@ -492,10 +503,7 @@ fn lower_tuple_decl_init(
             values.push(materialize_value(value, span, instrs, ctx));
         }
         for (idx, name) in names.iter().enumerate() {
-            let value = values
-                .get(idx)
-                .cloned()
-                .unwrap_or(IrValue::Unknown);
+            let value = values.get(idx).cloned().unwrap_or(IrValue::Unknown);
             let target = LValue::Var(IrVar::Named(name.clone()));
             emit_store_or_assign(&target, value, span, instrs);
         }
@@ -542,10 +550,7 @@ fn lower_tuple_assign(
         }
         for (idx, lhs_entry) in entries.iter().enumerate() {
             let target = lower_lvalue(*lhs_entry, ast, instrs, ctx);
-            let value = values
-                .get(idx)
-                .cloned()
-                .unwrap_or(IrValue::Unknown);
+            let value = values.get(idx).cloned().unwrap_or(IrValue::Unknown);
             emit_store_or_assign(&target, value, span, instrs);
         }
         return;
@@ -566,12 +571,7 @@ fn tuple_entries(ast: &NormalizedAst, expr_id: u32) -> Option<Vec<u32>> {
     }
 }
 
-fn emit_store_or_assign(
-    target: &LValue,
-    src: IrValue,
-    span: Span,
-    instrs: &mut Vec<IrInstr>,
-) {
+fn emit_store_or_assign(target: &LValue, src: IrValue, span: Span, instrs: &mut Vec<IrInstr>) {
     match target {
         LValue::Var(var) => instrs.push(IrInstr::Assign {
             dest: var.clone(),
@@ -615,11 +615,7 @@ fn lower_unary_update(
     });
     let updated = IrValue::Var(temp.clone());
     emit_store_or_assign(&target, updated.clone(), span, instrs);
-    if prefix {
-        updated
-    } else {
-        current
-    }
+    if prefix { updated } else { current }
 }
 
 enum LValue {
@@ -765,7 +761,11 @@ fn unwrap_call_options(ast: &NormalizedAst, expr_id: u32) -> (u32, Vec<CallOptio
         let Some(expr) = ast.expressions.get(current as usize) else {
             break;
         };
-        if let ExprKind::CallOptions { callee, options: opts } = &expr.kind {
+        if let ExprKind::CallOptions {
+            callee,
+            options: opts,
+        } = &expr.kind
+        {
             options.extend(opts.clone());
             current = *callee;
         } else {
@@ -852,9 +852,7 @@ fn lower_callee_value(
 fn call_target_value(expr: &crate::norm::Expr) -> Option<IrValue> {
     let call = expr.meta.call.as_ref()?;
     match &call.target {
-        crate::norm::CallTarget::Direct { name } => {
-            Some(IrValue::Var(IrVar::Named(name.clone())))
-        }
+        crate::norm::CallTarget::Direct { name } => Some(IrValue::Var(IrVar::Named(name.clone()))),
         crate::norm::CallTarget::Member { receiver, name } => {
             let mut full = receiver.join(".");
             if !full.is_empty() {
@@ -977,14 +975,20 @@ mod tests {
     #[test]
     fn lowers_tuple_var_decl() {
         let mut ast = new_ast();
-        let lit1 = push_expr(&mut ast, ExprKind::Literal(Literal {
-            kind: "number".to_string(),
-            value: "1".to_string(),
-        }));
-        let lit2 = push_expr(&mut ast, ExprKind::Literal(Literal {
-            kind: "number".to_string(),
-            value: "2".to_string(),
-        }));
+        let lit1 = push_expr(
+            &mut ast,
+            ExprKind::Literal(Literal {
+                kind: "number".to_string(),
+                value: "1".to_string(),
+            }),
+        );
+        let lit2 = push_expr(
+            &mut ast,
+            ExprKind::Literal(Literal {
+                kind: "number".to_string(),
+                value: "2".to_string(),
+            }),
+        );
         let tuple = push_expr(&mut ast, ExprKind::Tuple(vec![lit1, lit2]));
         let stmt = push_stmt(
             &mut ast,
@@ -1019,14 +1023,20 @@ mod tests {
         let lhs_a = push_expr(&mut ast, ExprKind::Ident("a".to_string()));
         let lhs_b = push_expr(&mut ast, ExprKind::Ident("b".to_string()));
         let lhs = push_expr(&mut ast, ExprKind::Tuple(vec![lhs_a, lhs_b]));
-        let rhs1 = push_expr(&mut ast, ExprKind::Literal(Literal {
-            kind: "number".to_string(),
-            value: "3".to_string(),
-        }));
-        let rhs2 = push_expr(&mut ast, ExprKind::Literal(Literal {
-            kind: "number".to_string(),
-            value: "4".to_string(),
-        }));
+        let rhs1 = push_expr(
+            &mut ast,
+            ExprKind::Literal(Literal {
+                kind: "number".to_string(),
+                value: "3".to_string(),
+            }),
+        );
+        let rhs2 = push_expr(
+            &mut ast,
+            ExprKind::Literal(Literal {
+                kind: "number".to_string(),
+                value: "4".to_string(),
+            }),
+        );
         let rhs = push_expr(&mut ast, ExprKind::Tuple(vec![rhs1, rhs2]));
         let assign = push_expr(
             &mut ast,

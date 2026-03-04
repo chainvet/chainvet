@@ -1,8 +1,8 @@
-use crate::analysis::{self, ResolvedTarget};
 use crate::analysis::detectors::{self, Finding, FindingKind, Severity};
+use crate::analysis::{self, ResolvedTarget};
 use crate::frontend::{FrontendMode, FrontendOutput};
-use crate::{cfg, ir, ssa};
 use crate::util::error::Result;
+use crate::{cfg, ir, ssa};
 use serde::Serialize;
 
 pub enum OutputFormat {
@@ -39,6 +39,7 @@ struct CallResolution {
     resolved: usize,
     ambiguous: usize,
     external: usize,
+    builtin: usize,
     unknown: usize,
 }
 
@@ -112,6 +113,7 @@ fn build_report(output: &FrontendOutput) -> Report {
         resolved: 0,
         ambiguous: 0,
         external: 0,
+        builtin: 0,
         unknown: 0,
     };
     for edge in &resolved.edges {
@@ -119,6 +121,7 @@ fn build_report(output: &FrontendOutput) -> Report {
             ResolvedTarget::Function(_) => resolution.resolved += 1,
             ResolvedTarget::Ambiguous(_) => resolution.ambiguous += 1,
             ResolvedTarget::External(_) => resolution.external += 1,
+            ResolvedTarget::Builtin(_) => resolution.builtin += 1,
             ResolvedTarget::Unknown => resolution.unknown += 1,
         }
     }
@@ -130,11 +133,8 @@ fn build_report(output: &FrontendOutput) -> Report {
         })
         .collect::<Vec<_>>();
     let taint = analysis::taint::analyze(&output.ast, &cfgs);
-    let propagation = analysis::taint::propagate_function_taint(
-        output.ast.functions.len(),
-        &taint,
-        &resolved,
-    );
+    let propagation =
+        analysis::taint::propagate_function_taint(output.ast.functions.len(), &taint, &resolved);
     let mut tainted_vars = 0;
     let mut tainted_calls = 0;
     for summary in &taint {
@@ -174,7 +174,7 @@ fn build_report(output: &FrontendOutput) -> Report {
 
 fn print_text(report: &Report) -> Result<()> {
     println!(
-        "mode: {}, files: {}, functions: {}, cfgs: {}, calls: {}, resolved: {}, ambiguous: {}, external: {}, unknown: {}, findings: {}",
+        "mode: {}, files: {}, functions: {}, cfgs: {}, calls: {}, resolved: {}, ambiguous: {}, external: {}, builtin: {}, unknown: {}, findings: {}",
         report.mode,
         report.files,
         report.functions,
@@ -183,6 +183,7 @@ fn print_text(report: &Report) -> Result<()> {
         report.call_resolution.resolved,
         report.call_resolution.ambiguous,
         report.call_resolution.external,
+        report.call_resolution.builtin,
         report.call_resolution.unknown,
         report.findings.len()
     );
@@ -295,9 +296,7 @@ fn severity_to_str(severity: Severity) -> &'static str {
     severity.as_str()
 }
 
-fn build_summary_report(
-    summaries: &[analysis::summary::FunctionSummary],
-) -> SummaryReport {
+fn build_summary_report(summaries: &[analysis::summary::FunctionSummary]) -> SummaryReport {
     let mut storage_writes = 0;
     let mut external_calls = 0;
     let mut low_level_calls = 0;

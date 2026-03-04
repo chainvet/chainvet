@@ -70,9 +70,7 @@ fn collect_local_vars_stmt(stmt_id: u32, ast: &NormalizedAst, vars: &mut HashSet
             }
         }
         StmtKind::If {
-            then_id,
-            else_id,
-            ..
+            then_id, else_id, ..
         } => {
             collect_local_vars_stmt(*then_id, ast, vars);
             if let Some(else_id) = else_id {

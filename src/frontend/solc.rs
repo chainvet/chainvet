@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, HashMap};
 use std::env;
-use std::path::{Path, PathBuf};
 use std::io::Write;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use serde::{Deserialize, Serialize};
@@ -421,7 +421,8 @@ fn normalize_state_var(
     if read_attr_bool(node, "stateVariable") == Some(false) {
         return None;
     }
-    if read_attr_bool(node, "stateVariable").is_none() && read_bool(node, "stateVariable").is_none() {
+    if read_attr_bool(node, "stateVariable").is_none() && read_bool(node, "stateVariable").is_none()
+    {
         return None;
     }
 
@@ -705,7 +706,11 @@ fn push_expr(ast: &mut NormalizedAst, kind: ExprKind, span: Span, meta: ExprMeta
     id
 }
 
-fn parse_stmt(node: &Value, source_map: &HashMap<u32, u32>, ast: &mut NormalizedAst) -> Option<u32> {
+fn parse_stmt(
+    node: &Value,
+    source_map: &HashMap<u32, u32>,
+    ast: &mut NormalizedAst,
+) -> Option<u32> {
     let kind = node_type(node)?;
     let span = parse_span(node, source_map);
 
@@ -735,12 +740,18 @@ fn parse_stmt(node: &Value, source_map: &HashMap<u32, u32>, ast: &mut Normalized
             Some(push_stmt(ast, StmtKind::Expr(expr), span))
         }
         "Return" => {
-            let value = node.get("expression").and_then(|expr| parse_expr(expr, source_map, ast));
+            let value = node
+                .get("expression")
+                .and_then(|expr| parse_expr(expr, source_map, ast));
             Some(push_stmt(ast, StmtKind::Return(value), span))
         }
         "IfStatement" => {
-            let cond = node.get("condition").and_then(|expr| parse_expr(expr, source_map, ast))?;
-            let then_id = node.get("trueBody").and_then(|stmt| parse_stmt(stmt, source_map, ast))?;
+            let cond = node
+                .get("condition")
+                .and_then(|expr| parse_expr(expr, source_map, ast))?;
+            let then_id = node
+                .get("trueBody")
+                .and_then(|stmt| parse_stmt(stmt, source_map, ast))?;
             let else_id = node
                 .get("falseBody")
                 .and_then(|stmt| parse_stmt(stmt, source_map, ast));
@@ -755,20 +766,36 @@ fn parse_stmt(node: &Value, source_map: &HashMap<u32, u32>, ast: &mut Normalized
             ))
         }
         "WhileStatement" => {
-            let cond = node.get("condition").and_then(|expr| parse_expr(expr, source_map, ast))?;
-            let body = node.get("body").and_then(|stmt| parse_stmt(stmt, source_map, ast))?;
+            let cond = node
+                .get("condition")
+                .and_then(|expr| parse_expr(expr, source_map, ast))?;
+            let body = node
+                .get("body")
+                .and_then(|stmt| parse_stmt(stmt, source_map, ast))?;
             Some(push_stmt(ast, StmtKind::While { cond, body }, span))
         }
         "DoWhileStatement" => {
-            let body = node.get("body").and_then(|stmt| parse_stmt(stmt, source_map, ast))?;
-            let cond = node.get("condition").and_then(|expr| parse_expr(expr, source_map, ast))?;
+            let body = node
+                .get("body")
+                .and_then(|stmt| parse_stmt(stmt, source_map, ast))?;
+            let cond = node
+                .get("condition")
+                .and_then(|expr| parse_expr(expr, source_map, ast))?;
             Some(push_stmt(ast, StmtKind::DoWhile { body, cond }, span))
         }
         "ForStatement" => {
-            let init = node.get("initializationExpression").and_then(|stmt| parse_stmt(stmt, source_map, ast));
-            let cond = node.get("condition").and_then(|expr| parse_expr(expr, source_map, ast));
-            let step = node.get("loopExpression").and_then(|expr| parse_expr(expr, source_map, ast));
-            let body = node.get("body").and_then(|stmt| parse_stmt(stmt, source_map, ast))?;
+            let init = node
+                .get("initializationExpression")
+                .and_then(|stmt| parse_stmt(stmt, source_map, ast));
+            let cond = node
+                .get("condition")
+                .and_then(|expr| parse_expr(expr, source_map, ast));
+            let step = node
+                .get("loopExpression")
+                .and_then(|expr| parse_expr(expr, source_map, ast));
+            let body = node
+                .get("body")
+                .and_then(|stmt| parse_stmt(stmt, source_map, ast))?;
             Some(push_stmt(
                 ast,
                 StmtKind::For {
@@ -781,11 +808,15 @@ fn parse_stmt(node: &Value, source_map: &HashMap<u32, u32>, ast: &mut Normalized
             ))
         }
         "EmitStatement" => {
-            let expr = node.get("eventCall").and_then(|expr| parse_expr(expr, source_map, ast))?;
+            let expr = node
+                .get("eventCall")
+                .and_then(|expr| parse_expr(expr, source_map, ast))?;
             Some(push_stmt(ast, StmtKind::Emit(expr), span))
         }
         "RevertStatement" => {
-            let expr = node.get("errorCall").and_then(|expr| parse_expr(expr, source_map, ast));
+            let expr = node
+                .get("errorCall")
+                .and_then(|expr| parse_expr(expr, source_map, ast));
             Some(push_stmt(ast, StmtKind::Revert(expr), span))
         }
         "VariableDeclarationStatement" => {
@@ -807,11 +838,7 @@ fn parse_stmt(node: &Value, source_map: &HashMap<u32, u32>, ast: &mut Normalized
                 .get("initialValue")
                 .or_else(|| node.get("initialExpression"))
                 .and_then(|expr| parse_expr(expr, source_map, ast));
-            Some(push_stmt(
-                ast,
-                StmtKind::VarDecl { names, init },
-                span,
-            ))
+            Some(push_stmt(ast, StmtKind::VarDecl { names, init }, span))
         }
         "TryStatement" => {
             let call = node
@@ -827,14 +854,11 @@ fn parse_stmt(node: &Value, source_map: &HashMap<u32, u32>, ast: &mut Normalized
                     }
                 }
             }
-            Some(push_stmt(
-                ast,
-                StmtKind::Try { call, clauses },
-                span,
-            ))
+            Some(push_stmt(ast, StmtKind::Try { call, clauses }, span))
         }
         "InlineAssembly" => {
-            let language = read_string(node, "language").or_else(|| read_attr_string(node, "language"));
+            let language =
+                read_string(node, "language").or_else(|| read_attr_string(node, "language"));
             Some(push_stmt(ast, StmtKind::InlineAsm { language }, span))
         }
         "Break" => Some(push_stmt(ast, StmtKind::Break, span)),
@@ -851,7 +875,11 @@ fn parse_stmt(node: &Value, source_map: &HashMap<u32, u32>, ast: &mut Normalized
     }
 }
 
-fn parse_expr(node: &Value, source_map: &HashMap<u32, u32>, ast: &mut NormalizedAst) -> Option<u32> {
+fn parse_expr(
+    node: &Value,
+    source_map: &HashMap<u32, u32>,
+    ast: &mut NormalizedAst,
+) -> Option<u32> {
     let kind = node_type(node)?;
     let span = parse_span(node, source_map);
 
@@ -889,13 +917,18 @@ fn parse_expr(node: &Value, source_map: &HashMap<u32, u32>, ast: &mut Normalized
                 .unwrap_or_else(|| "".to_string());
             Some(push_expr(
                 ast,
-                ExprKind::Literal(Literal { kind: lit_kind, value }),
+                ExprKind::Literal(Literal {
+                    kind: lit_kind,
+                    value,
+                }),
                 span,
                 ExprMeta::default(),
             ))
         }
         "FunctionCall" => {
-            let callee = node.get("expression").and_then(|expr| parse_expr(expr, source_map, ast))?;
+            let callee = node
+                .get("expression")
+                .and_then(|expr| parse_expr(expr, source_map, ast))?;
             let mut args = Vec::new();
             if let Some(entries) = node.get("arguments").and_then(Value::as_array) {
                 for entry in entries {
@@ -920,15 +953,12 @@ fn parse_expr(node: &Value, source_map: &HashMap<u32, u32>, ast: &mut Normalized
                 }),
             };
 
-            Some(push_expr(
-                ast,
-                ExprKind::Call { callee, args },
-                span,
-                meta,
-            ))
+            Some(push_expr(ast, ExprKind::Call { callee, args }, span, meta))
         }
         "FunctionCallOptions" => {
-            let callee = node.get("expression").and_then(|expr| parse_expr(expr, source_map, ast))?;
+            let callee = node
+                .get("expression")
+                .and_then(|expr| parse_expr(expr, source_map, ast))?;
             let options = parse_call_options(node, source_map, ast);
             let meta = ExprMeta {
                 chain: chain_from_expr(ast, callee),
@@ -945,8 +975,12 @@ fn parse_expr(node: &Value, source_map: &HashMap<u32, u32>, ast: &mut Normalized
             let op = read_string(node, "operator")
                 .or_else(|| read_attr_string(node, "operator"))
                 .unwrap_or_else(|| "?".to_string());
-            let lhs = node.get("leftExpression").and_then(|expr| parse_expr(expr, source_map, ast))?;
-            let rhs = node.get("rightExpression").and_then(|expr| parse_expr(expr, source_map, ast))?;
+            let lhs = node
+                .get("leftExpression")
+                .and_then(|expr| parse_expr(expr, source_map, ast))?;
+            let rhs = node
+                .get("rightExpression")
+                .and_then(|expr| parse_expr(expr, source_map, ast))?;
             Some(push_expr(
                 ast,
                 ExprKind::Binary { op, lhs, rhs },
@@ -958,7 +992,9 @@ fn parse_expr(node: &Value, source_map: &HashMap<u32, u32>, ast: &mut Normalized
             let op = read_string(node, "operator")
                 .or_else(|| read_attr_string(node, "operator"))
                 .unwrap_or_else(|| "?".to_string());
-            let expr = node.get("subExpression").and_then(|expr| parse_expr(expr, source_map, ast))?;
+            let expr = node
+                .get("subExpression")
+                .and_then(|expr| parse_expr(expr, source_map, ast))?;
             let prefix = read_bool(node, "prefix").unwrap_or(true);
             Some(push_expr(
                 ast,
@@ -971,8 +1007,12 @@ fn parse_expr(node: &Value, source_map: &HashMap<u32, u32>, ast: &mut Normalized
             let op = read_string(node, "operator")
                 .or_else(|| read_attr_string(node, "operator"))
                 .unwrap_or_else(|| "=".to_string());
-            let lhs = node.get("leftHandSide").and_then(|expr| parse_expr(expr, source_map, ast))?;
-            let rhs = node.get("rightHandSide").and_then(|expr| parse_expr(expr, source_map, ast))?;
+            let lhs = node
+                .get("leftHandSide")
+                .and_then(|expr| parse_expr(expr, source_map, ast))?;
+            let rhs = node
+                .get("rightHandSide")
+                .and_then(|expr| parse_expr(expr, source_map, ast))?;
             Some(push_expr(
                 ast,
                 ExprKind::Assign { op, lhs, rhs },
@@ -981,30 +1021,26 @@ fn parse_expr(node: &Value, source_map: &HashMap<u32, u32>, ast: &mut Normalized
             ))
         }
         "MemberAccess" => {
-            let base = node.get("expression").and_then(|expr| parse_expr(expr, source_map, ast))?;
+            let base = node
+                .get("expression")
+                .and_then(|expr| parse_expr(expr, source_map, ast))?;
             let field = read_string(node, "memberName")
                 .or_else(|| read_attr_string(node, "memberName"))
                 .unwrap_or_else(|| "<unknown>".to_string());
             let chain = extend_chain(ast, base, ChainSegment::Member(field.clone()));
             let meta = ExprMeta { chain, call: None };
-            Some(push_expr(
-                ast,
-                ExprKind::Member { base, field },
-                span,
-                meta,
-            ))
+            Some(push_expr(ast, ExprKind::Member { base, field }, span, meta))
         }
         "IndexAccess" => {
-            let base = node.get("baseExpression").and_then(|expr| parse_expr(expr, source_map, ast))?;
-            let index = node.get("indexExpression").and_then(|expr| parse_expr(expr, source_map, ast));
+            let base = node
+                .get("baseExpression")
+                .and_then(|expr| parse_expr(expr, source_map, ast))?;
+            let index = node
+                .get("indexExpression")
+                .and_then(|expr| parse_expr(expr, source_map, ast));
             let chain = extend_chain(ast, base, ChainSegment::Index);
             let meta = ExprMeta { chain, call: None };
-            Some(push_expr(
-                ast,
-                ExprKind::Index { base, index },
-                span,
-                meta,
-            ))
+            Some(push_expr(ast, ExprKind::Index { base, index }, span, meta))
         }
         "TupleExpression" => {
             let mut entries = Vec::new();
@@ -1026,9 +1062,15 @@ fn parse_expr(node: &Value, source_map: &HashMap<u32, u32>, ast: &mut Normalized
             ))
         }
         "Conditional" => {
-            let cond = node.get("condition").and_then(|expr| parse_expr(expr, source_map, ast))?;
-            let then_expr = node.get("trueExpression").and_then(|expr| parse_expr(expr, source_map, ast))?;
-            let else_expr = node.get("falseExpression").and_then(|expr| parse_expr(expr, source_map, ast))?;
+            let cond = node
+                .get("condition")
+                .and_then(|expr| parse_expr(expr, source_map, ast))?;
+            let then_expr = node
+                .get("trueExpression")
+                .and_then(|expr| parse_expr(expr, source_map, ast))?;
+            let else_expr = node
+                .get("falseExpression")
+                .and_then(|expr| parse_expr(expr, source_map, ast))?;
             Some(push_expr(
                 ast,
                 ExprKind::Conditional {
@@ -1050,18 +1092,17 @@ fn parse_expr(node: &Value, source_map: &HashMap<u32, u32>, ast: &mut Normalized
                 Some(vec![ChainSegment::Ident(type_name.clone())])
             };
             let meta = ExprMeta { chain, call: None };
-            Some(push_expr(
-                ast,
-                ExprKind::New { type_name },
-                span,
-                meta,
-            ))
+            Some(push_expr(ast, ExprKind::New { type_name }, span, meta))
         }
         _ => Some(parse_unknown_expr(node, source_map, ast)),
     }
 }
 
-fn parse_unknown_expr(node: &Value, source_map: &HashMap<u32, u32>, ast: &mut NormalizedAst) -> u32 {
+fn parse_unknown_expr(
+    node: &Value,
+    source_map: &HashMap<u32, u32>,
+    ast: &mut NormalizedAst,
+) -> u32 {
     let span = parse_span(node, source_map);
     push_expr(ast, ExprKind::Unknown, span, ExprMeta::default())
 }
@@ -1128,7 +1169,9 @@ fn call_target_from_chain(chain: Option<&[ChainSegment]>) -> CallTarget {
         return CallTarget::Unknown;
     }
     if names.len() == 1 {
-        return CallTarget::Direct { name: names[0].clone() };
+        return CallTarget::Direct {
+            name: names[0].clone(),
+        };
     }
 
     let receiver = names[..names.len() - 1].to_vec();
@@ -1202,7 +1245,11 @@ fn parse_try_clause(
     let body_node = node.get("block").or_else(|| node.get("body"));
     let body = match body_node.and_then(|value| parse_stmt(value, source_map, ast)) {
         Some(id) => id,
-        None => push_stmt(ast, StmtKind::Block(Vec::new()), parse_span(node, source_map)),
+        None => push_stmt(
+            ast,
+            StmtKind::Block(Vec::new()),
+            parse_span(node, source_map),
+        ),
     };
 
     Some(TryClause {
@@ -1259,8 +1306,8 @@ fn parse_function_params(node: &Value) -> Vec<String> {
             if param.is_null() {
                 continue;
             }
-            if let Some(name) = read_string(param, "name")
-                .or_else(|| read_attr_string(param, "name"))
+            if let Some(name) =
+                read_string(param, "name").or_else(|| read_attr_string(param, "name"))
             {
                 if !name.is_empty() {
                     params.push(name);

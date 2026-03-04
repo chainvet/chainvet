@@ -35,21 +35,13 @@ pub fn summarize(ast: &NormalizedAst, resolved: &ResolvedCallGraph) -> Vec<Funct
         let Some(summary) = summaries.get_mut(func.id as usize) else {
             continue;
         };
-        let contract_state = func
-            .contract
-            .and_then(|id| state_vars.get(id as usize));
+        let contract_state = func.contract.and_then(|id| state_vars.get(id as usize));
         let contract_name = func
             .contract
             .and_then(|id| ast.contracts.get(id as usize))
             .map(|contract| contract.name.clone());
         if let Some(body) = func.body {
-            walk_stmt_for_storage(
-                ast,
-                body,
-                contract_state,
-                contract_name.as_deref(),
-                summary,
-            );
+            walk_stmt_for_storage(ast, body, contract_state, contract_name.as_deref(), summary);
         }
     }
 
@@ -59,6 +51,7 @@ pub fn summarize(ast: &NormalizedAst, resolved: &ResolvedCallGraph) -> Vec<Funct
         };
         match &edge.target {
             ResolvedTarget::External(_) => summary.external_calls += 1,
+            ResolvedTarget::Builtin(_) => {}
             ResolvedTarget::Ambiguous(_) | ResolvedTarget::Unknown => summary.unresolved_calls += 1,
             ResolvedTarget::Function(_) => {}
         }
@@ -221,10 +214,7 @@ fn walk_expr_for_storage(
             walk_expr_for_storage(ast, *then_expr, state_vars, contract_name, summary);
             walk_expr_for_storage(ast, *else_expr, state_vars, contract_name, summary);
         }
-        ExprKind::Literal(_)
-        | ExprKind::Ident(_)
-        | ExprKind::New { .. }
-        | ExprKind::Unknown => {}
+        ExprKind::Literal(_) | ExprKind::Ident(_) | ExprKind::New { .. } | ExprKind::Unknown => {}
     }
 }
 
@@ -274,5 +264,8 @@ fn is_low_level_call(call: &CallMeta) -> bool {
         CallTarget::Member { name, .. } => name.as_str(),
         CallTarget::Unknown => return false,
     };
-    matches!(name, "call" | "delegatecall" | "callcode" | "staticcall" | "send" | "transfer")
+    matches!(
+        name,
+        "call" | "delegatecall" | "callcode" | "staticcall" | "send" | "transfer"
+    )
 }

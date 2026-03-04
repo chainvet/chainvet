@@ -65,8 +65,8 @@ pub fn load_via_parser(path: &str) -> Result<NormalizedAst> {
 
 fn parse_file_tree_sitter(file: &SourceFile, ast: &mut NormalizedAst) -> bool {
     let mut parser = Parser::new();
-    let language = solidity_language();
-    if parser.set_language(&language).is_err() {
+    let language = ts_solidity::LANGUAGE;
+    if parser.set_language(&language.into()).is_err() {
         return false;
     }
     let tree = match parser.parse(&file.source, None) {
@@ -104,12 +104,9 @@ fn parse_file_legacy(file: &SourceFile, ast: &mut NormalizedAst) {
                 continue;
             };
             let close_idx = find_matching_brace(&tokens, open_idx).unwrap_or(open_idx);
-            let span = span_for(
-                file.id,
-                tokens[idx].start,
-                tokens[close_idx].end,
-            );
+            let span = span_for(file.id, tokens[idx].start, tokens[close_idx].end);
             let contract_id = push_contract(ast, name, kind, span);
+            parse_state_vars_in_range(&tokens, file.id, open_idx + 1, close_idx, ast, contract_id);
             parse_functions_in_range(
                 &tokens,
                 file.id,
@@ -131,18 +128,104 @@ fn parse_file_legacy(file: &SourceFile, ast: &mut NormalizedAst) {
     parse_top_level_functions(&tokens, file.id, ast, &ranges);
 }
 
+fn parse_state_vars_in_range(
+    tokens: &[Token],
+    file_id: u32,
+    start_idx: usize,
+    end_idx: usize,
+    ast: &mut NormalizedAst,
+    contract_id: u32,
+) {
+    if start_idx >= end_idx || end_idx > tokens.len() {
+        return;
+    }
+
+    let mut segment_start = start_idx;
+    let mut idx = start_idx;
+    let mut paren_depth = 0i32;
+    let mut bracket_depth = 0i32;
+
+    while idx < end_idx {
+        if tokens[idx].is_symbol('{') && paren_depth == 0 && bracket_depth == 0 {
+            if segment_start < idx {
+                parse_state_var_segment(tokens, file_id, segment_start, idx - 1, ast, contract_id);
+            }
+            if let Some(close_idx) = find_matching_brace(tokens, idx) {
+                idx = close_idx + 1;
+                segment_start = idx;
+                continue;
+            }
+            return;
+        }
+        if tokens[idx].is_symbol('(') {
+            paren_depth += 1;
+        } else if tokens[idx].is_symbol(')') {
+            paren_depth -= 1;
+        } else if tokens[idx].is_symbol('[') {
+            bracket_depth += 1;
+        } else if tokens[idx].is_symbol(']') {
+            bracket_depth -= 1;
+        } else if tokens[idx].is_symbol(';') && paren_depth == 0 && bracket_depth == 0 {
+            if segment_start < idx {
+                parse_state_var_segment(tokens, file_id, segment_start, idx - 1, ast, contract_id);
+            }
+            segment_start = idx + 1;
+        }
+        idx += 1;
+    }
+}
+
+fn parse_state_var_segment(
+    tokens: &[Token],
+    file_id: u32,
+    start_idx: usize,
+    end_idx: usize,
+    ast: &mut NormalizedAst,
+    contract_id: u32,
+) {
+    if start_idx > end_idx || end_idx >= tokens.len() {
+        return;
+    }
+    if is_non_state_decl_start(tokens[start_idx].text.as_str()) {
+        return;
+    }
+    let assign_idx = find_top_level_assignment_equal(tokens, start_idx, end_idx);
+    let decl_end = assign_idx
+        .and_then(|idx| idx.checked_sub(1))
+        .unwrap_or(end_idx);
+    let Some(names) = extract_decl_names(tokens, start_idx, decl_end) else {
+        return;
+    };
+    let span = span_for(file_id, tokens[start_idx].start, tokens[end_idx].end);
+    for name in names {
+        push_state_var(ast, contract_id, name, span);
+    }
+}
+
+fn is_non_state_decl_start(value: &str) -> bool {
+    matches!(
+        value,
+        "function"
+            | "constructor"
+            | "fallback"
+            | "receive"
+            | "event"
+            | "error"
+            | "modifier"
+            | "struct"
+            | "enum"
+            | "using"
+            | "type"
+            | "pragma"
+            | "import"
+    )
+}
+
 struct TsContext<'a> {
     file_id: u32,
     source: &'a [u8],
     ast: &'a mut NormalizedAst,
     parsed_any: bool,
-}
-
-fn solidity_language() -> tree_sitter::Language {
-    let func = ts_solidity::LANGUAGE.into_raw();
-    let ptr = unsafe { func() };
-    // tree-sitter 0.22 lacks LanguageFn conversions; cast raw pointer into Language.
-    unsafe { std::mem::transmute::<*const (), tree_sitter::Language>(ptr) }
 }
 
 fn walk_ts_node(node: Node, contract_id: Option<u32>, ctx: &mut TsContext) {
@@ -170,7 +253,15 @@ fn walk_ts_node(node: Node, contract_id: Option<u32>, ctx: &mut TsContext) {
 }
 
 fn is_ts_contract_definition(kind: &str) -> bool {
-    matches!(kind, "contract_definition" | "interface_definition" | "library_definition")
+    matches!(
+        kind,
+        "contract_definition"
+            | "interface_definition"
+            | "library_definition"
+            | "contract_declaration"
+            | "interface_declaration"
+            | "library_declaration"
+    )
 }
 
 fn is_ts_function_definition(kind: &str) -> bool {
@@ -182,6 +273,7 @@ fn is_ts_function_definition(kind: &str) -> bool {
             | "receive_function"
             | "fallback_definition"
             | "receive_definition"
+            | "fallback_receive_definition"
     )
 }
 
@@ -251,7 +343,7 @@ fn parse_ts_state_var(node: Node, contract_id: Option<u32>, ctx: &mut TsContext)
 
 fn parse_ts_function(node: Node, contract_id: Option<u32>, ctx: &mut TsContext) {
     let name = find_ts_name(node, ctx.source);
-    let kind = function_kind_from_node(node, name.as_deref());
+    let kind = function_kind_from_node(node, name.as_deref(), ctx.source);
     let (visibility, mutability) = parse_visibility_mutability_text(node, ctx.source);
     let params = parse_ts_param_list(node, ctx);
     let returns = parse_ts_return_list(node, ctx);
@@ -280,11 +372,26 @@ fn parse_ts_function(node: Node, contract_id: Option<u32>, ctx: &mut TsContext) 
     ctx.parsed_any = true;
 }
 
-fn function_kind_from_node(node: Node, name: Option<&str>) -> FunctionKind {
+fn function_kind_from_node(node: Node, name: Option<&str>, source: &[u8]) -> FunctionKind {
     match node.kind() {
         "constructor_definition" => FunctionKind::Constructor,
         "fallback_function" | "fallback_definition" => FunctionKind::Fallback,
         "receive_function" | "receive_definition" => FunctionKind::Receive,
+        "fallback_receive_definition" => {
+            let Ok(text) = node.utf8_text(source) else {
+                return FunctionKind::Unknown;
+            };
+            let trimmed = text.trim_start();
+            if trimmed.starts_with("fallback") {
+                FunctionKind::Fallback
+            } else if trimmed.starts_with("receive") {
+                FunctionKind::Receive
+            } else if trimmed.starts_with("function") {
+                FunctionKind::Fallback
+            } else {
+                FunctionKind::Unknown
+            }
+        }
         _ => match name {
             Some("constructor") => FunctionKind::Constructor,
             Some("fallback") => FunctionKind::Fallback,
@@ -407,7 +514,10 @@ fn parse_ts_block(node: Node, ctx: &mut TsContext) -> u32 {
 fn parse_ts_statement(node: Node, ctx: &mut TsContext) -> Option<u32> {
     let span = span_from_node(node, ctx.file_id);
     match node.kind() {
-        "block" => Some(parse_ts_block(node, ctx)),
+        "statement" => node
+            .named_child(0)
+            .and_then(|child| parse_ts_statement(child, ctx)),
+        "block" | "block_statement" | "function_body" => Some(parse_ts_block(node, ctx)),
         "expression_statement" => {
             let expr = first_ts_expr_child(node).map(|expr| parse_ts_expr(expr, ctx));
             let expr_id = expr.unwrap_or_else(|| push_expr(ctx.ast, Expr::unknown(span)));
@@ -434,7 +544,7 @@ fn parse_ts_statement(node: Node, ctx: &mut TsContext) -> Option<u32> {
         "continue_statement" => Some(push_stmt(ctx.ast, StmtKind::Continue, span)),
         "variable_declaration_statement" => parse_ts_var_decl(node, ctx),
         "try_statement" => parse_ts_try(node, ctx),
-        "inline_assembly_statement" => Some(push_stmt(
+        "inline_assembly_statement" | "assembly_statement" => Some(push_stmt(
             ctx.ast,
             StmtKind::InlineAsm { language: None },
             span,
@@ -445,7 +555,9 @@ fn parse_ts_statement(node: Node, ctx: &mut TsContext) -> Option<u32> {
 
 fn parse_ts_if(node: Node, ctx: &mut TsContext) -> Option<u32> {
     let span = span_from_node(node, ctx.file_id);
-    let cond_node = node.child_by_field_name("condition").or_else(|| first_ts_expr_child(node));
+    let cond_node = node
+        .child_by_field_name("condition")
+        .or_else(|| first_ts_expr_child(node));
     let Some(cond_node) = cond_node else {
         return None;
     };
@@ -453,6 +565,7 @@ fn parse_ts_if(node: Node, ctx: &mut TsContext) -> Option<u32> {
     let then_node = node
         .child_by_field_name("consequence")
         .or_else(|| node.child_by_field_name("then"))
+        .or_else(|| node.child_by_field_name("body"))
         .or_else(|| find_named_child(node, "block"));
     let else_node = node
         .child_by_field_name("alternative")
@@ -460,7 +573,12 @@ fn parse_ts_if(node: Node, ctx: &mut TsContext) -> Option<u32> {
     let then_id = then_node
         .and_then(|child| parse_ts_statement(child, ctx))
         .unwrap_or_else(|| push_stmt(ctx.ast, StmtKind::Block(Vec::new()), span));
-    let else_id = else_node.and_then(|child| parse_ts_statement(child, ctx));
+    let else_id = else_node.and_then(|child| {
+        child
+            .child_by_field_name("body")
+            .and_then(|body| parse_ts_statement(body, ctx))
+            .or_else(|| parse_ts_statement(child, ctx))
+    });
     Some(push_stmt(
         ctx.ast,
         StmtKind::If {
@@ -482,8 +600,12 @@ fn parse_ts_while(node: Node, ctx: &mut TsContext) -> Option<u32> {
         .child_by_field_name("body")
         .or_else(|| find_named_child(node, "block"))
         .and_then(|child| parse_ts_statement(child, ctx));
-    let Some(cond) = cond else { return None; };
-    let Some(body) = body else { return None; };
+    let Some(cond) = cond else {
+        return None;
+    };
+    let Some(body) = body else {
+        return None;
+    };
     Some(push_stmt(ctx.ast, StmtKind::While { cond, body }, span))
 }
 
@@ -497,23 +619,30 @@ fn parse_ts_do_while(node: Node, ctx: &mut TsContext) -> Option<u32> {
         .child_by_field_name("body")
         .or_else(|| find_named_child(node, "block"))
         .and_then(|child| parse_ts_statement(child, ctx));
-    let Some(cond) = cond else { return None; };
-    let Some(body) = body else { return None; };
-    Some(push_stmt(
-        ctx.ast,
-        StmtKind::DoWhile { body, cond },
-        span,
-    ))
+    let Some(cond) = cond else {
+        return None;
+    };
+    let Some(body) = body else {
+        return None;
+    };
+    Some(push_stmt(ctx.ast, StmtKind::DoWhile { body, cond }, span))
 }
 
 fn parse_ts_for(node: Node, ctx: &mut TsContext) -> Option<u32> {
     let span = span_from_node(node, ctx.file_id);
     let init = node
         .child_by_field_name("initialization")
+        .or_else(|| node.child_by_field_name("initial"))
         .and_then(|child| parse_ts_statement(child, ctx));
     let cond = node
         .child_by_field_name("condition")
-        .and_then(|child| Some(parse_ts_expr(child, ctx)));
+        .and_then(|child| {
+            if is_ts_expr_node(child.kind()) {
+                Some(parse_ts_expr(child, ctx))
+            } else {
+                first_ts_expr_child(child).map(|expr| parse_ts_expr(expr, ctx))
+            }
+        });
     let step = node
         .child_by_field_name("update")
         .and_then(|child| Some(parse_ts_expr(child, ctx)));
@@ -521,7 +650,9 @@ fn parse_ts_for(node: Node, ctx: &mut TsContext) -> Option<u32> {
         .child_by_field_name("body")
         .or_else(|| find_named_child(node, "block"))
         .and_then(|child| parse_ts_statement(child, ctx));
-    let Some(body) = body else { return None; };
+    let Some(body) = body else {
+        return None;
+    };
     Some(push_stmt(
         ctx.ast,
         StmtKind::For {
@@ -554,11 +685,7 @@ fn parse_ts_try(node: Node, ctx: &mut TsContext) -> Option<u32> {
             });
         }
     }
-    Some(push_stmt(
-        ctx.ast,
-        StmtKind::Try { call, clauses },
-        span,
-    ))
+    Some(push_stmt(ctx.ast, StmtKind::Try { call, clauses }, span))
 }
 
 fn parse_ts_var_decl(node: Node, ctx: &mut TsContext) -> Option<u32> {
@@ -585,11 +712,7 @@ fn parse_ts_var_decl(node: Node, ctx: &mut TsContext) -> Option<u32> {
         .or_else(|| node.child_by_field_name("expression"))
         .or_else(|| first_ts_expr_child(node))
         .map(|expr| parse_ts_expr(expr, ctx));
-    Some(push_stmt(
-        ctx.ast,
-        StmtKind::VarDecl { names, init },
-        span,
-    ))
+    Some(push_stmt(ctx.ast, StmtKind::VarDecl { names, init }, span))
 }
 
 fn parse_ts_expr(node: Node, ctx: &mut TsContext) -> u32 {
@@ -627,7 +750,9 @@ fn parse_ts_expr(node: Node, ctx: &mut TsContext) -> u32 {
                 .or_else(|| first_ts_expr_child(node));
             let base = base_node
                 .map(|expr| parse_ts_expr(expr, ctx))
-                .unwrap_or_else(|| push_expr(ctx.ast, Expr::unknown(span_from_node(node, ctx.file_id))));
+                .unwrap_or_else(|| {
+                    push_expr(ctx.ast, Expr::unknown(span_from_node(node, ctx.file_id)))
+                });
             let field = node
                 .child_by_field_name("property")
                 .or_else(|| node.child_by_field_name("name"))
@@ -658,7 +783,9 @@ fn parse_ts_expr(node: Node, ctx: &mut TsContext) -> u32 {
                 .or_else(|| first_ts_expr_child(node));
             let base = base_node
                 .map(|expr| parse_ts_expr(expr, ctx))
-                .unwrap_or_else(|| push_expr(ctx.ast, Expr::unknown(span_from_node(node, ctx.file_id))));
+                .unwrap_or_else(|| {
+                    push_expr(ctx.ast, Expr::unknown(span_from_node(node, ctx.file_id)))
+                });
             let index = node
                 .child_by_field_name("index")
                 .or_else(|| second_ts_expr_child(node))
@@ -687,7 +814,9 @@ fn parse_ts_expr(node: Node, ctx: &mut TsContext) -> u32 {
                 .or_else(|| first_ts_expr_child(node));
             let callee = callee_node
                 .map(|expr| parse_ts_expr(expr, ctx))
-                .unwrap_or_else(|| push_expr(ctx.ast, Expr::unknown(span_from_node(node, ctx.file_id))));
+                .unwrap_or_else(|| {
+                    push_expr(ctx.ast, Expr::unknown(span_from_node(node, ctx.file_id)))
+                });
             let args_node = node
                 .child_by_field_name("arguments")
                 .or_else(|| find_named_child(node, "argument_list"));
@@ -737,19 +866,30 @@ fn parse_ts_expr(node: Node, ctx: &mut TsContext) -> u32 {
             )
         }
         "assignment_expression" => {
-            let lhs = node
+            let lhs_node = node
                 .child_by_field_name("left")
-                .or_else(|| first_ts_expr_child(node))
-                .map(|expr| parse_ts_expr(expr, ctx))
-                .unwrap_or_else(|| push_expr(ctx.ast, Expr::unknown(span_from_node(node, ctx.file_id))));
-            let rhs = node
+                .or_else(|| first_ts_expr_child(node));
+            let rhs_node = node
                 .child_by_field_name("right")
-                .or_else(|| second_ts_expr_child(node))
+                .or_else(|| second_ts_expr_child(node));
+            let lhs = lhs_node
                 .map(|expr| parse_ts_expr(expr, ctx))
-                .unwrap_or_else(|| push_expr(ctx.ast, Expr::unknown(span_from_node(node, ctx.file_id))));
+                .unwrap_or_else(|| {
+                    push_expr(ctx.ast, Expr::unknown(span_from_node(node, ctx.file_id)))
+                });
+            let rhs = rhs_node
+                .map(|expr| parse_ts_expr(expr, ctx))
+                .unwrap_or_else(|| {
+                    push_expr(ctx.ast, Expr::unknown(span_from_node(node, ctx.file_id)))
+                });
             let op = node
                 .child_by_field_name("operator")
                 .and_then(|child| node_text(child, ctx.source))
+                .or_else(|| {
+                    lhs_node
+                        .zip(rhs_node)
+                        .and_then(|(lhs, rhs)| infix_op_between(lhs, rhs, ctx.source))
+                })
                 .unwrap_or_else(|| "=".to_string());
             push_expr(
                 ctx.ast,
@@ -760,20 +900,61 @@ fn parse_ts_expr(node: Node, ctx: &mut TsContext) -> u32 {
                 },
             )
         }
-        "binary_expression" => {
-            let lhs = node
+        "augmented_assignment_expression" => {
+            let lhs_node = node
                 .child_by_field_name("left")
-                .or_else(|| first_ts_expr_child(node))
-                .map(|expr| parse_ts_expr(expr, ctx))
-                .unwrap_or_else(|| push_expr(ctx.ast, Expr::unknown(span_from_node(node, ctx.file_id))));
-            let rhs = node
+                .or_else(|| first_ts_expr_child(node));
+            let rhs_node = node
                 .child_by_field_name("right")
-                .or_else(|| second_ts_expr_child(node))
+                .or_else(|| second_ts_expr_child(node));
+            let lhs = lhs_node
                 .map(|expr| parse_ts_expr(expr, ctx))
-                .unwrap_or_else(|| push_expr(ctx.ast, Expr::unknown(span_from_node(node, ctx.file_id))));
+                .unwrap_or_else(|| {
+                    push_expr(ctx.ast, Expr::unknown(span_from_node(node, ctx.file_id)))
+                });
+            let rhs = rhs_node
+                .map(|expr| parse_ts_expr(expr, ctx))
+                .unwrap_or_else(|| {
+                    push_expr(ctx.ast, Expr::unknown(span_from_node(node, ctx.file_id)))
+                });
+            let op = lhs_node
+                .zip(rhs_node)
+                .and_then(|(lhs, rhs)| infix_op_between(lhs, rhs, ctx.source))
+                .unwrap_or_else(|| "+=".to_string());
+            push_expr(
+                ctx.ast,
+                Expr {
+                    kind: ExprKind::Assign { op, lhs, rhs },
+                    span: span_from_node(node, ctx.file_id),
+                    meta: ExprMeta::default(),
+                },
+            )
+        }
+        "binary_expression" => {
+            let lhs_node = node
+                .child_by_field_name("left")
+                .or_else(|| first_ts_expr_child(node));
+            let rhs_node = node
+                .child_by_field_name("right")
+                .or_else(|| second_ts_expr_child(node));
+            let lhs = lhs_node
+                .map(|expr| parse_ts_expr(expr, ctx))
+                .unwrap_or_else(|| {
+                    push_expr(ctx.ast, Expr::unknown(span_from_node(node, ctx.file_id)))
+                });
+            let rhs = rhs_node
+                .map(|expr| parse_ts_expr(expr, ctx))
+                .unwrap_or_else(|| {
+                    push_expr(ctx.ast, Expr::unknown(span_from_node(node, ctx.file_id)))
+                });
             let op = node
                 .child_by_field_name("operator")
                 .and_then(|child| node_text(child, ctx.source))
+                .or_else(|| {
+                    lhs_node
+                        .zip(rhs_node)
+                        .and_then(|(lhs, rhs)| infix_op_between(lhs, rhs, ctx.source))
+                })
                 .unwrap_or_else(|| "?".to_string());
             push_expr(
                 ctx.ast,
@@ -790,7 +971,9 @@ fn parse_ts_expr(node: Node, ctx: &mut TsContext) -> u32 {
                 .or_else(|| node.child_by_field_name("expression"))
                 .or_else(|| first_ts_expr_child(node))
                 .map(|expr| parse_ts_expr(expr, ctx))
-                .unwrap_or_else(|| push_expr(ctx.ast, Expr::unknown(span_from_node(node, ctx.file_id))));
+                .unwrap_or_else(|| {
+                    push_expr(ctx.ast, Expr::unknown(span_from_node(node, ctx.file_id)))
+                });
             let op = node
                 .child_by_field_name("operator")
                 .and_then(|child| node_text(child, ctx.source))
@@ -811,16 +994,16 @@ fn parse_ts_expr(node: Node, ctx: &mut TsContext) -> u32 {
                 .or_else(|| first_ts_expr_child(node));
             let expr = arg_node
                 .map(|expr| parse_ts_expr(expr, ctx))
-                .unwrap_or_else(|| push_expr(ctx.ast, Expr::unknown(span_from_node(node, ctx.file_id))));
+                .unwrap_or_else(|| {
+                    push_expr(ctx.ast, Expr::unknown(span_from_node(node, ctx.file_id)))
+                });
             let op = node
                 .child_by_field_name("operator")
                 .and_then(|child| node_text(child, ctx.source))
                 .unwrap_or_else(|| "++".to_string());
             let prefix = node
                 .child_by_field_name("operator")
-                .and_then(|child| {
-                    arg_node.map(|arg| child.start_byte() < arg.start_byte())
-                })
+                .and_then(|child| arg_node.map(|arg| child.start_byte() < arg.start_byte()))
                 .unwrap_or(true);
             push_expr(
                 ctx.ast,
@@ -836,19 +1019,25 @@ fn parse_ts_expr(node: Node, ctx: &mut TsContext) -> u32 {
                 .child_by_field_name("condition")
                 .or_else(|| first_ts_expr_child(node))
                 .map(|expr| parse_ts_expr(expr, ctx))
-                .unwrap_or_else(|| push_expr(ctx.ast, Expr::unknown(span_from_node(node, ctx.file_id))));
+                .unwrap_or_else(|| {
+                    push_expr(ctx.ast, Expr::unknown(span_from_node(node, ctx.file_id)))
+                });
             let then_expr = node
                 .child_by_field_name("consequence")
                 .or_else(|| node.child_by_field_name("true_expression"))
                 .or_else(|| second_ts_expr_child(node))
                 .map(|expr| parse_ts_expr(expr, ctx))
-                .unwrap_or_else(|| push_expr(ctx.ast, Expr::unknown(span_from_node(node, ctx.file_id))));
+                .unwrap_or_else(|| {
+                    push_expr(ctx.ast, Expr::unknown(span_from_node(node, ctx.file_id)))
+                });
             let else_expr = node
                 .child_by_field_name("alternative")
                 .or_else(|| node.child_by_field_name("false_expression"))
                 .or_else(|| third_ts_expr_child(node))
                 .map(|expr| parse_ts_expr(expr, ctx))
-                .unwrap_or_else(|| push_expr(ctx.ast, Expr::unknown(span_from_node(node, ctx.file_id))));
+                .unwrap_or_else(|| {
+                    push_expr(ctx.ast, Expr::unknown(span_from_node(node, ctx.file_id)))
+                });
             push_expr(
                 ctx.ast,
                 Expr {
@@ -902,7 +1091,10 @@ fn parse_ts_expr(node: Node, ctx: &mut TsContext) -> u32 {
             push_expr(
                 ctx.ast,
                 Expr {
-                    kind: ExprKind::Call { callee: callee_id, args },
+                    kind: ExprKind::Call {
+                        callee: callee_id,
+                        args,
+                    },
                     span: span_from_node(node, ctx.file_id),
                     meta,
                 },
@@ -942,9 +1134,19 @@ fn parse_ts_expr(node: Node, ctx: &mut TsContext) -> u32 {
         }
         "parenthesized_expression" => {
             let inner = first_ts_expr_child(node);
-            inner.map(|expr| parse_ts_expr(expr, ctx)).unwrap_or_else(|| {
-                push_expr(ctx.ast, Expr::unknown(span_from_node(node, ctx.file_id)))
-            })
+            inner
+                .map(|expr| parse_ts_expr(expr, ctx))
+                .unwrap_or_else(|| {
+                    push_expr(ctx.ast, Expr::unknown(span_from_node(node, ctx.file_id)))
+                })
+        }
+        "expression" => {
+            let inner = first_ts_expr_child(node);
+            inner
+                .map(|expr| parse_ts_expr(expr, ctx))
+                .unwrap_or_else(|| {
+                    push_expr(ctx.ast, Expr::unknown(span_from_node(node, ctx.file_id)))
+                })
         }
         _ => push_expr(ctx.ast, Expr::unknown(span_from_node(node, ctx.file_id))),
     }
@@ -1055,7 +1257,9 @@ fn third_ts_expr_child(node: Node) -> Option<Node> {
 fn is_ts_expr_node(kind: &str) -> bool {
     matches!(
         kind,
-        "identifier"
+        "expression"
+            | "augmented_assignment_expression"
+            | "identifier"
             | "number_literal"
             | "integer_literal"
             | "string_literal"
@@ -1154,6 +1358,18 @@ fn node_text(node: Node, source: &[u8]) -> Option<String> {
     node.utf8_text(source).ok().map(|text| text.to_string())
 }
 
+fn infix_op_between(lhs: Node, rhs: Node, source: &[u8]) -> Option<String> {
+    if rhs.start_byte() <= lhs.end_byte() {
+        return None;
+    }
+    let slice = source.get(lhs.end_byte()..rhs.start_byte())?;
+    let text = std::str::from_utf8(slice).ok()?.trim();
+    if text.is_empty() {
+        return None;
+    }
+    Some(text.to_string())
+}
+
 fn span_from_node(node: Node, file_id: u32) -> Span {
     Span {
         file: file_id,
@@ -1181,14 +1397,9 @@ fn parse_top_level_functions(
             continue;
         }
         if is_function_keyword(&tokens[idx]) {
-            if let Some((func_id, end_idx)) = parse_function(
-                tokens,
-                idx,
-                file_id,
-                ast,
-                None,
-                tokens.len(),
-            ) {
+            if let Some((func_id, end_idx)) =
+                parse_function(tokens, idx, file_id, ast, None, tokens.len())
+            {
                 ast.items.push(Item::Function(func_id));
                 idx = end_idx + 1;
                 continue;
@@ -1378,13 +1589,7 @@ fn parse_return_names(tokens: &[Token], start_idx: usize, end_idx: usize) -> Vec
 fn is_param_stopword(value: &str) -> bool {
     matches!(
         value,
-        "memory"
-            | "storage"
-            | "calldata"
-            | "payable"
-            | "indexed"
-            | "returns"
-            | "mapping"
+        "memory" | "storage" | "calldata" | "payable" | "indexed" | "returns" | "mapping"
     )
 }
 
@@ -1481,6 +1686,11 @@ fn parse_body(
             idx = end_idx + 1;
             continue;
         }
+        if let Some((stmt_id, end_idx)) = parse_var_decl_stmt(tokens, idx, file_id, ast, end_idx) {
+            statements.push(stmt_id);
+            idx = end_idx + 1;
+            continue;
+        }
         if let Some((expr_id, end_idx)) = parse_source_expr(tokens, idx, file_id, ast) {
             statements.push(push_stmt(
                 ast,
@@ -1529,6 +1739,7 @@ fn parse_call_expr(
 
     let end_idx = find_matching_paren(tokens, idx)?;
     let (callee_id, chain) = build_member_chain(tokens, ast, file_id, start_idx, &names);
+    let args = parse_call_args(tokens, idx + 1, end_idx.saturating_sub(1), file_id, ast);
     let target = call_target_from_chain(&chain);
     let mut chain_with_call = chain.clone();
     chain_with_call.push(ChainSegment::Call);
@@ -1544,13 +1755,89 @@ fn parse_call_expr(
     let call_expr = Expr {
         kind: ExprKind::Call {
             callee: callee_id,
-            args: Vec::new(),
+            args,
         },
         span: span_for(file_id, tokens[start_idx].start, tokens[end_idx].end),
         meta: call_meta,
     };
     let call_id = push_expr(ast, call_expr);
     Some((call_id, end_idx))
+}
+
+fn parse_call_args(
+    tokens: &[Token],
+    start_idx: usize,
+    end_idx: usize,
+    file_id: u32,
+    ast: &mut NormalizedAst,
+) -> Vec<u32> {
+    if start_idx > end_idx || end_idx >= tokens.len() {
+        return Vec::new();
+    }
+
+    let mut args = Vec::new();
+    let mut segment_start = start_idx;
+    let mut paren_depth = 0i32;
+    let mut bracket_depth = 0i32;
+    let mut brace_depth = 0i32;
+    let mut idx = start_idx;
+
+    while idx <= end_idx {
+        if tokens[idx].is_symbol('(') {
+            paren_depth += 1;
+        } else if tokens[idx].is_symbol(')') {
+            paren_depth -= 1;
+        } else if tokens[idx].is_symbol('[') {
+            bracket_depth += 1;
+        } else if tokens[idx].is_symbol(']') {
+            bracket_depth -= 1;
+        } else if tokens[idx].is_symbol('{') {
+            brace_depth += 1;
+        } else if tokens[idx].is_symbol('}') {
+            brace_depth -= 1;
+        } else if tokens[idx].is_symbol(',')
+            && paren_depth == 0
+            && bracket_depth == 0
+            && brace_depth == 0
+        {
+            if segment_start <= idx.saturating_sub(1) {
+                let arg_end = idx - 1;
+                let arg = parse_expr_in_range(tokens, segment_start, arg_end, file_id, ast)
+                    .map(|(expr_id, _)| expr_id)
+                    .unwrap_or_else(|| {
+                        push_expr(
+                            ast,
+                            Expr::unknown(span_for(
+                                file_id,
+                                tokens[segment_start].start,
+                                tokens[arg_end].end,
+                            )),
+                        )
+                    });
+                args.push(arg);
+            }
+            segment_start = idx + 1;
+        }
+        idx += 1;
+    }
+
+    if segment_start <= end_idx {
+        let arg = parse_expr_in_range(tokens, segment_start, end_idx, file_id, ast)
+            .map(|(expr_id, _)| expr_id)
+            .unwrap_or_else(|| {
+                push_expr(
+                    ast,
+                    Expr::unknown(span_for(
+                        file_id,
+                        tokens[segment_start].start,
+                        tokens[end_idx].end,
+                    )),
+                )
+            });
+        args.push(arg);
+    }
+
+    args
 }
 
 fn parse_return_stmt(
@@ -1568,9 +1855,14 @@ fn parse_return_stmt(
     let expr = if semi == start_idx + 1 {
         None
     } else {
-        let expr_id = parse_simple_expr_in_range(tokens, start_idx + 1, semi - 1, file_id, ast)
+        let expr_id = parse_expr_in_range(tokens, start_idx + 1, semi - 1, file_id, ast)
             .map(|(expr_id, _)| expr_id)
-            .unwrap_or_else(|| push_expr(ast, Expr::unknown(span_for(file_id, token.start, token.end))));
+            .unwrap_or_else(|| {
+                push_expr(
+                    ast,
+                    Expr::unknown(span_for(file_id, token.start, token.end)),
+                )
+            });
         Some(expr_id)
     };
     let span = span_for(file_id, token.start, tokens[semi].end);
@@ -1595,11 +1887,23 @@ fn parse_assignment_expr(
         return None;
     }
     let rhs_expr = if rhs_start == semi {
-        push_expr(ast, Expr::unknown(span_for(file_id, tokens[rhs_start].start, tokens[rhs_start].end)))
+        push_expr(
+            ast,
+            Expr::unknown(span_for(
+                file_id,
+                tokens[rhs_start].start,
+                tokens[rhs_start].end,
+            )),
+        )
     } else {
-        parse_simple_expr_in_range(tokens, rhs_start, semi - 1, file_id, ast)
+        parse_expr_in_range(tokens, rhs_start, semi - 1, file_id, ast)
             .map(|(expr_id, _)| expr_id)
-            .unwrap_or_else(|| push_expr(ast, Expr::unknown(span_for(file_id, tokens[rhs_start].start, tokens[semi].end))))
+            .unwrap_or_else(|| {
+                push_expr(
+                    ast,
+                    Expr::unknown(span_for(file_id, tokens[rhs_start].start, tokens[semi].end)),
+                )
+            })
     };
     let span = span_for(file_id, tokens[start_idx].start, tokens[semi].end);
     let expr_id = push_expr(
@@ -1615,6 +1919,314 @@ fn parse_assignment_expr(
         },
     );
     Some((expr_id, semi))
+}
+
+fn parse_var_decl_stmt(
+    tokens: &[Token],
+    start_idx: usize,
+    file_id: u32,
+    ast: &mut NormalizedAst,
+    limit: usize,
+) -> Option<(u32, usize)> {
+    let token = tokens.get(start_idx)?;
+    if token.is_symbol('{')
+        || token.is_symbol('}')
+        || token.is_symbol(';')
+        || token.is_keyword("return")
+        || token.is_keyword("if")
+        || token.is_keyword("for")
+        || token.is_keyword("while")
+        || token.is_keyword("do")
+        || token.is_keyword("emit")
+    {
+        return None;
+    }
+
+    let semi = find_semicolon(tokens, start_idx, limit)?;
+    if semi <= start_idx {
+        return None;
+    }
+    let assign_idx = find_top_level_assignment_equal(tokens, start_idx, semi - 1);
+    let decl_end = assign_idx
+        .and_then(|idx| idx.checked_sub(1))
+        .unwrap_or(semi - 1);
+    let names = extract_decl_names(tokens, start_idx, decl_end)?;
+
+    let init = assign_idx.and_then(|eq_idx| {
+        let rhs_start = eq_idx + 1;
+        if rhs_start > semi - 1 {
+            return None;
+        }
+        parse_expr_in_range(tokens, rhs_start, semi - 1, file_id, ast).map(|(expr_id, _)| expr_id)
+    });
+
+    let span = span_for(file_id, tokens[start_idx].start, tokens[semi].end);
+    let stmt_id = push_stmt(ast, StmtKind::VarDecl { names, init }, span);
+    Some((stmt_id, semi))
+}
+
+fn find_top_level_assignment_equal(
+    tokens: &[Token],
+    start_idx: usize,
+    end_idx: usize,
+) -> Option<usize> {
+    if start_idx > end_idx || end_idx >= tokens.len() {
+        return None;
+    }
+
+    let mut paren_depth = 0i32;
+    let mut bracket_depth = 0i32;
+    let mut brace_depth = 0i32;
+    let mut idx = start_idx;
+
+    while idx <= end_idx {
+        if tokens[idx].is_symbol('(') {
+            paren_depth += 1;
+            idx += 1;
+            continue;
+        }
+        if tokens[idx].is_symbol(')') {
+            paren_depth -= 1;
+            idx += 1;
+            continue;
+        }
+        if tokens[idx].is_symbol('[') {
+            bracket_depth += 1;
+            idx += 1;
+            continue;
+        }
+        if tokens[idx].is_symbol(']') {
+            bracket_depth -= 1;
+            idx += 1;
+            continue;
+        }
+        if tokens[idx].is_symbol('{') {
+            brace_depth += 1;
+            idx += 1;
+            continue;
+        }
+        if tokens[idx].is_symbol('}') {
+            brace_depth -= 1;
+            idx += 1;
+            continue;
+        }
+
+        if paren_depth == 0 && bracket_depth == 0 && brace_depth == 0 && tokens[idx].is_symbol('=')
+        {
+            if idx < end_idx && tokens[idx + 1].is_symbol('=') {
+                idx += 2;
+                continue;
+            }
+            if idx < end_idx && tokens[idx + 1].is_symbol('>') {
+                idx += 2;
+                continue;
+            }
+            if idx > start_idx
+                && (tokens[idx - 1].is_symbol('=')
+                    || tokens[idx - 1].is_symbol('!')
+                    || tokens[idx - 1].is_symbol('<')
+                    || tokens[idx - 1].is_symbol('>'))
+            {
+                idx += 1;
+                continue;
+            }
+            return Some(idx);
+        }
+        idx += 1;
+    }
+    None
+}
+
+fn extract_decl_names(tokens: &[Token], start_idx: usize, end_idx: usize) -> Option<Vec<String>> {
+    if start_idx > end_idx || end_idx >= tokens.len() {
+        return None;
+    }
+
+    if tokens[start_idx].is_symbol('(') {
+        let close_idx = find_matching_paren(tokens, start_idx)?;
+        if close_idx > end_idx || close_idx == start_idx {
+            return None;
+        }
+        let names = extract_tuple_decl_names(tokens, start_idx + 1, close_idx - 1)?;
+        return Some(names);
+    }
+
+    let segments = split_by_comma_top_level(tokens, start_idx, end_idx);
+    if segments.is_empty() {
+        return None;
+    }
+
+    let mut names = Vec::new();
+    let mut first_segment_idents = 0usize;
+    for (seg_idx, (seg_start, seg_end)) in segments.iter().enumerate() {
+        if seg_start > seg_end {
+            continue;
+        }
+        let idents = collect_decl_identifier_indices(tokens, *seg_start, *seg_end);
+        if seg_idx == 0 {
+            first_segment_idents = idents.len();
+        }
+        let Some(name_idx) = idents.last().copied() else {
+            continue;
+        };
+        if name_idx > *seg_start && tokens[name_idx - 1].is_symbol('.') {
+            continue;
+        }
+        names.push(tokens[name_idx].text.clone());
+    }
+
+    if first_segment_idents < 2 || names.is_empty() {
+        return None;
+    }
+    Some(names)
+}
+
+fn extract_tuple_decl_names(
+    tokens: &[Token],
+    start_idx: usize,
+    end_idx: usize,
+) -> Option<Vec<String>> {
+    if start_idx > end_idx || end_idx >= tokens.len() {
+        return None;
+    }
+
+    let segments = split_by_comma_top_level(tokens, start_idx, end_idx);
+    if segments.is_empty() {
+        return None;
+    }
+
+    let mut names = Vec::new();
+    let mut first_segment_idents = 0usize;
+    for (seg_idx, (seg_start, seg_end)) in segments.iter().enumerate() {
+        if seg_start > seg_end {
+            continue;
+        }
+        let idents = collect_decl_identifier_indices(tokens, *seg_start, *seg_end);
+        if seg_idx == 0 {
+            first_segment_idents = idents.len();
+        }
+        if idents.len() < 2 {
+            continue;
+        }
+        let name_idx = idents.last().copied()?;
+        if name_idx > *seg_start && tokens[name_idx - 1].is_symbol('.') {
+            continue;
+        }
+        names.push(tokens[name_idx].text.clone());
+    }
+
+    if first_segment_idents < 2 || names.is_empty() {
+        return None;
+    }
+    Some(names)
+}
+
+fn split_by_comma_top_level(
+    tokens: &[Token],
+    start_idx: usize,
+    end_idx: usize,
+) -> Vec<(usize, usize)> {
+    if start_idx > end_idx || end_idx >= tokens.len() {
+        return Vec::new();
+    }
+
+    let mut segments = Vec::new();
+    let mut segment_start = start_idx;
+    let mut paren_depth = 0i32;
+    let mut bracket_depth = 0i32;
+    let mut brace_depth = 0i32;
+    let mut idx = start_idx;
+
+    while idx <= end_idx {
+        if tokens[idx].is_symbol('(') {
+            paren_depth += 1;
+        } else if tokens[idx].is_symbol(')') {
+            paren_depth -= 1;
+        } else if tokens[idx].is_symbol('[') {
+            bracket_depth += 1;
+        } else if tokens[idx].is_symbol(']') {
+            bracket_depth -= 1;
+        } else if tokens[idx].is_symbol('{') {
+            brace_depth += 1;
+        } else if tokens[idx].is_symbol('}') {
+            brace_depth -= 1;
+        } else if tokens[idx].is_symbol(',')
+            && paren_depth == 0
+            && bracket_depth == 0
+            && brace_depth == 0
+        {
+            if segment_start <= idx.saturating_sub(1) {
+                segments.push((segment_start, idx - 1));
+            }
+            segment_start = idx + 1;
+        }
+        idx += 1;
+    }
+    if segment_start <= end_idx {
+        segments.push((segment_start, end_idx));
+    }
+    segments
+}
+
+fn collect_decl_identifier_indices(
+    tokens: &[Token],
+    start_idx: usize,
+    end_idx: usize,
+) -> Vec<usize> {
+    if start_idx > end_idx || end_idx >= tokens.len() {
+        return Vec::new();
+    }
+    let mut out = Vec::new();
+    for idx in start_idx..=end_idx {
+        if !tokens[idx].is_ident() {
+            continue;
+        }
+        if is_decl_stopword(tokens[idx].text.as_str()) {
+            continue;
+        }
+        out.push(idx);
+    }
+    out
+}
+
+fn is_decl_stopword(value: &str) -> bool {
+    matches!(
+        value,
+        "memory"
+            | "storage"
+            | "calldata"
+            | "payable"
+            | "indexed"
+            | "returns"
+            | "mapping"
+            | "function"
+            | "constructor"
+            | "fallback"
+            | "receive"
+            | "event"
+            | "error"
+            | "modifier"
+            | "struct"
+            | "enum"
+            | "using"
+            | "public"
+            | "private"
+            | "internal"
+            | "external"
+            | "constant"
+            | "immutable"
+            | "virtual"
+            | "override"
+            | "if"
+            | "for"
+            | "while"
+            | "do"
+            | "return"
+            | "emit"
+            | "new"
+            | "true"
+            | "false"
+    )
 }
 
 fn parse_source_expr(
@@ -1654,19 +2266,93 @@ fn parse_simple_expr_in_range(
     file_id: u32,
     ast: &mut NormalizedAst,
 ) -> Option<(u32, usize)> {
-    if start_idx > end_idx {
+    parse_expr_in_range(tokens, start_idx, end_idx, file_id, ast)
+}
+
+fn parse_expr_in_range(
+    tokens: &[Token],
+    start_idx: usize,
+    end_idx: usize,
+    file_id: u32,
+    ast: &mut NormalizedAst,
+) -> Option<(u32, usize)> {
+    if start_idx > end_idx || end_idx >= tokens.len() {
         return None;
     }
+    let (start_idx, end_idx) = strip_wrapping_parens(tokens, start_idx, end_idx)?;
+
+    if let Some((op_idx, op_len, op)) = find_top_level_binary_operator(tokens, start_idx, end_idx) {
+        let lhs_end = op_idx.checked_sub(1)?;
+        let rhs_start = op_idx + op_len;
+        if rhs_start > end_idx {
+            return None;
+        }
+        let (lhs, lhs_consumed) = parse_expr_in_range(tokens, start_idx, lhs_end, file_id, ast)?;
+        let (rhs, rhs_consumed) = parse_expr_in_range(tokens, rhs_start, end_idx, file_id, ast)?;
+        if lhs_consumed != lhs_end || rhs_consumed != end_idx {
+            return None;
+        }
+        let span = span_for(file_id, tokens[start_idx].start, tokens[end_idx].end);
+        let expr_id = push_expr(
+            ast,
+            Expr {
+                kind: ExprKind::Binary { op, lhs, rhs },
+                span,
+                meta: ExprMeta::default(),
+            },
+        );
+        return Some((expr_id, end_idx));
+    }
+
+    if start_idx < end_idx {
+        let token = tokens.get(start_idx)?;
+        if matches!(token.text.as_str(), "!" | "+" | "-") {
+            let (expr, consumed) =
+                parse_expr_in_range(tokens, start_idx + 1, end_idx, file_id, ast)?;
+            if consumed != end_idx {
+                return None;
+            }
+            let span = span_for(file_id, tokens[start_idx].start, tokens[end_idx].end);
+            let expr_id = push_expr(
+                ast,
+                Expr {
+                    kind: ExprKind::Unary {
+                        op: token.text.clone(),
+                        expr,
+                        prefix: true,
+                    },
+                    span,
+                    meta: ExprMeta::default(),
+                },
+            );
+            return Some((expr_id, end_idx));
+        }
+    }
+
+    parse_atom_expr_in_range(tokens, start_idx, end_idx, file_id, ast)
+}
+
+fn parse_atom_expr_in_range(
+    tokens: &[Token],
+    start_idx: usize,
+    end_idx: usize,
+    file_id: u32,
+    ast: &mut NormalizedAst,
+) -> Option<(u32, usize)> {
     if let Some((expr_id, end_idx_expr)) = parse_call_expr(tokens, start_idx, file_id, ast) {
-        if end_idx_expr <= end_idx {
+        if end_idx_expr == end_idx {
             return Some((expr_id, end_idx_expr));
         }
     }
-    if let Some((expr_id, end_idx_expr)) = parse_chain_expr(tokens, start_idx, file_id, ast, end_idx + 1)
+    if let Some((expr_id, end_idx_expr)) =
+        parse_chain_expr(tokens, start_idx, file_id, ast, end_idx + 1)
     {
-        if end_idx_expr <= end_idx {
+        if end_idx_expr == end_idx {
             return Some((expr_id, end_idx_expr));
         }
+    }
+    if start_idx != end_idx {
+        return None;
     }
     let token = tokens.get(start_idx)?;
     if token.is_number() {
@@ -1701,6 +2387,142 @@ fn parse_simple_expr_in_range(
         return Some((expr_id, start_idx));
     }
     None
+}
+
+fn strip_wrapping_parens(
+    tokens: &[Token],
+    mut start_idx: usize,
+    mut end_idx: usize,
+) -> Option<(usize, usize)> {
+    loop {
+        if start_idx > end_idx || end_idx >= tokens.len() {
+            return None;
+        }
+        if !tokens[start_idx].is_symbol('(') || !tokens[end_idx].is_symbol(')') {
+            return Some((start_idx, end_idx));
+        }
+        let close_idx = find_matching_paren(tokens, start_idx)?;
+        if close_idx != end_idx {
+            return Some((start_idx, end_idx));
+        }
+        if start_idx + 1 > end_idx {
+            return None;
+        }
+        start_idx += 1;
+        end_idx = end_idx.saturating_sub(1);
+    }
+}
+
+fn find_top_level_binary_operator(
+    tokens: &[Token],
+    start_idx: usize,
+    end_idx: usize,
+) -> Option<(usize, usize, String)> {
+    let mut paren_depth = 0i32;
+    let mut bracket_depth = 0i32;
+    let mut brace_depth = 0i32;
+    let mut best: Option<(u8, usize, usize, String)> = None;
+
+    let mut idx = start_idx;
+    while idx <= end_idx {
+        if tokens[idx].is_symbol('(') {
+            paren_depth += 1;
+            idx += 1;
+            continue;
+        }
+        if tokens[idx].is_symbol(')') {
+            paren_depth -= 1;
+            idx += 1;
+            continue;
+        }
+        if tokens[idx].is_symbol('[') {
+            bracket_depth += 1;
+            idx += 1;
+            continue;
+        }
+        if tokens[idx].is_symbol(']') {
+            bracket_depth -= 1;
+            idx += 1;
+            continue;
+        }
+        if tokens[idx].is_symbol('{') {
+            brace_depth += 1;
+            idx += 1;
+            continue;
+        }
+        if tokens[idx].is_symbol('}') {
+            brace_depth -= 1;
+            idx += 1;
+            continue;
+        }
+
+        if paren_depth == 0 && bracket_depth == 0 && brace_depth == 0 {
+            if let Some((op, len, prec)) = binary_operator_at(tokens, idx, end_idx) {
+                if idx > start_idx && idx + len - 1 < end_idx {
+                    let replace = match best {
+                        None => true,
+                        Some((best_prec, best_idx, _, _)) => {
+                            prec < best_prec || (prec == best_prec && idx >= best_idx)
+                        }
+                    };
+                    if replace {
+                        best = Some((prec, idx, len, op));
+                    }
+                }
+                idx += len;
+                continue;
+            }
+        }
+        idx += 1;
+    }
+
+    best.map(|(_, idx, len, op)| (idx, len, op))
+}
+
+fn binary_operator_at(tokens: &[Token], idx: usize, end_idx: usize) -> Option<(String, usize, u8)> {
+    let curr = tokens.get(idx)?.text.as_str();
+    let next = tokens.get(idx + 1).map(|t| t.text.as_str());
+
+    if idx < end_idx {
+        if curr == "|" && next == Some("|") {
+            return Some(("||".to_string(), 2, 1));
+        }
+        if curr == "&" && next == Some("&") {
+            return Some(("&&".to_string(), 2, 2));
+        }
+        if curr == "=" && next == Some("=") {
+            return Some(("==".to_string(), 2, 3));
+        }
+        if curr == "!" && next == Some("=") {
+            return Some(("!=".to_string(), 2, 3));
+        }
+        if curr == "<" && next == Some("=") {
+            return Some(("<=".to_string(), 2, 4));
+        }
+        if curr == ">" && next == Some("=") {
+            return Some((">=".to_string(), 2, 4));
+        }
+        if curr == "<" && next == Some("<") {
+            return Some(("<<".to_string(), 2, 8));
+        }
+        if curr == ">" && next == Some(">") {
+            return Some((">>".to_string(), 2, 8));
+        }
+    }
+
+    match curr {
+        "|" => Some(("|".to_string(), 1, 5)),
+        "^" => Some(("^".to_string(), 1, 6)),
+        "&" => Some(("&".to_string(), 1, 7)),
+        "<" => Some(("<".to_string(), 1, 4)),
+        ">" => Some((">".to_string(), 1, 4)),
+        "+" => Some(("+".to_string(), 1, 9)),
+        "-" => Some(("-".to_string(), 1, 9)),
+        "*" => Some(("*".to_string(), 1, 10)),
+        "/" => Some(("/".to_string(), 1, 10)),
+        "%" => Some(("%".to_string(), 1, 10)),
+        _ => None,
+    }
 }
 
 fn parse_chain_expr(
@@ -1776,7 +2598,10 @@ fn parse_chain_expr(
             expr_id = push_expr(
                 ast,
                 Expr {
-                    kind: ExprKind::Index { base: expr_id, index },
+                    kind: ExprKind::Index {
+                        base: expr_id,
+                        index,
+                    },
                     span,
                     meta: ExprMeta {
                         chain: Some(chain.clone()),
@@ -1793,7 +2618,11 @@ fn parse_chain_expr(
     Some((expr_id, idx))
 }
 
-fn parse_assignment_operator(tokens: &[Token], idx: usize, limit: usize) -> Option<(String, usize)> {
+fn parse_assignment_operator(
+    tokens: &[Token],
+    idx: usize,
+    limit: usize,
+) -> Option<(String, usize)> {
     let token = tokens.get(idx)?;
     if token.is_symbol('=') {
         if idx + 1 < limit && tokens[idx + 1].is_symbol('=') {
@@ -1801,10 +2630,18 @@ fn parse_assignment_operator(tokens: &[Token], idx: usize, limit: usize) -> Opti
         }
         return Some(("=".to_string(), idx + 1));
     }
-    if idx + 2 < limit && token.is_symbol('<') && tokens[idx + 1].is_symbol('<') && tokens[idx + 2].is_symbol('=') {
+    if idx + 2 < limit
+        && token.is_symbol('<')
+        && tokens[idx + 1].is_symbol('<')
+        && tokens[idx + 2].is_symbol('=')
+    {
         return Some(("<<=".to_string(), idx + 3));
     }
-    if idx + 2 < limit && token.is_symbol('>') && tokens[idx + 1].is_symbol('>') && tokens[idx + 2].is_symbol('=') {
+    if idx + 2 < limit
+        && token.is_symbol('>')
+        && tokens[idx + 1].is_symbol('>')
+        && tokens[idx + 2].is_symbol('=')
+    {
         return Some((">>=".to_string(), idx + 3));
     }
     if idx + 1 < limit && tokens[idx + 1].is_symbol('=') {
@@ -1902,6 +2739,26 @@ fn push_contract(ast: &mut NormalizedAst, name: String, kind: ContractKind, span
         span,
     });
     ast.items.push(Item::Contract(id));
+    id
+}
+
+fn push_state_var(ast: &mut NormalizedAst, contract_id: u32, name: String, span: Span) -> u32 {
+    let id = ast.state_vars.len() as u32;
+    ast.state_vars.push(crate::norm::StateVariable {
+        id,
+        contract: contract_id,
+        name,
+        visibility: Visibility::Unknown,
+        mutability: Mutability::Unknown,
+        constant: false,
+        immutable: false,
+        type_string: None,
+        span,
+    });
+    ast.items.push(Item::StateVar(id));
+    if let Some(contract) = ast.contracts.get_mut(contract_id as usize) {
+        contract.state_vars.push(id);
+    }
     id
 }
 
@@ -2104,7 +2961,8 @@ fn tokenize(source: &str) -> Vec<Token> {
                     idx += 1;
                     continue;
                 }
-                if next == '.' && idx + 1 < bytes.len() && (bytes[idx + 1] as char).is_ascii_digit() {
+                if next == '.' && idx + 1 < bytes.len() && (bytes[idx + 1] as char).is_ascii_digit()
+                {
                     idx += 1;
                     continue;
                 }
@@ -2223,6 +3081,241 @@ fn is_keyword(value: &str) -> bool {
             | "emit"
             | "new"
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parse_tree_sitter(source: &str) -> NormalizedAst {
+        let file = SourceFile {
+            id: 0,
+            path: "test.sol".to_string(),
+            source: source.to_string(),
+        };
+        let mut ast = NormalizedAst::from_sources(vec![file.clone()]);
+        let parsed = parse_file_tree_sitter(&file, &mut ast);
+        assert!(parsed, "tree-sitter parser should parse the source");
+        ast
+    }
+
+    fn parse_legacy(source: &str) -> NormalizedAst {
+        let file = SourceFile {
+            id: 0,
+            path: "test.sol".to_string(),
+            source: source.to_string(),
+        };
+        let mut ast = NormalizedAst::from_sources(vec![file.clone()]);
+        parse_file_legacy(&file, &mut ast);
+        ast
+    }
+
+    fn contains_block_timestamp(ast: &NormalizedAst, expr_id: u32) -> bool {
+        let Some(expr) = ast.expressions.get(expr_id as usize) else {
+            return false;
+        };
+        if let Some(chain) = expr.meta.chain.as_deref() {
+            if chain.len() == 2 {
+                if let (ChainSegment::Ident(base), ChainSegment::Member(member)) =
+                    (&chain[0], &chain[1])
+                {
+                    if base == "block" && member == "timestamp" {
+                        return true;
+                    }
+                }
+            }
+        }
+        match &expr.kind {
+            ExprKind::Member { base, field } => {
+                if field == "timestamp" {
+                    if let Some(base_expr) = ast.expressions.get(*base as usize) {
+                        if matches!(&base_expr.kind, ExprKind::Ident(name) if name == "block") {
+                            return true;
+                        }
+                    }
+                }
+                contains_block_timestamp(ast, *base)
+            }
+            ExprKind::Binary { lhs, rhs, .. } => {
+                contains_block_timestamp(ast, *lhs) || contains_block_timestamp(ast, *rhs)
+            }
+            ExprKind::Unary { expr, .. } => contains_block_timestamp(ast, *expr),
+            ExprKind::Call { callee, args } => {
+                contains_block_timestamp(ast, *callee)
+                    || args.iter().any(|arg| contains_block_timestamp(ast, *arg))
+            }
+            ExprKind::Index { base, index } => {
+                contains_block_timestamp(ast, *base)
+                    || index.map_or(false, |idx| contains_block_timestamp(ast, idx))
+            }
+            ExprKind::Assign { lhs, rhs, .. } => {
+                contains_block_timestamp(ast, *lhs) || contains_block_timestamp(ast, *rhs)
+            }
+            _ => false,
+        }
+    }
+
+    #[test]
+    fn legacy_parser_preserves_require_condition_args() {
+        let src = r#"
+            contract C {
+                function f(uint deadline) public {
+                    require(deadline > block.timestamp, "late");
+                }
+            }
+        "#;
+        let ast = parse_legacy(src);
+        let function = ast
+            .functions
+            .iter()
+            .find(|func| func.name.as_deref() == Some("f"))
+            .expect("function f");
+        let body = function.body.expect("function body");
+        let body_stmt = ast.statements.get(body as usize).expect("body statement");
+        let StmtKind::Block(stmts) = &body_stmt.kind else {
+            panic!("expected block body");
+        };
+
+        let mut found_require_with_timestamp = false;
+        for stmt_id in stmts {
+            let Some(stmt) = ast.statements.get(*stmt_id as usize) else {
+                continue;
+            };
+            let StmtKind::Expr(expr_id) = stmt.kind else {
+                continue;
+            };
+            let Some(expr) = ast.expressions.get(expr_id as usize) else {
+                continue;
+            };
+            let ExprKind::Call { callee, args } = &expr.kind else {
+                continue;
+            };
+            let Some(callee_expr) = ast.expressions.get(*callee as usize) else {
+                continue;
+            };
+            if !matches!(&callee_expr.kind, ExprKind::Ident(name) if name == "require") {
+                continue;
+            }
+            if args.iter().any(|arg| contains_block_timestamp(&ast, *arg)) {
+                found_require_with_timestamp = true;
+                break;
+            }
+        }
+
+        assert!(
+            found_require_with_timestamp,
+            "require(...) args should keep timestamp expression"
+        );
+    }
+
+    #[test]
+    fn legacy_parser_keeps_state_and_local_declarations() {
+        let src = r#"
+            contract C {
+                uint owner;
+                function f() public {
+                    uint owner = 1;
+                }
+            }
+        "#;
+        let ast = parse_legacy(src);
+        assert!(
+            ast.state_vars.iter().any(|var| var.name == "owner"),
+            "state variable should be present for shadowing checks"
+        );
+
+        let function = ast
+            .functions
+            .iter()
+            .find(|func| func.name.as_deref() == Some("f"))
+            .expect("function f");
+        let body = function.body.expect("function body");
+        let body_stmt = ast.statements.get(body as usize).expect("body statement");
+        let StmtKind::Block(stmts) = &body_stmt.kind else {
+            panic!("expected block body");
+        };
+        let has_local_owner_decl = stmts.iter().any(|stmt_id| {
+            ast.statements
+                .get(*stmt_id as usize)
+                .map(|stmt| match &stmt.kind {
+                    StmtKind::VarDecl { names, .. } => names.iter().any(|name| name == "owner"),
+                    _ => false,
+                })
+                .unwrap_or(false)
+        });
+        assert!(
+            has_local_owner_decl,
+            "local var declaration should be present for shadowing checks"
+        );
+    }
+
+    #[test]
+    fn tree_sitter_parser_preserves_parenthesized_return_binary_nesting() {
+        let src = r#"
+            contract C {
+                function f(uint256 amount, uint256 parts, uint256 factor) public pure returns (uint256) {
+                    return (amount / parts) * factor;
+                }
+            }
+        "#;
+        let ast = parse_tree_sitter(src);
+        let function = ast
+            .functions
+            .iter()
+            .find(|func| func.name.as_deref() == Some("f"))
+            .expect("function f");
+        let body = function.body.expect("function body");
+        let body_stmt = ast.statements.get(body as usize).expect("body statement");
+        let StmtKind::Block(stmts) = &body_stmt.kind else {
+            panic!("expected block body");
+        };
+        let return_stmt_id = stmts
+            .iter()
+            .find_map(|stmt_id| {
+                let stmt = ast.statements.get(*stmt_id as usize)?;
+                if matches!(stmt.kind, StmtKind::Return(_)) {
+                    Some(*stmt_id)
+                } else {
+                    None
+                }
+            })
+            .expect("return statement");
+        let return_stmt = ast
+            .statements
+            .get(return_stmt_id as usize)
+            .expect("return statement node");
+        let StmtKind::Return(Some(expr_id)) = return_stmt.kind else {
+            panic!("expected return expression");
+        };
+
+        let top_expr = ast
+            .expressions
+            .get(expr_id as usize)
+            .expect("top-level return expression");
+        let (top_lhs, top_rhs) = match &top_expr.kind {
+            ExprKind::Binary { op, lhs, rhs } => {
+                assert_eq!(op, "*", "top-level return expression should be multiplication");
+                (*lhs, *rhs)
+            }
+            _ => panic!("expected binary expression at return top-level"),
+        };
+
+        let lhs_expr = ast.expressions.get(top_lhs as usize).expect("lhs expression");
+        match &lhs_expr.kind {
+            ExprKind::Binary { op, .. } => {
+                assert_eq!(op, "/", "lhs should preserve nested division expression");
+            }
+            _ => panic!("expected nested binary expression on multiplication lhs"),
+        }
+
+        let rhs_expr = ast.expressions.get(top_rhs as usize).expect("rhs expression");
+        match &rhs_expr.kind {
+            ExprKind::Ident(name) => {
+                assert_eq!(name, "factor");
+            }
+            _ => panic!("expected identifier rhs for multiplication"),
+        }
+    }
 }
 
 trait UnknownExpr {

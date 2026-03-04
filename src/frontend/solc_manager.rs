@@ -62,9 +62,7 @@ impl SolcManager {
     }
 
     fn ensure_solc(&self, version: &SolcVersion, list: &SolcList) -> Result<PathBuf> {
-        let bin_dir = self
-            .cache_dir
-            .join(format!("solc-v{version}"));
+        let bin_dir = self.cache_dir.join(format!("solc-v{version}"));
         let bin_path = bin_dir.join(self.platform.exe_name());
         if bin_path.exists() {
             return Ok(bin_path);
@@ -82,7 +80,12 @@ impl SolcManager {
             .releases
             .get(&version.to_string())
             .ok_or_else(|| Error::msg("solc release not found in list"))?;
-        Ok(format!("{}/{}/{}", SOLC_LIST_BASE, self.platform.as_str(), filename))
+        Ok(format!(
+            "{}/{}/{}",
+            SOLC_LIST_BASE,
+            self.platform.as_str(),
+            filename
+        ))
     }
 
     fn load_list(&self) -> Result<SolcList> {
@@ -181,7 +184,11 @@ impl SolcVersion {
             None => 0,
         };
 
-        Some(Self { major, minor, patch })
+        Some(Self {
+            major,
+            minor,
+            patch,
+        })
     }
 }
 
@@ -382,10 +389,7 @@ fn tilde_upper_bound(version: &SolcVersion) -> SolcVersion {
 }
 
 fn parse_part(input: &str) -> Option<u64> {
-    let len = input
-        .bytes()
-        .take_while(|b| b.is_ascii_digit())
-        .count();
+    let len = input.bytes().take_while(|b| b.is_ascii_digit()).count();
     if len == 0 {
         return None;
     }
@@ -393,9 +397,7 @@ fn parse_part(input: &str) -> Option<u64> {
 }
 
 fn parse_version_token(token: &str) -> Option<SolcVersion> {
-    let start = token
-        .bytes()
-        .position(|b| b.is_ascii_digit())?;
+    let start = token.bytes().position(|b| b.is_ascii_digit())?;
     let mut end = start;
     for (idx, b) in token.bytes().enumerate().skip(start) {
         if !(b.is_ascii_digit() || b == b'.') {

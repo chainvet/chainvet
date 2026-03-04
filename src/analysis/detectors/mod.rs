@@ -56,7 +56,11 @@ impl Severity {
 
 use crate::analysis::taint::TaintSummary;
 
-pub fn run_detectors(ast: &NormalizedAst, call_graph: &CallGraph, taint_summaries: &[TaintSummary]) -> Vec<Finding> {
+pub fn run_detectors(
+    ast: &NormalizedAst,
+    call_graph: &CallGraph,
+    taint_summaries: &[TaintSummary],
+) -> Vec<Finding> {
     let mut findings = Vec::new();
     findings.extend(detect_tx_origin(ast));
     findings.extend(detect_delegatecall(call_graph));
@@ -234,10 +238,7 @@ fn walk_expr(ast: &NormalizedAst, expr_id: u32, function_id: u32, findings: &mut
             walk_expr(ast, *then_expr, function_id, findings);
             walk_expr(ast, *else_expr, function_id, findings);
         }
-        ExprKind::Literal(_)
-        | ExprKind::Ident(_)
-        | ExprKind::New { .. }
-        | ExprKind::Unknown => {}
+        ExprKind::Literal(_) | ExprKind::Ident(_) | ExprKind::New { .. } | ExprKind::Unknown => {}
     }
 }
 
@@ -245,18 +246,20 @@ fn is_tx_origin(ast: &NormalizedAst, expr: &crate::norm::Expr) -> bool {
     // Check chain
     if let Some(chain) = expr.meta.chain.as_deref() {
         if chain.len() == 2 {
-            if let (ChainSegment::Ident(first), ChainSegment::Member(second)) = (&chain[0], &chain[1]) {
+            if let (ChainSegment::Ident(first), ChainSegment::Member(second)) =
+                (&chain[0], &chain[1])
+            {
                 if first == "tx" && second == "origin" {
                     return true;
                 }
             }
         }
     }
-    
+
     // Check Member access struct
     if let ExprKind::Member { base, field } = &expr.kind {
         if field == "origin" {
-             if let Some(base_expr) = ast.expressions.get(*base as usize) {
+            if let Some(base_expr) = ast.expressions.get(*base as usize) {
                 if let ExprKind::Ident(base_name) = &base_expr.kind {
                     if base_name == "tx" {
                         return true;
@@ -265,7 +268,7 @@ fn is_tx_origin(ast: &NormalizedAst, expr: &crate::norm::Expr) -> bool {
             }
         }
     }
-    
+
     false
 }
 
@@ -330,9 +333,7 @@ fn walk_stmt_for_unchecked(
             }
         }
         StmtKind::If {
-            then_id,
-            else_id,
-            ..
+            then_id, else_id, ..
         } => {
             walk_stmt_for_unchecked(ast, *then_id, function_id, findings);
             if let Some(else_id) = else_id {
@@ -376,9 +377,7 @@ fn low_level_call_name(ast: &NormalizedAst, expr_id: u32) -> Option<String> {
     };
 
     match name {
-        "call" | "delegatecall" | "callcode" | "staticcall" | "send" => {
-            Some(name.to_string())
-        }
+        "call" | "delegatecall" | "callcode" | "staticcall" | "send" => Some(name.to_string()),
         _ => None,
     }
 }
@@ -427,7 +426,11 @@ fn check_timestamp_in_stmt(
     };
 
     match &stmt.kind {
-        StmtKind::If { cond, then_id, else_id } => {
+        StmtKind::If {
+            cond,
+            then_id,
+            else_id,
+        } => {
             if contains_timestamp(ast, *cond) {
                 findings.push(Finding {
                     kind: FindingKind::TimestampDependency,
@@ -465,8 +468,11 @@ fn check_timestamp_in_stmt(
                 });
             }
         }
-        StmtKind::VarDecl { init: Some(init_id), .. } => {
-             if contains_timestamp(ast, *init_id) {
+        StmtKind::VarDecl {
+            init: Some(init_id),
+            ..
+        } => {
+            if contains_timestamp(ast, *init_id) {
                 findings.push(Finding {
                     kind: FindingKind::TimestampDependency,
                     severity: Severity::Low,
@@ -485,25 +491,30 @@ fn check_timestamp_in_stmt(
     }
 }
 
-
-
 fn detect_shadowing(ast: &NormalizedAst) -> Vec<Finding> {
     let mut findings = Vec::new();
-    
+
     for func in &ast.functions {
         if let Some(body) = func.body {
             let mut local_vars = std::collections::HashSet::new();
-            
+
             // Add function parameters to scope
             for param_name in &func.params {
                 local_vars.insert(param_name.clone());
             }
-            
+
             // Check for shadowing in function body
-            check_shadowing_in_stmt(ast, body, func.id, func.contract, &mut local_vars, &mut findings);
+            check_shadowing_in_stmt(
+                ast,
+                body,
+                func.id,
+                func.contract,
+                &mut local_vars,
+                &mut findings,
+            );
         }
     }
-    
+
     findings
 }
 
@@ -532,7 +543,7 @@ fn check_shadowing_in_stmt(
                         function: Some(function_id),
                     });
                 }
-                
+
                 // Check if shadows state variable
                 if let Some(cid) = contract_id {
                     for state_var in &ast.state_vars {
@@ -547,19 +558,42 @@ fn check_shadowing_in_stmt(
                         }
                     }
                 }
-                
+
                 local_vars.insert(name.clone());
             }
         }
         StmtKind::Block(stmts) => {
             for child in stmts {
-                check_shadowing_in_stmt(ast, *child, function_id, contract_id, local_vars, findings);
+                check_shadowing_in_stmt(
+                    ast,
+                    *child,
+                    function_id,
+                    contract_id,
+                    local_vars,
+                    findings,
+                );
             }
         }
-        StmtKind::If { then_id, else_id, .. } => {
-            check_shadowing_in_stmt(ast, *then_id, function_id, contract_id, local_vars, findings);
+        StmtKind::If {
+            then_id, else_id, ..
+        } => {
+            check_shadowing_in_stmt(
+                ast,
+                *then_id,
+                function_id,
+                contract_id,
+                local_vars,
+                findings,
+            );
             if let Some(else_id) = else_id {
-                check_shadowing_in_stmt(ast, *else_id, function_id, contract_id, local_vars, findings);
+                check_shadowing_in_stmt(
+                    ast,
+                    *else_id,
+                    function_id,
+                    contract_id,
+                    local_vars,
+                    findings,
+                );
             }
         }
         StmtKind::While { body, .. } | StmtKind::DoWhile { body, .. } => {
@@ -577,13 +611,13 @@ fn check_shadowing_in_stmt(
 
 fn detect_reentrancy(ast: &NormalizedAst) -> Vec<Finding> {
     let mut findings = Vec::new();
-    
+
     for func in &ast.functions {
         if let Some(body) = func.body {
             check_reentrancy_in_stmt(ast, body, func.id, &mut findings);
         }
     }
-    
+
     findings
 }
 
@@ -604,7 +638,7 @@ fn check_reentrancy_in_stmt(
             let Some(current_stmt) = ast.statements.get(stmt_id as usize) else {
                 continue;
             };
-            
+
             // Check if this statement contains an external call
             if contains_external_call(ast, current_stmt) {
                 // Look ahead for state updates within next 5 statements
@@ -613,12 +647,13 @@ fn check_reentrancy_in_stmt(
                     let Some(next_stmt) = ast.statements.get(next_stmt_id as usize) else {
                         continue;
                     };
-                    
+
                     if contains_state_update(ast, next_stmt) {
                         findings.push(Finding {
                             kind: FindingKind::Reentrancy,
                             severity: Severity::High,
-                            message: "potential reentrancy: state update after external call".to_string(),
+                            message: "potential reentrancy: state update after external call"
+                                .to_string(),
                             span: current_stmt.span,
                             function: Some(function_id),
                         });
@@ -626,14 +661,16 @@ fn check_reentrancy_in_stmt(
                     }
                 }
             }
-            
+
             // Recursively check nested blocks
             check_reentrancy_in_stmt(ast, stmt_id, function_id, findings);
         }
     } else {
         // Check other statement types that might contain blocks
         match &stmt.kind {
-            StmtKind::If { then_id, else_id, .. } => {
+            StmtKind::If {
+                then_id, else_id, ..
+            } => {
                 check_reentrancy_in_stmt(ast, *then_id, function_id, findings);
                 if let Some(else_id) = else_id {
                     check_reentrancy_in_stmt(ast, *else_id, function_id, findings);
@@ -665,14 +702,16 @@ fn contains_timestamp(ast: &NormalizedAst, expr_id: u32) -> bool {
     // Check for block.timestamp via Chain
     if let Some(chain) = expr.meta.chain.as_deref() {
         if chain.len() == 2 {
-            if let (ChainSegment::Ident(base), ChainSegment::Member(member)) = (&chain[0], &chain[1]) {
+            if let (ChainSegment::Ident(base), ChainSegment::Member(member)) =
+                (&chain[0], &chain[1])
+            {
                 if base == "block" && member == "timestamp" {
                     return true;
                 }
             }
         }
     }
-    
+
     // Check for block.timestamp via Member access
     if let ExprKind::Member { base, field } = &expr.kind {
         if field == "timestamp" {
@@ -698,9 +737,12 @@ fn contains_timestamp(ast: &NormalizedAst, expr_id: u32) -> bool {
             contains_timestamp(ast, *callee) || args.iter().any(|arg| contains_timestamp(ast, *arg))
         }
         ExprKind::CallOptions { callee, options } => {
-            contains_timestamp(ast, *callee) || options.iter().any(|opt| match opt {
-                crate::norm::CallOption::Value(e) | crate::norm::CallOption::Gas(e) | crate::norm::CallOption::Salt(e) => contains_timestamp(ast, *e),
-            })
+            contains_timestamp(ast, *callee)
+                || options.iter().any(|opt| match opt {
+                    crate::norm::CallOption::Value(e)
+                    | crate::norm::CallOption::Gas(e)
+                    | crate::norm::CallOption::Salt(e) => contains_timestamp(ast, *e),
+                })
         }
         ExprKind::Assign { lhs, rhs, .. } => {
             contains_timestamp(ast, *lhs) || contains_timestamp(ast, *rhs)
@@ -708,8 +750,14 @@ fn contains_timestamp(ast: &NormalizedAst, expr_id: u32) -> bool {
         ExprKind::Index { base, index } => {
             contains_timestamp(ast, *base) || index.map_or(false, |i| contains_timestamp(ast, i))
         }
-        ExprKind::Conditional { cond, then_expr, else_expr } => {
-            contains_timestamp(ast, *cond) || contains_timestamp(ast, *then_expr) || contains_timestamp(ast, *else_expr)
+        ExprKind::Conditional {
+            cond,
+            then_expr,
+            else_expr,
+        } => {
+            contains_timestamp(ast, *cond)
+                || contains_timestamp(ast, *then_expr)
+                || contains_timestamp(ast, *else_expr)
         }
         _ => false,
     }
@@ -718,7 +766,10 @@ fn contains_timestamp(ast: &NormalizedAst, expr_id: u32) -> bool {
 fn contains_external_call(ast: &NormalizedAst, stmt: &crate::norm::Stmt) -> bool {
     match &stmt.kind {
         StmtKind::Expr(expr_id) => check_expr_for_call(ast, *expr_id),
-        StmtKind::VarDecl { init: Some(expr_id), .. } => check_expr_for_call(ast, *expr_id),
+        StmtKind::VarDecl {
+            init: Some(expr_id),
+            ..
+        } => check_expr_for_call(ast, *expr_id),
         _ => false,
     }
 }
@@ -733,7 +784,7 @@ fn check_expr_for_call(ast: &NormalizedAst, expr_id: u32) -> bool {
                 }
             }
         }
-        
+
         // Check for low-level calls
         if let Some(call) = &expr.meta.call {
             if let crate::norm::CallTarget::Member { name, .. } = &call.target {
