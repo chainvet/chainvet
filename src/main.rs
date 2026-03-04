@@ -24,6 +24,7 @@ fn run() -> Result<()> {
     let mut input = None;
     let mut format = report::OutputFormat::Text;
     let mut dump_ir = None;
+    let mut do_fuzz = false;
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -50,6 +51,7 @@ fn run() -> Result<()> {
                 };
                 dump_ir = Some(ir_format);
             }
+            "--fuzz" | "--fuzzing" => do_fuzz = true,
             _ => {
                 if arg.starts_with('-') {
                     return Err(Error::msg(format!("unknown flag: {arg}")));
@@ -65,7 +67,7 @@ fn run() -> Result<()> {
 
     let Some(input) = input else {
         eprintln!(
-            "usage: static-analyzer <path> [--json|--text|--format <json|text>] [--dump-ir <text|json>]"
+            "usage: static-analyzer <path> [--json|--text|--format <json|text>] [--dump-ir <text|json>] [--fuzz|--fuzzing]"
         );
         return Ok(());
     };
@@ -75,6 +77,11 @@ fn run() -> Result<()> {
         let ir_module = ir::lower_module(&output.ast);
         let payload = ir::dump_module(&ir_module, format);
         println!("{payload}");
+        return Ok(());
+    }
+    if do_fuzz {
+        let config = fuzzing::types::FuzzConfig::default();
+        fuzzing::run_fuzzer(&output.ast, &config);
         return Ok(());
     }
     report::print_report(&output, format)?;

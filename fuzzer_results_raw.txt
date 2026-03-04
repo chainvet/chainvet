@@ -1,0 +1,1037 @@
+﻿===== vuln_reentrancy =====
+=== Fuzzing Report ===
+iterations: 1000, corpus: 980, time: 193ms
+coverage: 10/10 blocks (100.0%)
+findings: 17
+
+  [access-control] 5 finding(s):
+    1. [high] Missing access control: function 9 writes to storage without checking msg.sender
+       Transaction sequence (4 txs):
+         0: fn=6 sender=4 value=0 args=[8365, 159094321619983394289560185387782780675]
+         1: fn=5 sender=4 value=0 args=[1]
+         2: fn=9 sender=3 value=0 args=[1012]
+         3: fn=7 sender=0 value=0 args=[80805553616858053771400441041280519563, 139804094949150993279867315719858491940]
+    2. [high] Missing access control: function 5 writes to storage without checking msg.sender
+       Transaction sequence (4 txs):
+         0: fn=6 sender=4 value=0 args=[8365, 159094321619983394289560185387782780675]
+         1: fn=5 sender=4 value=0 args=[1]
+         2: fn=9 sender=3 value=0 args=[1012]
+         3: fn=7 sender=0 value=0 args=[80805553616858053771400441041280519563, 139804094949150993279867315719858491940]
+    3. [high] Missing access control: function 3 writes to storage without checking msg.sender
+       Transaction sequence (10 txs):
+         0: fn=1 sender=3 value=0 args=[]
+         1: fn=6 sender=3 value=0 args=[716, 255]
+         2: fn=4 sender=3 value=0 args=[11]
+         3: fn=6 sender=1 value=0 args=[3869, 4889]
+         4: fn=3 sender=0 value=629360501248548021 args=[]
+         5: fn=9 sender=3 value=0 args=[334773067542431487487972108230585968428]
+         6: fn=3 sender=2 value=340282366920938463463374607431768211455 args=[]
+         7: fn=7 sender=4 value=0 args=[8315, 8945]
+         8: fn=7 sender=2 value=0 args=[340282366920938463463374607431768211455, 0]
+         9: fn=6 sender=1 value=0 args=[9223372036854775807, 51]
+    4. [high] Missing access control: function 4 writes to storage without checking msg.sender
+       Transaction sequence (10 txs):
+         0: fn=1 sender=3 value=0 args=[]
+         1: fn=6 sender=3 value=0 args=[716, 255]
+         2: fn=4 sender=3 value=0 args=[11]
+         3: fn=6 sender=1 value=0 args=[3869, 4889]
+         4: fn=3 sender=0 value=629360501248548021 args=[]
+         5: fn=9 sender=3 value=0 args=[334773067542431487487972108230585968428]
+         6: fn=3 sender=2 value=340282366920938463463374607431768211455 args=[]
+         7: fn=7 sender=4 value=0 args=[8315, 8945]
+         8: fn=7 sender=2 value=0 args=[340282366920938463463374607431768211455, 0]
+         9: fn=6 sender=1 value=0 args=[9223372036854775807, 51]
+    5. [high] Missing access control: function 0 writes to storage without checking msg.sender
+       Transaction sequence (2 txs):
+         0: fn=0 sender=2 value=0 args=[]
+         1: fn=8 sender=1 value=0 args=[4294967295]
+
+  [reentrancy] 4 finding(s):
+    1. [high] Potential reentrancy: external call with value in function 6 followed by storage write to 'totalDeposited'
+       Transaction sequence (4 txs):
+         0: fn=6 sender=4 value=0 args=[8365, 159094321619983394289560185387782780675]
+         1: fn=5 sender=4 value=0 args=[1]
+         2: fn=9 sender=3 value=0 args=[1012]
+         3: fn=7 sender=0 value=0 args=[80805553616858053771400441041280519563, 139804094949150993279867315719858491940]
+    2. [high] Potential reentrancy: external call with value in function 5 followed by storage write to 'totalDeposited'
+       Transaction sequence (4 txs):
+         0: fn=6 sender=4 value=0 args=[8365, 159094321619983394289560185387782780675]
+         1: fn=5 sender=4 value=0 args=[1]
+         2: fn=9 sender=3 value=0 args=[1012]
+         3: fn=7 sender=0 value=0 args=[80805553616858053771400441041280519563, 139804094949150993279867315719858491940]
+    3. [high] Potential reentrancy: external call with value in function 5 followed by storage write to '__no_sender_check'
+       Transaction sequence (4 txs):
+         0: fn=6 sender=4 value=0 args=[8365, 159094321619983394289560185387782780675]
+         1: fn=5 sender=4 value=0 args=[1]
+         2: fn=9 sender=3 value=0 args=[1012]
+         3: fn=7 sender=0 value=0 args=[80805553616858053771400441041280519563, 139804094949150993279867315719858491940]
+    4. [high] Potential reentrancy: external call with value in function 6 followed by storage write to 'allowances'
+       Transaction sequence (10 txs):
+         0: fn=1 sender=3 value=0 args=[]
+         1: fn=6 sender=3 value=0 args=[716, 255]
+         2: fn=4 sender=3 value=0 args=[11]
+         3: fn=6 sender=1 value=0 args=[3869, 4889]
+         4: fn=3 sender=0 value=629360501248548021 args=[]
+         5: fn=9 sender=3 value=0 args=[334773067542431487487972108230585968428]
+         6: fn=3 sender=2 value=340282366920938463463374607431768211455 args=[]
+         7: fn=7 sender=4 value=0 args=[8315, 8945]
+         8: fn=7 sender=2 value=0 args=[340282366920938463463374607431768211455, 0]
+         9: fn=6 sender=1 value=0 args=[9223372036854775807, 51]
+
+  [exception-disorder] 2 finding(s):
+    1. [medium] Exception disorder: external call to '$t15' in function 6 followed by state change without checking return
+       Transaction sequence (4 txs):
+         0: fn=6 sender=4 value=0 args=[8365, 159094321619983394289560185387782780675]
+         1: fn=5 sender=4 value=0 args=[1]
+         2: fn=9 sender=3 value=0 args=[1012]
+         3: fn=7 sender=0 value=0 args=[80805553616858053771400441041280519563, 139804094949150993279867315719858491940]
+    2. [medium] Exception disorder: external call to '$t14' in function 5 followed by state change without checking return
+       Transaction sequence (4 txs):
+         0: fn=6 sender=4 value=0 args=[8365, 159094321619983394289560185387782780675]
+         1: fn=5 sender=4 value=0 args=[1]
+         2: fn=9 sender=3 value=0 args=[1012]
+         3: fn=7 sender=0 value=0 args=[80805553616858053771400441041280519563, 139804094949150993279867315719858491940]
+
+  [integer-overflow] 6 finding(s):
+    1. [high] Potential integer overflow in function 6: 0 - 159094321619983394289560185387782780675 = 181188045300955069173814422043985430781 (wrapping detected)
+       Transaction sequence (4 txs):
+         0: fn=6 sender=4 value=0 args=[8365, 159094321619983394289560185387782780675]
+         1: fn=5 sender=4 value=0 args=[1]
+         2: fn=9 sender=3 value=0 args=[1012]
+         3: fn=7 sender=0 value=0 args=[80805553616858053771400441041280519563, 139804094949150993279867315719858491940]
+    2. [high] Potential integer overflow in function 5: 0 - 1 = 340282366920938463463374607431768211455 (wrapping detected)
+       Transaction sequence (4 txs):
+         0: fn=6 sender=4 value=0 args=[8365, 159094321619983394289560185387782780675]
+         1: fn=5 sender=4 value=0 args=[1]
+         2: fn=9 sender=3 value=0 args=[1012]
+         3: fn=7 sender=0 value=0 args=[80805553616858053771400441041280519563, 139804094949150993279867315719858491940]
+    3. [high] Potential integer overflow in function 5: 340282366920938463463374607431768211455 + 1 = 0 (wrapping detected)
+       Transaction sequence (4 txs):
+         0: fn=6 sender=4 value=0 args=[8365, 159094321619983394289560185387782780675]
+         1: fn=5 sender=4 value=0 args=[1]
+         2: fn=9 sender=3 value=0 args=[1012]
+         3: fn=7 sender=0 value=0 args=[80805553616858053771400441041280519563, 139804094949150993279867315719858491940]
+    4. [high] Potential integer overflow in function 9: 0 - 1012 = 340282366920938463463374607431768210444 (wrapping detected)
+       Transaction sequence (4 txs):
+         0: fn=6 sender=4 value=0 args=[8365, 159094321619983394289560185387782780675]
+         1: fn=5 sender=4 value=0 args=[1]
+         2: fn=9 sender=3 value=0 args=[1012]
+         3: fn=7 sender=0 value=0 args=[80805553616858053771400441041280519563, 139804094949150993279867315719858491940]
+    5. [high] Potential integer overflow in function 4: 174737484095031267048839701810599480410 * 2 = 9192601269124070634304796189430749364 (wrapping detected)
+       Transaction sequence (8 txs):
+         0: fn=8 sender=2 value=0 args=[50]
+         1: fn=5 sender=3 value=0 args=[4294967295]
+         2: fn=8 sender=3 value=0 args=[9223372036854775807]
+         3: fn=6 sender=2 value=0 args=[4294967295, 6114]
+         4: fn=4 sender=3 value=0 args=[174737484095031267048839701810599480410]
+         5: fn=1 sender=0 value=0 args=[]
+         6: fn=7 sender=0 value=0 args=[0, 340282366920938463463374607431768211454]
+         7: fn=6 sender=0 value=0 args=[2147483647, 2]
+    6. [high] Potential integer overflow in function 4: 340282366920938463463374607431768208591 + 135137125949556093486898039426258912391 = 135137125949556093486898039426258909526 (wrapping detected)
+       Transaction sequence (8 txs):
+         0: fn=5 sender=4 value=0 args=[51]
+         1: fn=3 sender=0 value=188783614150415385 args=[]
+         2: fn=9 sender=4 value=0 args=[2865]
+         3: fn=4 sender=3 value=0 args=[135137125949556093486898039426258912391]
+         4: fn=8 sender=3 value=0 args=[9223372036854775807]
+         5: fn=8 sender=4 value=0 args=[221]
+         6: fn=1 sender=0 value=0 args=[]
+         7: fn=7 sender=0 value=0 args=[2147483647, 9087]
+=== End Report ===
+
+===== vuln_timestamp =====
+=== Fuzzing Report ===
+iterations: 1000, corpus: 981, time: 209ms
+coverage: 27/27 blocks (100.0%)
+findings: 6
+
+  [access-control] 2 finding(s):
+    1. [high] Missing access control: function 1 writes to storage without checking msg.sender
+       Transaction sequence (9 txs):
+         0: fn=5 sender=4 value=0 args=[3564]
+         1: fn=1 sender=4 value=0 args=[]
+         2: fn=6 sender=3 value=0 args=[0]
+         3: fn=3 sender=1 value=0 args=[201267230272356097242182718144743236264, 2]
+         4: fn=4 sender=1 value=0 args=[501]
+         5: fn=7 sender=4 value=0 args=[]
+         6: fn=1 sender=0 value=1 args=[]
+         7: fn=6 sender=3 value=0 args=[1]
+         8: fn=7 sender=2 value=0 args=[]
+    2. [high] Missing access control: function 0 writes to storage without checking msg.sender
+       Transaction sequence (4 txs):
+         0: fn=0 sender=3 value=0 args=[]
+         1: fn=7 sender=1 value=0 args=[]
+         2: fn=3 sender=4 value=0 args=[275684561896436210370281208662547712494, 230408630923092293492175160507645235131]
+         3: fn=4 sender=3 value=0 args=[3601]
+
+  [denial-of-service] 1 finding(s):
+    1. [medium] Potential DoS: unbounded loop in function 7 with storage-dependent condition '$t7'
+       Transaction sequence (9 txs):
+         0: fn=5 sender=4 value=0 args=[3564]
+         1: fn=1 sender=4 value=0 args=[]
+         2: fn=6 sender=3 value=0 args=[0]
+         3: fn=3 sender=1 value=0 args=[201267230272356097242182718144743236264, 2]
+         4: fn=4 sender=1 value=0 args=[501]
+         5: fn=7 sender=4 value=0 args=[]
+         6: fn=1 sender=0 value=1 args=[]
+         7: fn=6 sender=3 value=0 args=[1]
+         8: fn=7 sender=2 value=0 args=[]
+
+  [reentrancy] 2 finding(s):
+    1. [high] Potential reentrancy: external call with value in function 6 followed by storage write to 'lastRandomSeed'
+       Transaction sequence (9 txs):
+         0: fn=5 sender=4 value=0 args=[3564]
+         1: fn=1 sender=4 value=0 args=[]
+         2: fn=6 sender=3 value=0 args=[0]
+         3: fn=3 sender=1 value=0 args=[201267230272356097242182718144743236264, 2]
+         4: fn=4 sender=1 value=0 args=[501]
+         5: fn=7 sender=4 value=0 args=[]
+         6: fn=1 sender=0 value=1 args=[]
+         7: fn=6 sender=3 value=0 args=[1]
+         8: fn=7 sender=2 value=0 args=[]
+    2. [high] Potential reentrancy: external call with value in function 5 followed by storage write to 'treasuryBalance'
+       Transaction sequence (4 txs):
+         0: fn=5 sender=1 value=0 args=[2040]
+         1: fn=1 sender=2 value=73468 args=[]
+         2: fn=5 sender=4 value=0 args=[247818173163697489664356189818143405924]
+         3: fn=4 sender=1 value=0 args=[1]
+
+  [timestamp-dependency] 1 finding(s):
+    1. [medium] Timestamp dependency: block.timestamp used in conditional branch in function 3
+       Transaction sequence (9 txs):
+         0: fn=5 sender=4 value=0 args=[3564]
+         1: fn=1 sender=4 value=0 args=[]
+         2: fn=6 sender=3 value=0 args=[0]
+         3: fn=3 sender=1 value=0 args=[201267230272356097242182718144743236264, 2]
+         4: fn=4 sender=1 value=0 args=[501]
+         5: fn=7 sender=4 value=0 args=[]
+         6: fn=1 sender=0 value=1 args=[]
+         7: fn=6 sender=3 value=0 args=[1]
+         8: fn=7 sender=2 value=0 args=[]
+=== End Report ===
+
+===== vuln_unchecked_call =====
+=== Fuzzing Report ===
+iterations: 1000, corpus: 976, time: 121ms
+coverage: 17/17 blocks (100.0%)
+findings: 4
+
+  [access-control] 1 finding(s):
+    1. [high] Missing access control: function 0 writes to storage without checking msg.sender
+       Transaction sequence (7 txs):
+         0: fn=0 sender=0 value=0 args=[5804, 18446744073709551615]
+         1: fn=4 sender=4 value=0 args=[557]
+         2: fn=2 sender=3 value=0 args=[9423]
+         3: fn=6 sender=3 value=0 args=[0]
+         4: fn=6 sender=4 value=0 args=[1]
+         5: fn=7 sender=1 value=0 args=[7842, 18446744073709551615]
+         6: fn=1 sender=4 value=0 args=[4294967295, 1, 340282366920938463463374607431768211455]
+
+  [unchecked-call] 3 finding(s):
+    1. [medium] Unchecked external call to '$t13' in function 4 ΓÇö return value not verified
+       Transaction sequence (7 txs):
+         0: fn=0 sender=0 value=0 args=[5804, 18446744073709551615]
+         1: fn=4 sender=4 value=0 args=[557]
+         2: fn=2 sender=3 value=0 args=[9423]
+         3: fn=6 sender=3 value=0 args=[0]
+         4: fn=6 sender=4 value=0 args=[1]
+         5: fn=7 sender=1 value=0 args=[7842, 18446744073709551615]
+         6: fn=1 sender=4 value=0 args=[4294967295, 1, 340282366920938463463374607431768211455]
+    2. [medium] Unchecked external call to '$t2' in function 7 ΓÇö return value not verified
+       Transaction sequence (7 txs):
+         0: fn=0 sender=0 value=0 args=[5804, 18446744073709551615]
+         1: fn=4 sender=4 value=0 args=[557]
+         2: fn=2 sender=3 value=0 args=[9423]
+         3: fn=6 sender=3 value=0 args=[0]
+         4: fn=6 sender=4 value=0 args=[1]
+         5: fn=7 sender=1 value=0 args=[7842, 18446744073709551615]
+         6: fn=1 sender=4 value=0 args=[4294967295, 1, 340282366920938463463374607431768211455]
+    3. [medium] Unchecked external call to '$t9' in function 3 ΓÇö return value not verified
+       Transaction sequence (10 txs):
+         0: fn=6 sender=1 value=0 args=[0]
+         1: fn=2 sender=3 value=0 args=[151771833535829134813829636281615161177]
+         2: fn=7 sender=2 value=0 args=[91642918014314384607820181535577583716, 78698054460277979074856693051635628616]
+         3: fn=2 sender=2 value=0 args=[4294967295]
+         4: fn=4 sender=3 value=0 args=[0]
+         5: fn=3 sender=0 value=0 args=[255]
+         6: fn=3 sender=3 value=0 args=[1013]
+         7: fn=3 sender=1 value=0 args=[25]
+         8: fn=1 sender=3 value=0 args=[0, 0, 1]
+         9: fn=3 sender=2 value=0 args=[688]
+=== End Report ===
+
+===== vuln_overflow =====
+=== Fuzzing Report ===
+iterations: 1000, corpus: 978, time: 146ms
+coverage: 14/14 blocks (100.0%)
+findings: 9
+
+  [integer-overflow] 2 finding(s):
+    1. [high] Potential integer overflow in function 7: 3817 * 1828722413368998347268268713727441349 = 174586113410697422255489531662279400013 (wrapping detected)
+       Transaction sequence (8 txs):
+         0: fn=3 sender=0 value=0 args=[0]
+         1: fn=7 sender=2 value=0 args=[3817, 182872241336899834726826871372744134976]
+         2: fn=1 sender=4 value=0 args=[99]
+         3: fn=2 sender=4 value=0 args=[2814]
+         4: fn=5 sender=1 value=0 args=[]
+         5: fn=6 sender=0 value=0 args=[112298865371846165694838768227043131463]
+         6: fn=4 sender=2 value=0 args=[]
+         7: fn=5 sender=1 value=0 args=[]
+    2. [high] Potential integer overflow in function 2: 218419927191398342720415422982985482519 * 7 = 167810022656034545189409531153825531809 (wrapping detected)
+       Transaction sequence (7 txs):
+         0: fn=5 sender=4 value=0 args=[]
+         1: fn=2 sender=3 value=340282366920938463463374607431768211455 args=[218419927191398342720415422982985482519]
+         2: fn=5 sender=3 value=0 args=[]
+         3: fn=1 sender=1 value=0 args=[10000]
+         4: fn=3 sender=2 value=0 args=[8823]
+         5: fn=3 sender=3 value=0 args=[365]
+         6: fn=7 sender=4 value=0 args=[106, 99]
+
+  [access-control] 4 finding(s):
+    1. [high] Missing access control: function 2 writes to storage without checking msg.sender
+       Transaction sequence (2 txs):
+         0: fn=2 sender=1 value=543107 args=[5496]
+         1: fn=2 sender=3 value=0 args=[1]
+    2. [high] Missing access control: function 5 writes to storage without checking msg.sender
+       Transaction sequence (2 txs):
+         0: fn=7 sender=3 value=0 args=[1631, 8556]
+         1: fn=5 sender=1 value=0 args=[]
+    3. [high] Missing access control: function 4 writes to storage without checking msg.sender
+       Transaction sequence (8 txs):
+         0: fn=3 sender=0 value=0 args=[0]
+         1: fn=7 sender=2 value=0 args=[3817, 182872241336899834726826871372744134976]
+         2: fn=1 sender=4 value=0 args=[99]
+         3: fn=2 sender=4 value=0 args=[2814]
+         4: fn=5 sender=1 value=0 args=[]
+         5: fn=6 sender=0 value=0 args=[112298865371846165694838768227043131463]
+         6: fn=4 sender=2 value=0 args=[]
+         7: fn=5 sender=1 value=0 args=[]
+    4. [high] Missing access control: function 0 writes to storage without checking msg.sender
+       Transaction sequence (8 txs):
+         0: fn=0 sender=1 value=0 args=[]
+         1: fn=3 sender=2 value=0 args=[268223706001992334100016761974927447324]
+         2: fn=5 sender=4 value=0 args=[]
+         3: fn=7 sender=2 value=0 args=[2147483647, 9223372036854775807]
+         4: fn=2 sender=4 value=113404424780558640 args=[51]
+         5: fn=5 sender=0 value=0 args=[]
+         6: fn=7 sender=4 value=0 args=[0, 150]
+         7: fn=4 sender=4 value=0 args=[]
+
+  [reentrancy] 3 finding(s):
+    1. [high] Potential reentrancy: external call with value in function 5 followed by storage write to '__no_sender_check'
+       Transaction sequence (2 txs):
+         0: fn=7 sender=3 value=0 args=[1631, 8556]
+         1: fn=5 sender=1 value=0 args=[]
+    2. [high] Potential reentrancy: external call with value in function 5 followed by storage write to 'totalStaked'
+       Transaction sequence (8 txs):
+         0: fn=3 sender=0 value=0 args=[0]
+         1: fn=7 sender=2 value=0 args=[3817, 182872241336899834726826871372744134976]
+         2: fn=1 sender=4 value=0 args=[99]
+         3: fn=2 sender=4 value=0 args=[2814]
+         4: fn=5 sender=1 value=0 args=[]
+         5: fn=6 sender=0 value=0 args=[112298865371846165694838768227043131463]
+         6: fn=4 sender=2 value=0 args=[]
+         7: fn=5 sender=1 value=0 args=[]
+    3. [high] Potential reentrancy: external call with value in function 5 followed by storage write to 'rewardBalances'
+       Transaction sequence (8 txs):
+         0: fn=3 sender=0 value=0 args=[0]
+         1: fn=7 sender=2 value=0 args=[3817, 182872241336899834726826871372744134976]
+         2: fn=1 sender=4 value=0 args=[99]
+         3: fn=2 sender=4 value=0 args=[2814]
+         4: fn=5 sender=1 value=0 args=[]
+         5: fn=6 sender=0 value=0 args=[112298865371846165694838768227043131463]
+         6: fn=4 sender=2 value=0 args=[]
+         7: fn=5 sender=1 value=0 args=[]
+=== End Report ===
+
+===== vuln_access_control =====
+=== Fuzzing Report ===
+iterations: 1000, corpus: 965, time: 114ms
+coverage: 10/10 blocks (100.0%)
+findings: 6
+
+  [access-control] 4 finding(s):
+    1. [high] Missing access control: function 8 writes to storage without checking msg.sender
+       Transaction sequence (4 txs):
+         0: fn=8 sender=1 value=0 args=[864, 1]
+         1: fn=7 sender=2 value=0 args=[1]
+         2: fn=2 sender=0 value=371400628890300292 args=[]
+         3: fn=2 sender=3 value=664579574209133929 args=[]
+    2. [high] Missing access control: function 1 writes to storage without checking msg.sender
+       Transaction sequence (8 txs):
+         0: fn=1 sender=1 value=0 args=[65535]
+         1: fn=8 sender=3 value=0 args=[0, 0]
+         2: fn=4 sender=0 value=0 args=[1]
+         3: fn=7 sender=0 value=0 args=[0]
+         4: fn=3 sender=0 value=0 args=[0]
+         5: fn=4 sender=2 value=0 args=[9223372036854775807]
+         6: fn=4 sender=1 value=0 args=[1]
+         7: fn=3 sender=3 value=0 args=[1]
+    3. [high] Missing access control: function 4 writes to storage without checking msg.sender
+       Transaction sequence (8 txs):
+         0: fn=1 sender=1 value=0 args=[65535]
+         1: fn=8 sender=3 value=0 args=[0, 0]
+         2: fn=4 sender=0 value=0 args=[1]
+         3: fn=7 sender=0 value=0 args=[0]
+         4: fn=3 sender=0 value=0 args=[0]
+         5: fn=4 sender=2 value=0 args=[9223372036854775807]
+         6: fn=4 sender=1 value=0 args=[1]
+         7: fn=3 sender=3 value=0 args=[1]
+    4. [high] Missing access control: function 0 writes to storage without checking msg.sender
+       Transaction sequence (2 txs):
+         0: fn=0 sender=2 value=0 args=[]
+         1: fn=7 sender=1 value=0 args=[293595524686969464188356601340152827141]
+
+  [integer-overflow] 1 finding(s):
+    1. [high] Potential integer overflow in function 6: 0 - 1876 = 340282366920938463463374607431768209580 (wrapping detected)
+       Transaction sequence (8 txs):
+         0: fn=9 sender=2 value=0 args=[1808]
+         1: fn=5 sender=1 value=0 args=[]
+         2: fn=6 sender=0 value=0 args=[1876]
+         3: fn=9 sender=3 value=0 args=[340282366920938463463374607431768211455]
+         4: fn=9 sender=0 value=0 args=[1]
+         5: fn=9 sender=1 value=0 args=[1]
+         6: fn=1 sender=3 value=0 args=[170141183460469231731687303715884105727]
+         7: fn=1 sender=1 value=0 args=[6013]
+
+  [reentrancy] 1 finding(s):
+    1. [high] Potential reentrancy: external call with value in function 6 followed by storage write to 'totalFunds'
+       Transaction sequence (7 txs):
+         0: fn=6 sender=0 value=0 args=[1]
+         1: fn=2 sender=0 value=568469583902616705 args=[]
+         2: fn=6 sender=1 value=0 args=[340282366920938463463374607431768211454]
+         3: fn=5 sender=2 value=0 args=[]
+         4: fn=4 sender=0 value=0 args=[219262585443103485159864515952473837793]
+         5: fn=9 sender=3 value=0 args=[30528543168874751395740439470127230678]
+         6: fn=7 sender=0 value=0 args=[293967378384589306118687534546676479720]
+=== End Report ===
+
+===== vuln_txorigin =====
+=== Fuzzing Report ===
+iterations: 1000, corpus: 979, time: 126ms
+coverage: 11/11 blocks (100.0%)
+findings: 14
+
+  [integer-overflow] 3 finding(s):
+    1. [high] Potential integer overflow in function 4: 0 - 1 = 340282366920938463463374607431768211455 (wrapping detected)
+       Transaction sequence (8 txs):
+         0: fn=0 sender=2 value=0 args=[340282366920938463463374607431768211454]
+         1: fn=3 sender=1 value=0 args=[17766030433084857684332580575562178459, 9, 5657]
+         2: fn=4 sender=1 value=0 args=[8888]
+         3: fn=1 sender=4 value=0 args=[]
+         4: fn=1 sender=1 value=0 args=[]
+         5: fn=5 sender=2 value=0 args=[18446744073709551615, 340282366920938463463374607431768211454]
+         6: fn=6 sender=2 value=0 args=[1179]
+         7: fn=6 sender=4 value=0 args=[33745275137960649829062709635508004392]
+    2. [high] Potential integer overflow in function 5: 0 - 893 = 340282366920938463463374607431768210563 (wrapping detected)
+       Transaction sequence (8 txs):
+         0: fn=5 sender=3 value=0 args=[2, 893]
+         1: fn=1 sender=3 value=340282366920938463463374607431768211455 args=[]
+         2: fn=7 sender=0 value=0 args=[11]
+         3: fn=7 sender=0 value=0 args=[1119]
+         4: fn=1 sender=4 value=163943 args=[]
+         5: fn=4 sender=3 value=0 args=[592]
+         6: fn=6 sender=2 value=0 args=[9223372036854775807]
+         7: fn=5 sender=4 value=0 args=[11, 5518]
+    3. [high] Potential integer overflow in function 2: 0 - 9977 = 340282366920938463463374607431768201479 (wrapping detected)
+       Transaction sequence (8 txs):
+         0: fn=2 sender=3 value=0 args=[9425, 9977]
+         1: fn=7 sender=0 value=0 args=[1]
+         2: fn=5 sender=4 value=0 args=[3774, 0]
+         3: fn=5 sender=4 value=0 args=[2, 8389026677099948055562095191834398215]
+         4: fn=5 sender=3 value=0 args=[4294967295, 9]
+         5: fn=7 sender=0 value=0 args=[2147483647]
+         6: fn=5 sender=1 value=0 args=[1, 2467]
+         7: fn=6 sender=3 value=0 args=[340282366920938463463374607431768211455]
+
+  [access-control] 2 finding(s):
+    1. [high] Missing access control: function 0 writes to storage without checking msg.sender
+       Transaction sequence (8 txs):
+         0: fn=0 sender=2 value=0 args=[340282366920938463463374607431768211454]
+         1: fn=3 sender=1 value=0 args=[17766030433084857684332580575562178459, 9, 5657]
+         2: fn=4 sender=1 value=0 args=[8888]
+         3: fn=1 sender=4 value=0 args=[]
+         4: fn=1 sender=1 value=0 args=[]
+         5: fn=5 sender=2 value=0 args=[18446744073709551615, 340282366920938463463374607431768211454]
+         6: fn=6 sender=2 value=0 args=[1179]
+         7: fn=6 sender=4 value=0 args=[33745275137960649829062709635508004392]
+    2. [high] Missing access control: function 1 writes to storage without checking msg.sender
+       Transaction sequence (8 txs):
+         0: fn=0 sender=2 value=0 args=[340282366920938463463374607431768211454]
+         1: fn=3 sender=1 value=0 args=[17766030433084857684332580575562178459, 9, 5657]
+         2: fn=4 sender=1 value=0 args=[8888]
+         3: fn=1 sender=4 value=0 args=[]
+         4: fn=1 sender=1 value=0 args=[]
+         5: fn=5 sender=2 value=0 args=[18446744073709551615, 340282366920938463463374607431768211454]
+         6: fn=6 sender=2 value=0 args=[1179]
+         7: fn=6 sender=4 value=0 args=[33745275137960649829062709635508004392]
+
+  [reentrancy] 5 finding(s):
+    1. [high] Potential reentrancy: external call with value in function 5 followed by storage write to 'balances'
+       Transaction sequence (4 txs):
+         0: fn=4 sender=4 value=0 args=[258721424612767723326216001676312919448]
+         1: fn=6 sender=2 value=0 args=[131250422857868626106075802872867882159]
+         2: fn=5 sender=2 value=0 args=[9727, 4294967295]
+         3: fn=5 sender=0 value=0 args=[1, 2147483647]
+    2. [high] Potential reentrancy: external call with value in function 2 followed by storage write to 'spentToday'
+       Transaction sequence (9 txs):
+         0: fn=5 sender=0 value=0 args=[4296, 340282366920938463463374607431768211455]
+         1: fn=3 sender=1 value=0 args=[10, 0, 10]
+         2: fn=4 sender=1 value=0 args=[132158104723388401828152732361247425794]
+         3: fn=3 sender=1 value=0 args=[2147483647, 896, 0]
+         4: fn=2 sender=4 value=0 args=[97766345564712887600820354677219480708, 285182660896481758847079079134870115879]
+         5: fn=2 sender=2 value=0 args=[1, 5069]
+         6: fn=7 sender=0 value=0 args=[18446744073709551615]
+         7: fn=6 sender=4 value=0 args=[1111]
+         8: fn=1 sender=0 value=747717 args=[]
+    3. [high] Potential reentrancy: external call with value in function 2 followed by storage write to 'lastDay'
+       Transaction sequence (9 txs):
+         0: fn=5 sender=0 value=0 args=[4296, 340282366920938463463374607431768211455]
+         1: fn=3 sender=1 value=0 args=[10, 0, 10]
+         2: fn=4 sender=1 value=0 args=[132158104723388401828152732361247425794]
+         3: fn=3 sender=1 value=0 args=[2147483647, 896, 0]
+         4: fn=2 sender=4 value=0 args=[97766345564712887600820354677219480708, 285182660896481758847079079134870115879]
+         5: fn=2 sender=2 value=0 args=[1, 5069]
+         6: fn=7 sender=0 value=0 args=[18446744073709551615]
+         7: fn=6 sender=4 value=0 args=[1111]
+         8: fn=1 sender=0 value=747717 args=[]
+    4. [high] Potential reentrancy: external call with value in function 2 followed by storage write to 'balances'
+       Transaction sequence (9 txs):
+         0: fn=5 sender=0 value=0 args=[4296, 340282366920938463463374607431768211455]
+         1: fn=3 sender=1 value=0 args=[10, 0, 10]
+         2: fn=4 sender=1 value=0 args=[132158104723388401828152732361247425794]
+         3: fn=3 sender=1 value=0 args=[2147483647, 896, 0]
+         4: fn=2 sender=4 value=0 args=[97766345564712887600820354677219480708, 285182660896481758847079079134870115879]
+         5: fn=2 sender=2 value=0 args=[1, 5069]
+         6: fn=7 sender=0 value=0 args=[18446744073709551615]
+         7: fn=6 sender=4 value=0 args=[1111]
+         8: fn=1 sender=0 value=747717 args=[]
+    5. [high] Potential reentrancy: external call with value in function 4 followed by storage write to 'balances'
+       Transaction sequence (8 txs):
+         0: fn=1 sender=1 value=1 args=[]
+         1: fn=4 sender=0 value=0 args=[255]
+         2: fn=5 sender=1 value=0 args=[255, 2]
+         3: fn=7 sender=2 value=0 args=[9466]
+         4: fn=5 sender=2 value=0 args=[2525, 1]
+         5: fn=4 sender=4 value=0 args=[340282366920938463463374607431768211455]
+         6: fn=4 sender=3 value=0 args=[301777524729773373992332061921366473370]
+         7: fn=6 sender=1 value=0 args=[2]
+
+  [tx-origin-auth] 4 finding(s):
+    1. [medium] tx.origin used in function 4 ΓÇö vulnerable to phishing attacks, use msg.sender instead
+       Transaction sequence (8 txs):
+         0: fn=0 sender=2 value=0 args=[340282366920938463463374607431768211454]
+         1: fn=3 sender=1 value=0 args=[17766030433084857684332580575562178459, 9, 5657]
+         2: fn=4 sender=1 value=0 args=[8888]
+         3: fn=1 sender=4 value=0 args=[]
+         4: fn=1 sender=1 value=0 args=[]
+         5: fn=5 sender=2 value=0 args=[18446744073709551615, 340282366920938463463374607431768211454]
+         6: fn=6 sender=2 value=0 args=[1179]
+         7: fn=6 sender=4 value=0 args=[33745275137960649829062709635508004392]
+    2. [medium] tx.origin used in function 5 ΓÇö vulnerable to phishing attacks, use msg.sender instead
+       Transaction sequence (8 txs):
+         0: fn=0 sender=2 value=0 args=[340282366920938463463374607431768211454]
+         1: fn=3 sender=1 value=0 args=[17766030433084857684332580575562178459, 9, 5657]
+         2: fn=4 sender=1 value=0 args=[8888]
+         3: fn=1 sender=4 value=0 args=[]
+         4: fn=1 sender=1 value=0 args=[]
+         5: fn=5 sender=2 value=0 args=[18446744073709551615, 340282366920938463463374607431768211454]
+         6: fn=6 sender=2 value=0 args=[1179]
+         7: fn=6 sender=4 value=0 args=[33745275137960649829062709635508004392]
+    3. [medium] tx.origin used in function 6 ΓÇö vulnerable to phishing attacks, use msg.sender instead
+       Transaction sequence (8 txs):
+         0: fn=0 sender=2 value=0 args=[340282366920938463463374607431768211454]
+         1: fn=3 sender=1 value=0 args=[17766030433084857684332580575562178459, 9, 5657]
+         2: fn=4 sender=1 value=0 args=[8888]
+         3: fn=1 sender=4 value=0 args=[]
+         4: fn=1 sender=1 value=0 args=[]
+         5: fn=5 sender=2 value=0 args=[18446744073709551615, 340282366920938463463374607431768211454]
+         6: fn=6 sender=2 value=0 args=[1179]
+         7: fn=6 sender=4 value=0 args=[33745275137960649829062709635508004392]
+    4. [medium] tx.origin used in function 2 ΓÇö vulnerable to phishing attacks, use msg.sender instead
+       Transaction sequence (8 txs):
+         0: fn=2 sender=3 value=0 args=[9425, 9977]
+         1: fn=7 sender=0 value=0 args=[1]
+         2: fn=5 sender=4 value=0 args=[3774, 0]
+         3: fn=5 sender=4 value=0 args=[2, 8389026677099948055562095191834398215]
+         4: fn=5 sender=3 value=0 args=[4294967295, 9]
+         5: fn=7 sender=0 value=0 args=[2147483647]
+         6: fn=5 sender=1 value=0 args=[1, 2467]
+         7: fn=6 sender=3 value=0 args=[340282366920938463463374607431768211455]
+=== End Report ===
+
+===== vuln_selfdestruct =====
+=== Fuzzing Report ===
+iterations: 1000, corpus: 975, time: 125ms
+coverage: 10/10 blocks (100.0%)
+findings: 7
+
+  [integer-overflow] 1 finding(s):
+    1. [high] Potential integer overflow in function 2: 0 - 65535 = 340282366920938463463374607431768145921 (wrapping detected)
+       Transaction sequence (10 txs):
+         0: fn=5 sender=3 value=0 args=[0]
+         1: fn=9 sender=3 value=0 args=[2]
+         2: fn=2 sender=3 value=0 args=[65535]
+         3: fn=2 sender=0 value=0 args=[9223372036854775807]
+         4: fn=3 sender=3 value=0 args=[4094]
+         5: fn=4 sender=1 value=0 args=[]
+         6: fn=1 sender=2 value=810892 args=[]
+         7: fn=7 sender=4 value=0 args=[]
+         8: fn=4 sender=1 value=0 args=[]
+         9: fn=6 sender=1 value=0 args=[9928]
+
+  [unprotected-selfdestruct] 2 finding(s):
+    1. [low] selfdestruct in function 5 (has sender check)
+       Transaction sequence (10 txs):
+         0: fn=5 sender=3 value=0 args=[0]
+         1: fn=9 sender=3 value=0 args=[2]
+         2: fn=2 sender=3 value=0 args=[65535]
+         3: fn=2 sender=0 value=0 args=[9223372036854775807]
+         4: fn=3 sender=3 value=0 args=[4094]
+         5: fn=4 sender=1 value=0 args=[]
+         6: fn=1 sender=2 value=810892 args=[]
+         7: fn=7 sender=4 value=0 args=[]
+         8: fn=4 sender=1 value=0 args=[]
+         9: fn=6 sender=1 value=0 args=[9928]
+    2. [low] selfdestruct in function 8 (has sender check)
+       Transaction sequence (8 txs):
+         0: fn=4 sender=1 value=0 args=[]
+         1: fn=4 sender=0 value=0 args=[]
+         2: fn=5 sender=1 value=0 args=[6522]
+         3: fn=2 sender=0 value=0 args=[65535]
+         4: fn=8 sender=3 value=0 args=[9390]
+         5: fn=7 sender=3 value=0 args=[]
+         6: fn=9 sender=0 value=0 args=[2]
+         7: fn=3 sender=0 value=0 args=[595]
+
+  [access-control] 2 finding(s):
+    1. [high] Missing access control: function 1 writes to storage without checking msg.sender
+       Transaction sequence (2 txs):
+         0: fn=1 sender=3 value=688736667304970758 args=[]
+         1: fn=7 sender=3 value=0 args=[]
+    2. [high] Missing access control: function 0 writes to storage without checking msg.sender
+       Transaction sequence (2 txs):
+         0: fn=0 sender=4 value=0 args=[]
+         1: fn=3 sender=3 value=0 args=[255]
+
+  [reentrancy] 2 finding(s):
+    1. [high] Potential reentrancy: external call with value in function 2 followed by storage write to 'balances'
+       Transaction sequence (10 txs):
+         0: fn=5 sender=3 value=0 args=[0]
+         1: fn=9 sender=3 value=0 args=[2]
+         2: fn=2 sender=3 value=0 args=[65535]
+         3: fn=2 sender=0 value=0 args=[9223372036854775807]
+         4: fn=3 sender=3 value=0 args=[4094]
+         5: fn=4 sender=1 value=0 args=[]
+         6: fn=1 sender=2 value=810892 args=[]
+         7: fn=7 sender=4 value=0 args=[]
+         8: fn=4 sender=1 value=0 args=[]
+         9: fn=6 sender=1 value=0 args=[9928]
+    2. [high] Potential reentrancy: external call with value in function 2 followed by storage write to 'totalLocked'
+       Transaction sequence (10 txs):
+         0: fn=5 sender=3 value=0 args=[0]
+         1: fn=9 sender=3 value=0 args=[2]
+         2: fn=2 sender=3 value=0 args=[65535]
+         3: fn=2 sender=0 value=0 args=[9223372036854775807]
+         4: fn=3 sender=3 value=0 args=[4094]
+         5: fn=4 sender=1 value=0 args=[]
+         6: fn=1 sender=2 value=810892 args=[]
+         7: fn=7 sender=4 value=0 args=[]
+         8: fn=4 sender=1 value=0 args=[]
+         9: fn=6 sender=1 value=0 args=[9928]
+=== End Report ===
+
+===== vuln_dos =====
+=== Fuzzing Report ===
+iterations: 1000, corpus: 977, time: 140ms
+coverage: 31/38 blocks (81.6%)
+findings: 12
+
+  [access-control] 3 finding(s):
+    1. [high] Missing access control: function 3 writes to storage without checking msg.sender
+       Transaction sequence (6 txs):
+         0: fn=0 sender=0 value=0 args=[]
+         1: fn=4 sender=4 value=0 args=[]
+         2: fn=3 sender=2 value=0 args=[]
+         3: fn=10 sender=3 value=0 args=[]
+         4: fn=8 sender=1 value=0 args=[92091909025751060658563687764224468850]
+         5: fn=8 sender=1 value=0 args=[18446744073709551615]
+    2. [high] Missing access control: function 0 writes to storage without checking msg.sender
+       Transaction sequence (6 txs):
+         0: fn=0 sender=0 value=0 args=[]
+         1: fn=4 sender=4 value=0 args=[]
+         2: fn=3 sender=2 value=0 args=[]
+         3: fn=10 sender=3 value=0 args=[]
+         4: fn=8 sender=1 value=0 args=[92091909025751060658563687764224468850]
+         5: fn=8 sender=1 value=0 args=[18446744073709551615]
+    3. [high] Missing access control: function 2 writes to storage without checking msg.sender
+       Transaction sequence (9 txs):
+         0: fn=2 sender=3 value=340282366920938463463374607431768211455 args=[]
+         1: fn=3 sender=2 value=1 args=[]
+         2: fn=1 sender=2 value=0 args=[18446744073709551615, 1]
+         3: fn=1 sender=0 value=0 args=[8501, 0]
+         4: fn=10 sender=3 value=0 args=[]
+         5: fn=1 sender=3 value=0 args=[2147483647, 534]
+         6: fn=10 sender=0 value=0 args=[]
+         7: fn=8 sender=0 value=0 args=[9223372036854775807]
+         8: fn=3 sender=3 value=0 args=[]
+
+  [exception-disorder] 1 finding(s):
+    1. [medium] Exception disorder: external call to '$t19' in function 4 followed by state change without checking return
+       Transaction sequence (6 txs):
+         0: fn=0 sender=0 value=0 args=[]
+         1: fn=4 sender=4 value=0 args=[]
+         2: fn=3 sender=2 value=0 args=[]
+         3: fn=10 sender=3 value=0 args=[]
+         4: fn=8 sender=1 value=0 args=[92091909025751060658563687764224468850]
+         5: fn=8 sender=1 value=0 args=[18446744073709551615]
+
+  [integer-overflow] 1 finding(s):
+    1. [high] Potential integer overflow in function 1: 535 + 340282366920938463463374607431768211455 = 534 (wrapping detected)
+       Transaction sequence (8 txs):
+         0: fn=5 sender=0 value=0 args=[]
+         1: fn=1 sender=1 value=0 args=[0, 535]
+         2: fn=3 sender=0 value=146246 args=[]
+         3: fn=1 sender=2 value=0 args=[17293822569102703615, 340282366920938463463374607431768211455]
+         4: fn=10 sender=3 value=0 args=[]
+         5: fn=3 sender=2 value=1 args=[]
+         6: fn=4 sender=0 value=0 args=[]
+         7: fn=7 sender=0 value=0 args=[]
+
+  [reentrancy] 2 finding(s):
+    1. [high] Potential reentrancy: external call with value in function 7 followed by storage write to 'payees'
+       Transaction sequence (4 txs):
+         0: fn=7 sender=4 value=0 args=[]
+         1: fn=10 sender=1 value=0 args=[]
+         2: fn=10 sender=3 value=0 args=[]
+         3: fn=7 sender=1 value=0 args=[]
+    2. [high] Potential reentrancy: external call with value in function 7 followed by storage write to 'totalReleased'
+       Transaction sequence (4 txs):
+         0: fn=7 sender=4 value=0 args=[]
+         1: fn=10 sender=1 value=0 args=[]
+         2: fn=10 sender=3 value=0 args=[]
+         3: fn=7 sender=1 value=0 args=[]
+
+  [denial-of-service] 3 finding(s):
+    1. [medium] Potential DoS: unbounded loop in function 4 with storage-dependent condition '$t6'
+       Transaction sequence (6 txs):
+         0: fn=0 sender=0 value=0 args=[]
+         1: fn=4 sender=4 value=0 args=[]
+         2: fn=3 sender=2 value=0 args=[]
+         3: fn=10 sender=3 value=0 args=[]
+         4: fn=8 sender=1 value=0 args=[92091909025751060658563687764224468850]
+         5: fn=8 sender=1 value=0 args=[18446744073709551615]
+    2. [medium] Potential DoS: unbounded loop in function 6 with storage-dependent condition '$t1'
+       Transaction sequence (7 txs):
+         0: fn=8 sender=1 value=0 args=[281150201975355246842545655902372563971]
+         1: fn=1 sender=1 value=0 args=[255, 24409226605892133869927841816791900591]
+         2: fn=1 sender=4 value=0 args=[1, 201063986851117887302776244352563277038]
+         3: fn=3 sender=2 value=340282366920938463463374607431768211455 args=[]
+         4: fn=6 sender=0 value=0 args=[102325468150800072642987343061684119922]
+         5: fn=7 sender=3 value=0 args=[]
+         6: fn=6 sender=4 value=0 args=[9110]
+    3. [medium] Potential DoS: unbounded loop in function 5 with storage-dependent condition '$t1'
+       Transaction sequence (5 txs):
+         0: fn=4 sender=0 value=0 args=[]
+         1: fn=10 sender=3 value=0 args=[]
+         2: fn=6 sender=4 value=0 args=[9959]
+         3: fn=10 sender=1 value=0 args=[]
+         4: fn=5 sender=4 value=0 args=[]
+
+  [unchecked-call] 2 finding(s):
+    1. [medium] Unchecked external call to '$t19' in function 4 ΓÇö return value not verified
+       Transaction sequence (6 txs):
+         0: fn=0 sender=0 value=0 args=[]
+         1: fn=4 sender=4 value=0 args=[]
+         2: fn=3 sender=2 value=0 args=[]
+         3: fn=10 sender=3 value=0 args=[]
+         4: fn=8 sender=1 value=0 args=[92091909025751060658563687764224468850]
+         5: fn=8 sender=1 value=0 args=[18446744073709551615]
+    2. [medium] Unchecked external call to '$t12' in function 7 ΓÇö return value not verified
+       Transaction sequence (7 txs):
+         0: fn=8 sender=1 value=0 args=[281150201975355246842545655902372563971]
+         1: fn=1 sender=1 value=0 args=[255, 24409226605892133869927841816791900591]
+         2: fn=1 sender=4 value=0 args=[1, 201063986851117887302776244352563277038]
+         3: fn=3 sender=2 value=340282366920938463463374607431768211455 args=[]
+         4: fn=6 sender=0 value=0 args=[102325468150800072642987343061684119922]
+         5: fn=7 sender=3 value=0 args=[]
+         6: fn=6 sender=4 value=0 args=[9110]
+=== End Report ===
+
+===== vuln_exception =====
+=== Fuzzing Report ===
+iterations: 1000, corpus: 968, time: 164ms
+coverage: 26/26 blocks (100.0%)
+findings: 12
+
+  [exception-disorder] 4 finding(s):
+    1. [medium] Exception disorder: external call to '$t15' in function 5 followed by state change without checking return
+       Transaction sequence (5 txs):
+         0: fn=6 sender=4 value=0 args=[2]
+         1: fn=7 sender=3 value=0 args=[8649, 8757, 0]
+         2: fn=5 sender=4 value=0 args=[7660, 235746460334364216931654332255413770120]
+         3: fn=8 sender=1 value=0 args=[1134, 18446744073709551615]
+         4: fn=9 sender=4 value=0 args=[]
+    2. [medium] Exception disorder: external call to 'CallExecuted' in function 5 followed by state change without checking return
+       Transaction sequence (5 txs):
+         0: fn=6 sender=4 value=0 args=[2]
+         1: fn=7 sender=3 value=0 args=[8649, 8757, 0]
+         2: fn=5 sender=4 value=0 args=[7660, 235746460334364216931654332255413770120]
+         3: fn=8 sender=1 value=0 args=[1134, 18446744073709551615]
+         4: fn=9 sender=4 value=0 args=[]
+    3. [medium] Exception disorder: external call to '$t3' in function 8 followed by state change without checking return
+       Transaction sequence (5 txs):
+         0: fn=6 sender=4 value=0 args=[2]
+         1: fn=7 sender=3 value=0 args=[8649, 8757, 0]
+         2: fn=5 sender=4 value=0 args=[7660, 235746460334364216931654332255413770120]
+         3: fn=8 sender=1 value=0 args=[1134, 18446744073709551615]
+         4: fn=9 sender=4 value=0 args=[]
+    4. [medium] Exception disorder: external call to 'CallTarget' in function 1 followed by state change without checking return
+       Transaction sequence (6 txs):
+         0: fn=3 sender=3 value=16422 args=[]
+         1: fn=10 sender=2 value=0 args=[2]
+         2: fn=5 sender=0 value=0 args=[2, 2]
+         3: fn=7 sender=3 value=0 args=[255, 254005477624402178052124478431617902363, 8975]
+         4: fn=1 sender=0 value=0 args=[1, 3950]
+         5: fn=9 sender=1 value=0 args=[]
+
+  [reentrancy] 3 finding(s):
+    1. [high] Potential reentrancy: external call with value in function 5 followed by storage write to 'totalProcessed'
+       Transaction sequence (5 txs):
+         0: fn=6 sender=4 value=0 args=[2]
+         1: fn=7 sender=3 value=0 args=[8649, 8757, 0]
+         2: fn=5 sender=4 value=0 args=[7660, 235746460334364216931654332255413770120]
+         3: fn=8 sender=1 value=0 args=[1134, 18446744073709551615]
+         4: fn=9 sender=4 value=0 args=[]
+    2. [high] Potential reentrancy: external call with value in function 5 followed by storage write to 'totalFailed'
+       Transaction sequence (5 txs):
+         0: fn=6 sender=4 value=0 args=[2]
+         1: fn=7 sender=3 value=0 args=[8649, 8757, 0]
+         2: fn=5 sender=4 value=0 args=[7660, 235746460334364216931654332255413770120]
+         3: fn=8 sender=1 value=0 args=[1134, 18446744073709551615]
+         4: fn=9 sender=4 value=0 args=[]
+    3. [high] Potential reentrancy: external call with value in function 5 followed by storage write to 'processingActive'
+       Transaction sequence (5 txs):
+         0: fn=6 sender=4 value=0 args=[2]
+         1: fn=7 sender=3 value=0 args=[8649, 8757, 0]
+         2: fn=5 sender=4 value=0 args=[7660, 235746460334364216931654332255413770120]
+         3: fn=8 sender=1 value=0 args=[1134, 18446744073709551615]
+         4: fn=9 sender=4 value=0 args=[]
+
+  [access-control] 2 finding(s):
+    1. [high] Missing access control: function 0 writes to storage without checking msg.sender
+       Transaction sequence (4 txs):
+         0: fn=0 sender=3 value=0 args=[]
+         1: fn=6 sender=2 value=0 args=[84489480946694684790971725030010595299]
+         2: fn=2 sender=3 value=0 args=[0]
+         3: fn=8 sender=0 value=0 args=[40405337102490139663309109920648186984, 4294967295]
+    2. [high] Missing access control: function 3 writes to storage without checking msg.sender
+       Transaction sequence (6 txs):
+         0: fn=3 sender=3 value=16422 args=[]
+         1: fn=10 sender=2 value=0 args=[2]
+         2: fn=5 sender=0 value=0 args=[2, 2]
+         3: fn=7 sender=3 value=0 args=[255, 254005477624402178052124478431617902363, 8975]
+         4: fn=1 sender=0 value=0 args=[1, 3950]
+         5: fn=9 sender=1 value=0 args=[]
+
+  [denial-of-service] 1 finding(s):
+    1. [medium] Potential DoS: unbounded loop in function 5 with storage-dependent condition '$t9'
+       Transaction sequence (5 txs):
+         0: fn=6 sender=4 value=0 args=[2]
+         1: fn=7 sender=3 value=0 args=[8649, 8757, 0]
+         2: fn=5 sender=4 value=0 args=[7660, 235746460334364216931654332255413770120]
+         3: fn=8 sender=1 value=0 args=[1134, 18446744073709551615]
+         4: fn=9 sender=4 value=0 args=[]
+
+  [integer-overflow] 2 finding(s):
+    1. [high] Potential integer overflow in function 4: 0 - 170141183460469231731687303715884105727 = 170141183460469231731687303715884105729 (wrapping detected)
+       Transaction sequence (3 txs):
+         0: fn=4 sender=2 value=0 args=[1, 170141183460469231731687303715884105727, 132270803140140712592473933099133395863]
+         1: fn=10 sender=1 value=0 args=[5815]
+         2: fn=6 sender=2 value=0 args=[2]
+    2. [high] Potential integer overflow in function 5: 340282366920938463463374607431768211455 + 16257567366645929912882145742294410482 = 16257567366645929912882145742294410481 (wrapping detected)
+       Transaction sequence (10 txs):
+         0: fn=2 sender=1 value=0 args=[8815]
+         1: fn=2 sender=0 value=0 args=[7381]
+         2: fn=10 sender=4 value=0 args=[2]
+         3: fn=5 sender=1 value=0 args=[340282366920938463463374607431768211455, 16257567366645929912882145742294410482]
+         4: fn=6 sender=2 value=0 args=[65535]
+         5: fn=10 sender=2 value=0 args=[4294967295]
+         6: fn=5 sender=3 value=0 args=[0, 1]
+         7: fn=2 sender=0 value=0 args=[0]
+         8: fn=6 sender=3 value=0 args=[1]
+         9: fn=1 sender=2 value=0 args=[6023, 340282366920938463463374607431768211455]
+=== End Report ===
+
+===== vuln_auction =====
+=== Fuzzing Report ===
+iterations: 1000, corpus: 972, time: 180ms
+coverage: 26/26 blocks (100.0%)
+findings: 16
+
+  [unchecked-call] 2 finding(s):
+    1. [medium] Unchecked external call to '$t15' in function 5 ΓÇö return value not verified
+       Transaction sequence (10 txs):
+         0: fn=0 sender=3 value=0 args=[0]
+         1: fn=2 sender=3 value=0 args=[]
+         2: fn=1 sender=2 value=0 args=[]
+         3: fn=4 sender=2 value=0 args=[]
+         4: fn=5 sender=0 value=0 args=[259757647830796104201791734130020696452]
+         5: fn=1 sender=2 value=1 args=[]
+         6: fn=11 sender=3 value=0 args=[4294967295]
+         7: fn=10 sender=3 value=0 args=[9223372036854775807]
+         8: fn=1 sender=1 value=397202 args=[]
+         9: fn=10 sender=0 value=0 args=[2147483647]
+    2. [medium] Unchecked external call to '$t7' in function 6 ΓÇö return value not verified
+       Transaction sequence (4 txs):
+         0: fn=11 sender=0 value=0 args=[7762]
+         1: fn=5 sender=0 value=0 args=[9126]
+         2: fn=6 sender=2 value=0 args=[]
+         3: fn=5 sender=2 value=0 args=[4294967295]
+
+  [reentrancy] 9 finding(s):
+    1. [high] Potential reentrancy: external call with value in function 4 followed by storage write to '__no_sender_check'
+       Transaction sequence (10 txs):
+         0: fn=0 sender=3 value=0 args=[0]
+         1: fn=2 sender=3 value=0 args=[]
+         2: fn=1 sender=2 value=0 args=[]
+         3: fn=4 sender=2 value=0 args=[]
+         4: fn=5 sender=0 value=0 args=[259757647830796104201791734130020696452]
+         5: fn=1 sender=2 value=1 args=[]
+         6: fn=11 sender=3 value=0 args=[4294967295]
+         7: fn=10 sender=3 value=0 args=[9223372036854775807]
+         8: fn=1 sender=1 value=397202 args=[]
+         9: fn=10 sender=0 value=0 args=[2147483647]
+    2. [high] Potential reentrancy: external call with value in function 5 followed by storage write to 'totalRewardsDistributed'
+       Transaction sequence (10 txs):
+         0: fn=0 sender=3 value=0 args=[0]
+         1: fn=2 sender=3 value=0 args=[]
+         2: fn=1 sender=2 value=0 args=[]
+         3: fn=4 sender=2 value=0 args=[]
+         4: fn=5 sender=0 value=0 args=[259757647830796104201791734130020696452]
+         5: fn=1 sender=2 value=1 args=[]
+         6: fn=11 sender=3 value=0 args=[4294967295]
+         7: fn=10 sender=3 value=0 args=[9223372036854775807]
+         8: fn=1 sender=1 value=397202 args=[]
+         9: fn=10 sender=0 value=0 args=[2147483647]
+    3. [high] Potential reentrancy: external call with value in function 6 followed by storage write to '__no_sender_check'
+       Transaction sequence (4 txs):
+         0: fn=11 sender=0 value=0 args=[7762]
+         1: fn=5 sender=0 value=0 args=[9126]
+         2: fn=6 sender=2 value=0 args=[]
+         3: fn=5 sender=2 value=0 args=[4294967295]
+    4. [high] Potential reentrancy: external call with value in function 7 followed by storage write to '__no_sender_check'
+       Transaction sequence (10 txs):
+         0: fn=2 sender=1 value=0 args=[]
+         1: fn=1 sender=3 value=55917791921091899 args=[]
+         2: fn=1 sender=1 value=541480090171571922 args=[]
+         3: fn=10 sender=1 value=0 args=[1]
+         4: fn=7 sender=2 value=0 args=[]
+         5: fn=1 sender=3 value=340282366920938463463374607431768211455 args=[]
+         6: fn=2 sender=0 value=0 args=[]
+         7: fn=6 sender=4 value=0 args=[]
+         8: fn=3 sender=1 value=1 args=[]
+         9: fn=3 sender=1 value=1 args=[]
+    5. [high] Potential reentrancy: external call with value in function 7 followed by storage write to 'pendingRewards'
+       Transaction sequence (9 txs):
+         0: fn=5 sender=4 value=0 args=[0]
+         1: fn=11 sender=2 value=0 args=[255]
+         2: fn=10 sender=2 value=0 args=[249]
+         3: fn=7 sender=1 value=0 args=[]
+         4: fn=7 sender=4 value=0 args=[]
+         5: fn=7 sender=3 value=0 args=[]
+         6: fn=6 sender=0 value=0 args=[]
+         7: fn=5 sender=4 value=0 args=[1]
+         8: fn=4 sender=3 value=0 args=[]
+    6. [high] Potential reentrancy: external call with value in function 7 followed by storage write to 'totalStaked'
+       Transaction sequence (9 txs):
+         0: fn=5 sender=4 value=0 args=[0]
+         1: fn=11 sender=2 value=0 args=[255]
+         2: fn=10 sender=2 value=0 args=[249]
+         3: fn=7 sender=1 value=0 args=[]
+         4: fn=7 sender=4 value=0 args=[]
+         5: fn=7 sender=3 value=0 args=[]
+         6: fn=6 sender=0 value=0 args=[]
+         7: fn=5 sender=4 value=0 args=[1]
+         8: fn=4 sender=3 value=0 args=[]
+    7. [high] Potential reentrancy: external call with value in function 4 followed by storage write to 'pendingRewards'
+       Transaction sequence (2 txs):
+         0: fn=4 sender=0 value=0 args=[]
+         1: fn=4 sender=4 value=0 args=[]
+    8. [high] Potential reentrancy: external call with value in function 4 followed by storage write to 'totalRewardsDistributed'
+       Transaction sequence (2 txs):
+         0: fn=4 sender=0 value=0 args=[]
+         1: fn=4 sender=4 value=0 args=[]
+    9. [high] Potential reentrancy: external call with value in function 6 followed by storage write to 'totalStaked'
+       Transaction sequence (10 txs):
+         0: fn=5 sender=4 value=0 args=[173899830515793142672122983141639691562]
+         1: fn=11 sender=1 value=0 args=[283293487098912957552939885902716607267]
+         2: fn=11 sender=1 value=0 args=[8287]
+         3: fn=9 sender=1 value=0 args=[251]
+         4: fn=7 sender=4 value=0 args=[]
+         5: fn=9 sender=0 value=0 args=[1]
+         6: fn=6 sender=3 value=0 args=[]
+         7: fn=10 sender=2 value=0 args=[1]
+         8: fn=9 sender=2 value=0 args=[2621]
+         9: fn=6 sender=2 value=0 args=[]
+
+  [access-control] 4 finding(s):
+    1. [high] Missing access control: function 0 writes to storage without checking msg.sender
+       Transaction sequence (10 txs):
+         0: fn=0 sender=3 value=0 args=[0]
+         1: fn=2 sender=3 value=0 args=[]
+         2: fn=1 sender=2 value=0 args=[]
+         3: fn=4 sender=2 value=0 args=[]
+         4: fn=5 sender=0 value=0 args=[259757647830796104201791734130020696452]
+         5: fn=1 sender=2 value=1 args=[]
+         6: fn=11 sender=3 value=0 args=[4294967295]
+         7: fn=10 sender=3 value=0 args=[9223372036854775807]
+         8: fn=1 sender=1 value=397202 args=[]
+         9: fn=10 sender=0 value=0 args=[2147483647]
+    2. [high] Missing access control: function 4 writes to storage without checking msg.sender
+       Transaction sequence (10 txs):
+         0: fn=0 sender=3 value=0 args=[0]
+         1: fn=2 sender=3 value=0 args=[]
+         2: fn=1 sender=2 value=0 args=[]
+         3: fn=4 sender=2 value=0 args=[]
+         4: fn=5 sender=0 value=0 args=[259757647830796104201791734130020696452]
+         5: fn=1 sender=2 value=1 args=[]
+         6: fn=11 sender=3 value=0 args=[4294967295]
+         7: fn=10 sender=3 value=0 args=[9223372036854775807]
+         8: fn=1 sender=1 value=397202 args=[]
+         9: fn=10 sender=0 value=0 args=[2147483647]
+    3. [high] Missing access control: function 6 writes to storage without checking msg.sender
+       Transaction sequence (4 txs):
+         0: fn=11 sender=0 value=0 args=[7762]
+         1: fn=5 sender=0 value=0 args=[9126]
+         2: fn=6 sender=2 value=0 args=[]
+         3: fn=5 sender=2 value=0 args=[4294967295]
+    4. [high] Missing access control: function 7 writes to storage without checking msg.sender
+       Transaction sequence (10 txs):
+         0: fn=2 sender=1 value=0 args=[]
+         1: fn=1 sender=3 value=55917791921091899 args=[]
+         2: fn=1 sender=1 value=541480090171571922 args=[]
+         3: fn=10 sender=1 value=0 args=[1]
+         4: fn=7 sender=2 value=0 args=[]
+         5: fn=1 sender=3 value=340282366920938463463374607431768211455 args=[]
+         6: fn=2 sender=0 value=0 args=[]
+         7: fn=6 sender=4 value=0 args=[]
+         8: fn=3 sender=1 value=1 args=[]
+         9: fn=3 sender=1 value=1 args=[]
+
+  [exception-disorder] 1 finding(s):
+    1. [medium] Exception disorder: external call to '$t15' in function 5 followed by state change without checking return
+       Transaction sequence (10 txs):
+         0: fn=0 sender=3 value=0 args=[0]
+         1: fn=2 sender=3 value=0 args=[]
+         2: fn=1 sender=2 value=0 args=[]
+         3: fn=4 sender=2 value=0 args=[]
+         4: fn=5 sender=0 value=0 args=[259757647830796104201791734130020696452]
+         5: fn=1 sender=2 value=1 args=[]
+         6: fn=11 sender=3 value=0 args=[4294967295]
+         7: fn=10 sender=3 value=0 args=[9223372036854775807]
+         8: fn=1 sender=1 value=397202 args=[]
+         9: fn=10 sender=0 value=0 args=[2147483647]
+=== End Report ===
+
+
