@@ -1,4 +1,4 @@
-use crate::analysis::detectors::{self, Finding, FindingKind, Severity};
+use crate::analysis::detectors::{self, Finding, Severity};
 use crate::analysis::{self, ResolvedTarget};
 use crate::frontend::{FrontendMode, FrontendOutput};
 use crate::util::error::Result;
@@ -51,6 +51,7 @@ struct ReportCount {
 
 #[derive(Debug, Serialize)]
 struct ReportFinding {
+    category: String,
     kind: String,
     severity: String,
     message: String,
@@ -234,37 +235,20 @@ fn print_json(report: &Report) -> Result<()> {
 }
 
 fn build_finding_counts(findings: &[Finding]) -> Vec<ReportCount> {
-    let mut counts = Vec::new();
-    for kind in [
-        FindingKind::TxOrigin,
-        FindingKind::Delegatecall,
-        FindingKind::UncheckedCall,
-        FindingKind::Selfdestruct,
-        FindingKind::TimestampDependency,
-        FindingKind::Shadowing,
-        FindingKind::Reentrancy,
-        FindingKind::TaintedCall,
-    ] {
-        let mut count = 0;
-        for finding in findings {
-            if finding.kind == kind {
-                count += 1;
-            }
-        }
-        if count > 0 {
-            counts.push(ReportCount {
-                kind: kind.as_str().to_string(),
-                count,
-            });
-        }
+    let mut map = std::collections::BTreeMap::<String, usize>::new();
+    for finding in findings {
+        *map.entry(finding.kind.as_str().to_string()).or_insert(0) += 1;
     }
-    counts
+    map.into_iter()
+        .map(|(kind, count)| ReportCount { kind, count })
+        .collect()
 }
 
 fn build_report_findings(output: &FrontendOutput, findings: &[Finding]) -> Vec<ReportFinding> {
     let mut out = Vec::new();
     for finding in findings {
         out.push(ReportFinding {
+            category: finding.kind.category().as_str().to_string(),
             kind: finding.kind.as_str().to_string(),
             severity: severity_to_str(finding.severity).to_string(),
             message: finding.message.clone(),

@@ -56,12 +56,9 @@ fn run() -> Result<()> {
     let mut input = None;
     let mut format = report::OutputFormat::Text;
     let mut dump_ir = None;
-<<<<<<< HEAD
     let mut do_fuzz = false;
-=======
     let mut mode = AnalysisMode::Static;
     let mut mode_flag = None::<&'static str>;
->>>>>>> d10be0878a650eedf3b4cfda44468b2ac304b5a9
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         if let Some(next_mode) = AnalysisMode::from_flag(&arg) {
@@ -126,13 +123,10 @@ fn run() -> Result<()> {
     }
 
     let Some(input) = input else {
-<<<<<<< HEAD
         eprintln!(
             "usage: static-analyzer <path> [--json|--text|--format <json|text>] [--dump-ir <text|json>] [--fuzz|--fuzzing]"
         );
-=======
         print_usage();
->>>>>>> d10be0878a650eedf3b4cfda44468b2ac304b5a9
         return Ok(());
     };
 
@@ -157,15 +151,12 @@ fn run() -> Result<()> {
             )));
         }
     }
-<<<<<<< HEAD
     if do_fuzz {
         let config = fuzzing::types::FuzzConfig::default();
         fuzzing::run_fuzzer(&output.ast, &config);
         return Ok(());
     }
     report::print_report(&output, format)?;
-=======
 
->>>>>>> d10be0878a650eedf3b4cfda44468b2ac304b5a9
     Ok(())
 }
