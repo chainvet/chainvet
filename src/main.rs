@@ -141,7 +141,14 @@ fn run() -> Result<()> {
             }
             report::print_report(&output, format)?;
         }
-        AnalysisMode::Symbolic | AnalysisMode::Fuzzing => {
+        AnalysisMode::Symbolic => {
+            if dump_ir.is_some() {
+                return Err(Error::msg("--dump-ir is only supported in --static mode"));
+            }
+            let output = frontend::load_project(&input)?;
+            symbolic::run(&output, format)?;
+        }
+        AnalysisMode::Fuzzing => {
             if dump_ir.is_some() {
                 return Err(Error::msg("--dump-ir is only supported in --static mode"));
             }
