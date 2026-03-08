@@ -11,8 +11,8 @@ use crate::fuzzing::types::{
     ContractAbi, Corpus, DependencyMap, Dictionary, FuzzConfig, FuzzFinding, FuzzReport,
     build_dependency_map, extract_abis,
 };
-use crate::{cfg, ir};
 use crate::norm::NormalizedAst;
+use crate::{cfg, ir};
 
 /// Run the fuzzer on a parsed contract.
 pub fn run(ast: &NormalizedAst, config: &FuzzConfig) -> FuzzReport {
@@ -98,7 +98,8 @@ fn fuzz_contract(
     start_time: &Instant,
 ) {
     // Phase 2: Generate initial population (using dictionary for smarter values)
-    let population = generator::generate_initial_population_with_dict(abi, deps, config, Some(dictionary));
+    let population =
+        generator::generate_initial_population_with_dict(abi, deps, config, Some(dictionary));
 
     // Execute initial population
     for ind in &population {
@@ -110,7 +111,9 @@ fn fuzz_contract(
 
     // Phase 3: Fuzzing loop
     let mut rng = match config.seed {
-        Some(seed) => <rand::rngs::StdRng as rand::SeedableRng>::seed_from_u64(seed.wrapping_add(1)),
+        Some(seed) => {
+            <rand::rngs::StdRng as rand::SeedableRng>::seed_from_u64(seed.wrapping_add(1))
+        }
         None => <rand::rngs::StdRng as rand::SeedableRng>::from_entropy(),
     };
 
@@ -142,7 +145,13 @@ fn fuzz_contract(
             let other = &corpus.entries[other_idx].individual;
             mutator::crossover(&parent, other, &mut rng)
         } else {
-            mutator::mutate_individual_with_dict(&parent, abi, &mut rng, Some(dictionary), havoc_only)
+            mutator::mutate_individual_with_dict(
+                &parent,
+                abi,
+                &mut rng,
+                Some(dictionary),
+                havoc_only,
+            )
         };
 
         // Execute
@@ -206,7 +215,8 @@ pub fn print_report(report: &FuzzReport) {
         println!("  (no vulnerabilities detected)");
     } else {
         // Group by taxonomy category
-        let mut by_category: std::collections::BTreeMap<&str, Vec<&FuzzFinding>> = std::collections::BTreeMap::new();
+        let mut by_category: std::collections::BTreeMap<&str, Vec<&FuzzFinding>> =
+            std::collections::BTreeMap::new();
         for f in &report.findings {
             by_category.entry(f.kind.category()).or_default().push(f);
         }
@@ -214,13 +224,24 @@ pub fn print_report(report: &FuzzReport) {
         for (category, findings) in &by_category {
             println!("\n  [{}] {} finding(s):", category, findings.len());
             for (idx, f) in findings.iter().enumerate() {
-                println!("    {}. [{}] [{}] {}", idx + 1, f.kind.as_str(), f.severity.as_str(), f.message);
+                println!(
+                    "    {}. [{}] [{}] {}",
+                    idx + 1,
+                    f.kind.as_str(),
+                    f.severity.as_str(),
+                    f.message
+                );
                 println!("       Transaction sequence ({} txs):", f.tx_sequence.len());
                 for (tx_idx, tx) in f.tx_sequence.iter().enumerate() {
-                    let args_str: Vec<String> = tx.args.iter().map(|a| format!("{}", a.as_uint())).collect();
+                    let args_str: Vec<String> =
+                        tx.args.iter().map(|a| format!("{}", a.as_uint())).collect();
                     println!(
                         "         {}: fn={} sender={} value={} args=[{}]",
-                        tx_idx, tx.function_id, tx.sender, tx.value, args_str.join(", ")
+                        tx_idx,
+                        tx.function_id,
+                        tx.sender,
+                        tx.value,
+                        args_str.join(", ")
                     );
                 }
             }

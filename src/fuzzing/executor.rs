@@ -1,12 +1,14 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::cfg::CfgFunction;
-use crate::ir::{ControlKind, IrCallOption, IrInstr, IrModule, IrPlace, IrValue, IrVar, PlaceClass};
+use crate::ir::{
+    ControlKind, IrCallOption, IrInstr, IrModule, IrPlace, IrValue, IrVar, PlaceClass,
+};
 use crate::norm::NormalizedAst;
 
 use crate::fuzzing::types::{
-    ContractAbi, Environment, ExecutionTrace, FuzzValue, Individual,
-    TraceEvent, TraceEventKind, Transaction,
+    ContractAbi, Environment, ExecutionTrace, FuzzValue, Individual, TraceEvent, TraceEventKind,
+    Transaction,
 };
 
 /// Simulated state: variable_name → FuzzValue.
@@ -24,15 +26,8 @@ pub fn execute_individual(
     let mut trace = ExecutionTrace::default();
 
     for tx in &ind.transactions {
-        let result = execute_transaction(
-            tx,
-            &ind.environment,
-            &mut state,
-            ast,
-            ir_module,
-            cfgs,
-            abi,
-        );
+        let result =
+            execute_transaction(tx, &ind.environment, &mut state, ast, ir_module, cfgs, abi);
         trace.events.extend(result.events);
         trace.coverage.extend(&result.coverage);
         if result.reverted {
@@ -116,13 +111,20 @@ fn execute_transaction(
     // Set environment values
     locals.insert("msg.sender".to_string(), FuzzValue::Address(tx.sender));
     locals.insert("msg.value".to_string(), FuzzValue::Uint(tx.value));
-    locals.insert("block.timestamp".to_string(), FuzzValue::Uint(env.block_timestamp));
-    locals.insert("block.number".to_string(), FuzzValue::Uint(env.block_number));
+    locals.insert(
+        "block.timestamp".to_string(),
+        FuzzValue::Uint(env.block_timestamp),
+    );
+    locals.insert(
+        "block.number".to_string(),
+        FuzzValue::Uint(env.block_number),
+    );
 
     // Track temp variable origins for oracle detection
     let mut temp_origins: HashMap<String, HashSet<TempOrigin>> = HashMap::new();
     // Mark block.timestamp as a timestamp source
-    temp_origins.entry("block.timestamp".to_string())
+    temp_origins
+        .entry("block.timestamp".to_string())
         .or_default()
         .insert(TempOrigin::Timestamp);
 
@@ -172,17 +174,17 @@ fn execute_transaction(
 
     // Access control: check if any storage write happened without a sender check
     let has_sender_check = trace.events.iter().any(|e| {
-        e.function_id == tx.function_id
-            && matches!(e.kind, TraceEventKind::SenderChecked)
+        e.function_id == tx.function_id && matches!(e.kind, TraceEventKind::SenderChecked)
     });
     let has_storage_write = trace.events.iter().any(|e| {
-        e.function_id == tx.function_id
-            && matches!(e.kind, TraceEventKind::StorageWrite { .. })
+        e.function_id == tx.function_id && matches!(e.kind, TraceEventKind::StorageWrite { .. })
     });
     if has_storage_write && !has_sender_check {
         trace.events.push(TraceEvent {
             function_id: tx.function_id,
-            kind: TraceEventKind::StorageWrite { var_name: "__no_sender_check".to_string() },
+            kind: TraceEventKind::StorageWrite {
+                var_name: "__no_sender_check".to_string(),
+            },
         });
     }
 
@@ -256,16 +258,25 @@ fn execute_instr(
             let val = if is_storage(src) {
                 trace.events.push(TraceEvent {
                     function_id,
-                    kind: TraceEventKind::StorageRead { var_name: src_place_name.clone() },
+                    kind: TraceEventKind::StorageRead {
+                        var_name: src_place_name.clone(),
+                    },
                 });
                 // Mark dest as storage-derived for DoS loop detection
-                temp_origins.entry(dest_key.clone())
+                temp_origins
+                    .entry(dest_key.clone())
                     .or_default()
                     .insert(TempOrigin::StorageDerived);
-                state.get(&src_place_name).cloned().unwrap_or(FuzzValue::Uint(0))
+                state
+                    .get(&src_place_name)
+                    .cloned()
+                    .unwrap_or(FuzzValue::Uint(0))
             } else {
-                locals.get(&src_place_name).or_else(|| state.get(&src_place_name))
-                    .cloned().unwrap_or(FuzzValue::Uint(0))
+                locals
+                    .get(&src_place_name)
+                    .or_else(|| state.get(&src_place_name))
+                    .cloned()
+                    .unwrap_or(FuzzValue::Uint(0))
             };
 
             // Inspect the IrPlace structure directly for origin tracking.
@@ -278,10 +289,9 @@ fn execute_instr(
                     let f = field.to_lowercase();
 
                     // Detect block.timestamp loads
-                    if full_name == "block.timestamp"
-                        || base_name == "block" && f == "timestamp"
-                    {
-                        temp_origins.entry(dest_key.clone())
+                    if full_name == "block.timestamp" || base_name == "block" && f == "timestamp" {
+                        temp_origins
+                            .entry(dest_key.clone())
                             .or_default()
                             .insert(TempOrigin::Timestamp);
                     }
@@ -291,7 +301,8 @@ fn execute_instr(
                         || base_name == "block" && f == "number"
                         || f == "blockhash"
                     {
-                        temp_origins.entry(dest_key.clone())
+                        temp_origins
+                            .entry(dest_key.clone())
                             .or_default()
                             .insert(TempOrigin::BlockNumberDerived);
                         trace.events.push(TraceEvent {
@@ -301,10 +312,9 @@ fn execute_instr(
                     }
 
                     // Detect tx.origin loads
-                    if full_name == "tx.origin"
-                        || base_name == "tx" && f == "origin"
-                    {
-                        temp_origins.entry(dest_key.clone())
+                    if full_name == "tx.origin" || base_name == "tx" && f == "origin" {
+                        temp_origins
+                            .entry(dest_key.clone())
                             .or_default()
                             .insert(TempOrigin::TxOrigin);
                         trace.events.push(TraceEvent {
@@ -314,10 +324,14 @@ fn execute_instr(
                     }
 
                     // Detect .call / .send / .transfer member loads (external call refs)
-                    if f == "call" || f == "send" || f == "transfer"
-                        || f == "delegatecall" || f == "staticcall"
+                    if f == "call"
+                        || f == "send"
+                        || f == "transfer"
+                        || f == "delegatecall"
+                        || f == "staticcall"
                     {
-                        temp_origins.entry(dest_key.clone())
+                        temp_origins
+                            .entry(dest_key.clone())
                             .or_default()
                             .insert(TempOrigin::ExternalCallRef);
                     }
@@ -326,11 +340,13 @@ fn execute_instr(
                     if f == "length" {
                         // If the base is storage-derived, mark this as storage-derived too
                         let base_key = value_key(base);
-                        let base_is_storage = temp_origins.get(&base_key)
+                        let base_is_storage = temp_origins
+                            .get(&base_key)
                             .map(|o| o.contains(&TempOrigin::StorageDerived))
                             .unwrap_or(false);
                         if base_is_storage || is_storage(src) {
-                            temp_origins.entry(dest_key.clone())
+                            temp_origins
+                                .entry(dest_key.clone())
                                 .or_default()
                                 .insert(TempOrigin::StorageDerived);
                         }
@@ -340,12 +356,14 @@ fn execute_instr(
                     // Direct var loads: check if the var name itself is timestamp-related
                     let vname = var_key(var);
                     if vname == "block.timestamp" || vname.contains("timestamp") {
-                        temp_origins.entry(dest_key.clone())
+                        temp_origins
+                            .entry(dest_key.clone())
                             .or_default()
                             .insert(TempOrigin::Timestamp);
                     }
                     if vname == "block.number" || vname.contains("blockhash") {
-                        temp_origins.entry(dest_key.clone())
+                        temp_origins
+                            .entry(dest_key.clone())
                             .or_default()
                             .insert(TempOrigin::BlockNumberDerived);
                         trace.events.push(TraceEvent {
@@ -354,7 +372,8 @@ fn execute_instr(
                         });
                     }
                     if vname == "tx.origin" {
-                        temp_origins.entry(dest_key.clone())
+                        temp_origins
+                            .entry(dest_key.clone())
                             .or_default()
                             .insert(TempOrigin::TxOrigin);
                         trace.events.push(TraceEvent {
@@ -368,7 +387,10 @@ fn execute_instr(
 
             // Propagate origins from source to dest
             if let Some(origins) = temp_origins.get(&src_place_name).cloned() {
-                temp_origins.entry(dest_key.clone()).or_default().extend(origins);
+                temp_origins
+                    .entry(dest_key.clone())
+                    .or_default()
+                    .extend(origins);
             }
 
             set_var(dest, val, locals);
@@ -394,7 +416,9 @@ fn execute_instr(
 
             set_var(dest, val, locals);
         }
-        IrInstr::Binary { dest, op, lhs, rhs, .. } => {
+        IrInstr::Binary {
+            dest, op, lhs, rhs, ..
+        } => {
             let l = resolve_value(lhs, state, locals).as_uint();
             let r = resolve_value(rhs, state, locals).as_uint();
             let result = eval_binary(op, l, r);
@@ -415,39 +439,56 @@ fn execute_instr(
             // Propagate timestamp taint through arithmetic
             let lhs_key = value_key(lhs);
             let rhs_key = value_key(rhs);
-            let lhs_has_ts = temp_origins.get(&lhs_key)
-                .map(|o| o.contains(&TempOrigin::Timestamp) || o.contains(&TempOrigin::TimestampDerived))
+            let lhs_has_ts = temp_origins
+                .get(&lhs_key)
+                .map(|o| {
+                    o.contains(&TempOrigin::Timestamp) || o.contains(&TempOrigin::TimestampDerived)
+                })
                 .unwrap_or(false);
-            let rhs_has_ts = temp_origins.get(&rhs_key)
-                .map(|o| o.contains(&TempOrigin::Timestamp) || o.contains(&TempOrigin::TimestampDerived))
+            let rhs_has_ts = temp_origins
+                .get(&rhs_key)
+                .map(|o| {
+                    o.contains(&TempOrigin::Timestamp) || o.contains(&TempOrigin::TimestampDerived)
+                })
                 .unwrap_or(false);
             if lhs_has_ts || rhs_has_ts {
                 let dest_key = var_key(dest);
-                temp_origins.entry(dest_key).or_default().insert(TempOrigin::TimestampDerived);
+                temp_origins
+                    .entry(dest_key)
+                    .or_default()
+                    .insert(TempOrigin::TimestampDerived);
             }
 
             // Propagate StorageDerived through comparisons (for loop conditions like `i < arr.length`)
-            let lhs_storage = temp_origins.get(&lhs_key)
+            let lhs_storage = temp_origins
+                .get(&lhs_key)
                 .map(|o| o.contains(&TempOrigin::StorageDerived))
                 .unwrap_or(false);
-            let rhs_storage = temp_origins.get(&rhs_key)
+            let rhs_storage = temp_origins
+                .get(&rhs_key)
                 .map(|o| o.contains(&TempOrigin::StorageDerived))
                 .unwrap_or(false);
             if lhs_storage || rhs_storage {
                 let dest_key = var_key(dest);
-                temp_origins.entry(dest_key).or_default().insert(TempOrigin::StorageDerived);
+                temp_origins
+                    .entry(dest_key)
+                    .or_default()
+                    .insert(TempOrigin::StorageDerived);
             }
 
             // Access control: detect msg.sender == owner comparison pattern
             // If one side is "msg.sender" and the other is storage-derived, this is a sender check
             if matches!(op.as_str(), "==" | "!=") {
-                let lhs_is_sender = lhs_key.contains("sender")
-                    || value_name(lhs).contains("sender");
-                let rhs_is_sender = rhs_key.contains("sender")
-                    || value_name(rhs).contains("sender");
+                let lhs_is_sender =
+                    lhs_key.contains("sender") || value_name(lhs).contains("sender");
+                let rhs_is_sender =
+                    rhs_key.contains("sender") || value_name(rhs).contains("sender");
                 if (lhs_is_sender && rhs_storage) || (rhs_is_sender && lhs_storage) {
                     let dest_key = var_key(dest);
-                    temp_origins.entry(dest_key).or_default().insert(TempOrigin::StorageDerived);
+                    temp_origins
+                        .entry(dest_key)
+                        .or_default()
+                        .insert(TempOrigin::StorageDerived);
                     trace.events.push(TraceEvent {
                         function_id,
                         kind: TraceEventKind::SenderChecked,
@@ -460,14 +501,19 @@ fn execute_instr(
             // Track division results for div-before-mul detection
             if op == "/" {
                 let dest_key_dm = var_key(dest);
-                temp_origins.entry(dest_key_dm).or_default().insert(TempOrigin::DivisionResult);
+                temp_origins
+                    .entry(dest_key_dm)
+                    .or_default()
+                    .insert(TempOrigin::DivisionResult);
             }
             // Detect division-before-multiplication: if one operand is a division result and op is *
             if op == "*" {
-                let lhs_is_div = temp_origins.get(&lhs_key)
+                let lhs_is_div = temp_origins
+                    .get(&lhs_key)
                     .map(|o| o.contains(&TempOrigin::DivisionResult))
                     .unwrap_or(false);
-                let rhs_is_div = temp_origins.get(&rhs_key)
+                let rhs_is_div = temp_origins
+                    .get(&rhs_key)
                     .map(|o| o.contains(&TempOrigin::DivisionResult))
                     .unwrap_or(false);
                 if lhs_is_div || rhs_is_div {
@@ -483,7 +529,13 @@ fn execute_instr(
         IrInstr::Unary { dest, op, expr, .. } => {
             let v = resolve_value(expr, state, locals).as_uint();
             let result = match op.as_str() {
-                "!" => if v == 0 { 1 } else { 0 },
+                "!" => {
+                    if v == 0 {
+                        1
+                    } else {
+                        0
+                    }
+                }
                 "-" => (0u128).wrapping_sub(v),
                 "~" => !v,
                 _ => v,
@@ -491,17 +543,29 @@ fn execute_instr(
 
             // Propagate timestamp taint through unary ops
             let expr_key = value_key(expr);
-            if temp_origins.get(&expr_key)
-                .map(|o| o.contains(&TempOrigin::Timestamp) || o.contains(&TempOrigin::TimestampDerived))
+            if temp_origins
+                .get(&expr_key)
+                .map(|o| {
+                    o.contains(&TempOrigin::Timestamp) || o.contains(&TempOrigin::TimestampDerived)
+                })
                 .unwrap_or(false)
             {
                 let dest_key = var_key(dest);
-                temp_origins.entry(dest_key).or_default().insert(TempOrigin::TimestampDerived);
+                temp_origins
+                    .entry(dest_key)
+                    .or_default()
+                    .insert(TempOrigin::TimestampDerived);
             }
 
             set_var(dest, FuzzValue::Uint(result), locals);
         }
-        IrInstr::Call { dest, callee, args, options, .. } => {
+        IrInstr::Call {
+            dest,
+            callee,
+            args,
+            options,
+            ..
+        } => {
             let callee_name = value_name(callee);
             let callee_key = value_key(callee);
             let has_value = options.iter().any(|o| matches!(o, IrCallOption::Value(_)));
@@ -529,12 +593,15 @@ fn execute_instr(
             if callee_lower == "ecrecover" {
                 trace.events.push(TraceEvent {
                     function_id,
-                    kind: TraceEventKind::EcrecoverCalled { checked_zero: false },
+                    kind: TraceEventKind::EcrecoverCalled {
+                        checked_zero: false,
+                    },
                 });
             }
 
             // Detect .transfer() / .send() (hardcoded gas limit)
-            if callee_lower == "transfer" || callee_lower == "send"
+            if callee_lower == "transfer"
+                || callee_lower == "send"
                 || callee_lower.ends_with(".transfer")
                 || callee_lower.ends_with(".send")
             {
@@ -553,8 +620,12 @@ fn execute_instr(
                     let arg_key = value_key(first_arg);
                     // Check if the require condition involves msg.sender comparison
                     if arg_key.contains("sender")
-                        || temp_origins.get(&arg_key)
-                            .map(|o| o.iter().any(|origin| matches!(origin, TempOrigin::StorageDerived)))
+                        || temp_origins
+                            .get(&arg_key)
+                            .map(|o| {
+                                o.iter()
+                                    .any(|origin| matches!(origin, TempOrigin::StorageDerived))
+                            })
                             .unwrap_or(false)
                     {
                         trace.events.push(TraceEvent {
@@ -567,7 +638,8 @@ fn execute_instr(
 
             // Check if callee is an external call — either by name or by origin tracking
             let is_external_by_name = is_external_call(&callee_name);
-            let is_external_by_origin = temp_origins.get(&callee_key)
+            let is_external_by_origin = temp_origins
+                .get(&callee_key)
                 .map(|o| o.contains(&TempOrigin::ExternalCallRef))
                 .unwrap_or(false);
             let is_external = is_external_by_name || is_external_by_origin || has_value;
@@ -616,9 +688,12 @@ fn execute_instr(
                     // Detect timestamp dependency: branch on value derived from block.timestamp
                     let has_timestamp = cond_name.contains("timestamp")
                         || cond_name.contains("block.timestamp")
-                        || temp_origins.get(&cond_key)
-                            .map(|o| o.contains(&TempOrigin::Timestamp)
-                                || o.contains(&TempOrigin::TimestampDerived))
+                        || temp_origins
+                            .get(&cond_key)
+                            .map(|o| {
+                                o.contains(&TempOrigin::Timestamp)
+                                    || o.contains(&TempOrigin::TimestampDerived)
+                            })
                             .unwrap_or(false);
 
                     if has_timestamp {
@@ -632,7 +707,8 @@ fn execute_instr(
                     // Detect unbounded loops: loop condition depends on storage-derived value
                     if let Some(cond_val) = cond {
                         let cond_key = value_key(cond_val);
-                        let is_storage_dep = temp_origins.get(&cond_key)
+                        let is_storage_dep = temp_origins
+                            .get(&cond_key)
                             .map(|o| o.contains(&TempOrigin::StorageDerived))
                             .unwrap_or(false);
                         if is_storage_dep {
@@ -657,7 +733,13 @@ fn execute_instr(
                 _ => {}
             }
         }
-        IrInstr::Select { dest, cond, then_val, else_val, .. } => {
+        IrInstr::Select {
+            dest,
+            cond,
+            then_val,
+            else_val,
+            ..
+        } => {
             let c = resolve_value(cond, state, locals);
             let val = if c.is_truthy() {
                 resolve_value(then_val, state, locals)
@@ -678,11 +760,17 @@ fn execute_instr(
 
 // --- Helpers ---
 
-fn resolve_value(value: &IrValue, state: &SimState, locals: &HashMap<String, FuzzValue>) -> FuzzValue {
+fn resolve_value(
+    value: &IrValue,
+    state: &SimState,
+    locals: &HashMap<String, FuzzValue>,
+) -> FuzzValue {
     match value {
-        IrValue::Var(IrVar::Named(name)) => {
-            locals.get(name).or_else(|| state.get(name)).cloned().unwrap_or(FuzzValue::Uint(0))
-        }
+        IrValue::Var(IrVar::Named(name)) => locals
+            .get(name)
+            .or_else(|| state.get(name))
+            .cloned()
+            .unwrap_or(FuzzValue::Uint(0)),
         IrValue::Var(IrVar::Temp(id)) => {
             // Look up temp variables from locals using their $t{id} key
             let key = format!("$t{}", id);
@@ -705,8 +793,12 @@ fn resolve_value(value: &IrValue, state: &SimState, locals: &HashMap<String, Fuz
 
 fn set_var(var: &IrVar, val: FuzzValue, locals: &mut HashMap<String, FuzzValue>) {
     match var {
-        IrVar::Named(name) => { locals.insert(name.clone(), val); }
-        IrVar::Temp(id) => { locals.insert(format!("$t{}", id), val); }
+        IrVar::Named(name) => {
+            locals.insert(name.clone(), val);
+        }
+        IrVar::Temp(id) => {
+            locals.insert(format!("$t{}", id), val);
+        }
     }
 }
 
@@ -747,9 +839,17 @@ fn is_storage(place: &IrPlace) -> bool {
 
 fn place_name(place: &IrPlace, contract_name: Option<&str>) -> Option<String> {
     match place {
-        IrPlace::Var { var: IrVar::Named(n), .. } => Some(n.clone()),
-        IrPlace::Var { var: IrVar::Temp(id), .. } => Some(format!("$t{}", id)),
-        IrPlace::Member { base, field, root, .. } => {
+        IrPlace::Var {
+            var: IrVar::Named(n),
+            ..
+        } => Some(n.clone()),
+        IrPlace::Var {
+            var: IrVar::Temp(id),
+            ..
+        } => Some(format!("$t{}", id)),
+        IrPlace::Member {
+            base, field, root, ..
+        } => {
             if is_contract_receiver(base, contract_name) {
                 Some(field.clone())
             } else {
@@ -763,8 +863,7 @@ fn place_name(place: &IrPlace, contract_name: Option<&str>) -> Option<String> {
 fn is_contract_receiver(value: &IrValue, contract_name: Option<&str>) -> bool {
     match value {
         IrValue::Var(IrVar::Named(name)) => {
-            name == "this" || name == "super"
-                || contract_name.map(|cn| cn == name).unwrap_or(false)
+            name == "this" || name == "super" || contract_name.map(|cn| cn == name).unwrap_or(false)
         }
         _ => false,
     }
@@ -775,30 +874,93 @@ fn eval_binary(op: &str, l: u128, r: u128) -> u128 {
         "+" => l.wrapping_add(r),
         "-" => l.wrapping_sub(r),
         "*" => l.wrapping_mul(r),
-        "/" => if r != 0 { l / r } else { 0 },
-        "%" => if r != 0 { l % r } else { 0 },
+        "/" => {
+            if r != 0 {
+                l / r
+            } else {
+                0
+            }
+        }
+        "%" => {
+            if r != 0 {
+                l % r
+            } else {
+                0
+            }
+        }
         "**" => l.wrapping_pow(r as u32),
         "&" => l & r,
         "|" => l | r,
         "^" => l ^ r,
         "<<" => l.wrapping_shl(r as u32),
         ">>" => l.wrapping_shr(r as u32),
-        "==" => if l == r { 1 } else { 0 },
-        "!=" => if l != r { 1 } else { 0 },
-        "<" => if l < r { 1 } else { 0 },
-        ">" => if l > r { 1 } else { 0 },
-        "<=" => if l <= r { 1 } else { 0 },
-        ">=" => if l >= r { 1 } else { 0 },
-        "&&" => if l != 0 && r != 0 { 1 } else { 0 },
-        "||" => if l != 0 || r != 0 { 1 } else { 0 },
+        "==" => {
+            if l == r {
+                1
+            } else {
+                0
+            }
+        }
+        "!=" => {
+            if l != r {
+                1
+            } else {
+                0
+            }
+        }
+        "<" => {
+            if l < r {
+                1
+            } else {
+                0
+            }
+        }
+        ">" => {
+            if l > r {
+                1
+            } else {
+                0
+            }
+        }
+        "<=" => {
+            if l <= r {
+                1
+            } else {
+                0
+            }
+        }
+        ">=" => {
+            if l >= r {
+                1
+            } else {
+                0
+            }
+        }
+        "&&" => {
+            if l != 0 && r != 0 {
+                1
+            } else {
+                0
+            }
+        }
+        "||" => {
+            if l != 0 || r != 0 {
+                1
+            } else {
+                0
+            }
+        }
         _ => 0,
     }
 }
 
 fn is_external_call(name: &str) -> bool {
     let low = name.to_lowercase();
-    low.contains("call") || low.contains("transfer") || low.contains("send")
-        || low.contains("delegatecall") || low.contains("staticcall")
+    low.contains("call")
+        || low.contains("transfer")
+        || low.contains("send")
+        || low.contains("delegatecall")
+        || low.contains("staticcall")
 }
 
 #[cfg(test)]
@@ -823,7 +985,10 @@ mod tests {
     fn resolve_literal_values() {
         let state = SimState::new();
         let locals = HashMap::new();
-        let lit = crate::norm::Literal { kind: "number".to_string(), value: "42".to_string() };
+        let lit = crate::norm::Literal {
+            kind: "number".to_string(),
+            value: "42".to_string(),
+        };
         let val = resolve_value(&IrValue::Literal(lit), &state, &locals);
         assert_eq!(val.as_uint(), 42);
     }

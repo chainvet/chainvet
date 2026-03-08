@@ -11,9 +11,7 @@
 //! can callback and re-enter before the state variable is updated, which may
 //! lead to an unexpected result (e.g. draining all ETH from the contract).
 
-use crate::norm::{
-    CallOption, CallTarget, ExprKind, NormalizedAst, StmtKind, Visibility,
-};
+use crate::norm::{CallOption, CallTarget, ExprKind, NormalizedAst, StmtKind, Visibility};
 
 use super::{Finding, FindingKind, Severity};
 
@@ -31,8 +29,6 @@ const LOW_LEVEL_CALLS: &[&str] = &["call", "delegatecall", "staticcall"];
 /// is the most dangerous pattern.
 const TRANSFER_METHODS: &[&str] = &["transfer", "send"];
 
-
-
 // ═══════════════════════════════════════════════════════════════════════════════
 //  Entry point
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -41,11 +37,11 @@ const TRANSFER_METHODS: &[&str] = &["transfer", "send"];
 pub fn detect_all(ast: &NormalizedAst) -> Vec<Finding> {
     let mut findings = Vec::new();
 
-    findings.extend(detect_reentrancy_negative_events(ast));     // RE-01
-    findings.extend(detect_reentrancy_transfer(ast));            // RE-02
-    findings.extend(detect_reentrancy_same_effect(ast));         // RE-03
-    findings.extend(detect_reentrancy_eth_transfer(ast));        // RE-04
-    findings.extend(detect_reentrancy_no_eth_transfer(ast));     // RE-05
+    findings.extend(detect_reentrancy_negative_events(ast)); // RE-01
+    findings.extend(detect_reentrancy_transfer(ast)); // RE-02
+    findings.extend(detect_reentrancy_same_effect(ast)); // RE-03
+    findings.extend(detect_reentrancy_eth_transfer(ast)); // RE-04
+    findings.extend(detect_reentrancy_no_eth_transfer(ast)); // RE-05
 
     findings
 }
@@ -62,18 +58,28 @@ fn for_each_expr_in_stmt(
     stmt_id: u32,
     cb: &mut impl FnMut(u32, &crate::norm::Expr),
 ) {
-    let Some(stmt) = ast.statements.get(stmt_id as usize) else { return };
+    let Some(stmt) = ast.statements.get(stmt_id as usize) else {
+        return;
+    };
 
     match &stmt.kind {
         StmtKind::Block(stmts) => {
-            for &s in stmts { for_each_expr_in_stmt(ast, s, cb); }
+            for &s in stmts {
+                for_each_expr_in_stmt(ast, s, cb);
+            }
         }
         StmtKind::Expr(e) => for_each_expr(ast, *e, cb),
         StmtKind::Return(Some(e)) => for_each_expr(ast, *e, cb),
-        StmtKind::If { cond, then_id, else_id } => {
+        StmtKind::If {
+            cond,
+            then_id,
+            else_id,
+        } => {
             for_each_expr(ast, *cond, cb);
             for_each_expr_in_stmt(ast, *then_id, cb);
-            if let Some(e) = else_id { for_each_expr_in_stmt(ast, *e, cb); }
+            if let Some(e) = else_id {
+                for_each_expr_in_stmt(ast, *e, cb);
+            }
         }
         StmtKind::While { cond, body } => {
             for_each_expr(ast, *cond, cb);
@@ -83,10 +89,21 @@ fn for_each_expr_in_stmt(
             for_each_expr_in_stmt(ast, *body, cb);
             for_each_expr(ast, *cond, cb);
         }
-        StmtKind::For { init, cond, step, body } => {
-            if let Some(s) = init { for_each_expr_in_stmt(ast, *s, cb); }
-            if let Some(e) = cond { for_each_expr(ast, *e, cb); }
-            if let Some(e) = step { for_each_expr(ast, *e, cb); }
+        StmtKind::For {
+            init,
+            cond,
+            step,
+            body,
+        } => {
+            if let Some(s) = init {
+                for_each_expr_in_stmt(ast, *s, cb);
+            }
+            if let Some(e) = cond {
+                for_each_expr(ast, *e, cb);
+            }
+            if let Some(e) = step {
+                for_each_expr(ast, *e, cb);
+            }
             for_each_expr_in_stmt(ast, *body, cb);
         }
         StmtKind::Emit(e) => for_each_expr(ast, *e, cb),
@@ -94,25 +111,27 @@ fn for_each_expr_in_stmt(
         StmtKind::VarDecl { init: Some(e), .. } => for_each_expr(ast, *e, cb),
         StmtKind::Try { call, clauses } => {
             for_each_expr(ast, *call, cb);
-            for clause in clauses { for_each_expr_in_stmt(ast, clause.body, cb); }
+            for clause in clauses {
+                for_each_expr_in_stmt(ast, clause.body, cb);
+            }
         }
         _ => {}
     }
 }
 
 /// Walk every sub-expression under `expr_id`, calling `cb` for each.
-fn for_each_expr(
-    ast: &NormalizedAst,
-    expr_id: u32,
-    cb: &mut impl FnMut(u32, &crate::norm::Expr),
-) {
-    let Some(expr) = ast.expressions.get(expr_id as usize) else { return };
+fn for_each_expr(ast: &NormalizedAst, expr_id: u32, cb: &mut impl FnMut(u32, &crate::norm::Expr)) {
+    let Some(expr) = ast.expressions.get(expr_id as usize) else {
+        return;
+    };
     cb(expr_id, expr);
 
     match &expr.kind {
         ExprKind::Call { callee, args } => {
             for_each_expr(ast, *callee, cb);
-            for arg in args { for_each_expr(ast, *arg, cb); }
+            for arg in args {
+                for_each_expr(ast, *arg, cb);
+            }
         }
         ExprKind::CallOptions { callee, options } => {
             for_each_expr(ast, *callee, cb);
@@ -127,7 +146,9 @@ fn for_each_expr(
         ExprKind::Member { base, .. } => for_each_expr(ast, *base, cb),
         ExprKind::Index { base, index } => {
             for_each_expr(ast, *base, cb);
-            if let Some(i) = index { for_each_expr(ast, *i, cb); }
+            if let Some(i) = index {
+                for_each_expr(ast, *i, cb);
+            }
         }
         ExprKind::Binary { lhs, rhs, .. } => {
             for_each_expr(ast, *lhs, cb);
@@ -139,9 +160,15 @@ fn for_each_expr(
             for_each_expr(ast, *rhs, cb);
         }
         ExprKind::Tuple(entries) => {
-            for e in entries { for_each_expr(ast, *e, cb); }
+            for e in entries {
+                for_each_expr(ast, *e, cb);
+            }
         }
-        ExprKind::Conditional { cond, then_expr, else_expr } => {
+        ExprKind::Conditional {
+            cond,
+            then_expr,
+            else_expr,
+        } => {
             for_each_expr(ast, *cond, cb);
             for_each_expr(ast, *then_expr, cb);
             for_each_expr(ast, *else_expr, cb);
@@ -151,31 +178,39 @@ fn for_each_expr(
 }
 
 /// Walk every statement under `stmt_id`, calling `cb` for each.
-fn for_each_stmt(
-    ast: &NormalizedAst,
-    stmt_id: u32,
-    cb: &mut impl FnMut(u32, &crate::norm::Stmt),
-) {
-    let Some(stmt) = ast.statements.get(stmt_id as usize) else { return };
+fn for_each_stmt(ast: &NormalizedAst, stmt_id: u32, cb: &mut impl FnMut(u32, &crate::norm::Stmt)) {
+    let Some(stmt) = ast.statements.get(stmt_id as usize) else {
+        return;
+    };
     cb(stmt_id, stmt);
 
     match &stmt.kind {
         StmtKind::Block(stmts) => {
-            for &s in stmts { for_each_stmt(ast, s, cb); }
+            for &s in stmts {
+                for_each_stmt(ast, s, cb);
+            }
         }
-        StmtKind::If { then_id, else_id, .. } => {
+        StmtKind::If {
+            then_id, else_id, ..
+        } => {
             for_each_stmt(ast, *then_id, cb);
-            if let Some(e) = else_id { for_each_stmt(ast, *e, cb); }
+            if let Some(e) = else_id {
+                for_each_stmt(ast, *e, cb);
+            }
         }
         StmtKind::While { body, .. } | StmtKind::DoWhile { body, .. } => {
             for_each_stmt(ast, *body, cb);
         }
         StmtKind::For { init, body, .. } => {
-            if let Some(s) = init { for_each_stmt(ast, *s, cb); }
+            if let Some(s) = init {
+                for_each_stmt(ast, *s, cb);
+            }
             for_each_stmt(ast, *body, cb);
         }
         StmtKind::Try { clauses, .. } => {
-            for c in clauses { for_each_stmt(ast, c.body, cb); }
+            for c in clauses {
+                for_each_stmt(ast, c.body, cb);
+            }
         }
         _ => {}
     }
@@ -268,7 +303,9 @@ fn check_expr_external_call(ast: &NormalizedAst, expr_id: u32) -> Option<Externa
     // This catches cases where the outer expression is CallOptions wrapping
     // a Call that was not resolved.
     if let ExprKind::CallOptions { callee, options } = &expr.kind {
-        let has_value = options.iter().any(|opt| matches!(opt, CallOption::Value(_)));
+        let has_value = options
+            .iter()
+            .any(|opt| matches!(opt, CallOption::Value(_)));
         if has_value {
             // Check if the inner callee is a low-level call
             if let Some(callee_expr) = ast.expressions.get(*callee as usize) {
@@ -292,16 +329,23 @@ fn check_expr_external_call(ast: &NormalizedAst, expr_id: u32) -> Option<Externa
 /// Returns `true` if the expression (or its enclosing CallOptions) has a
 /// `value` option, indicating ETH transfer.
 fn has_value_option(ast: &NormalizedAst, expr_id: u32) -> bool {
-    let Some(expr) = ast.expressions.get(expr_id as usize) else { return false };
+    let Some(expr) = ast.expressions.get(expr_id as usize) else {
+        return false;
+    };
 
     // Direct CallOptions node
     if let ExprKind::CallOptions { options, .. } = &expr.kind {
-        return options.iter().any(|opt| matches!(opt, CallOption::Value(_)));
+        return options
+            .iter()
+            .any(|opt| matches!(opt, CallOption::Value(_)));
     }
 
     // Also check call metadata options
     if let Some(call) = &expr.meta.call {
-        return call.options.iter().any(|opt| matches!(opt, CallOption::Value(_)));
+        return call
+            .options
+            .iter()
+            .any(|opt| matches!(opt, CallOption::Value(_)));
     }
 
     false
@@ -333,7 +377,9 @@ struct StateUpdateInfo {
 /// identifiers or indexed/member access on state variables.
 fn find_state_updates_in_stmt(ast: &NormalizedAst, stmt_id: u32) -> Vec<StateUpdateInfo> {
     let mut updates = Vec::new();
-    let Some(stmt) = ast.statements.get(stmt_id as usize) else { return updates };
+    let Some(stmt) = ast.statements.get(stmt_id as usize) else {
+        return updates;
+    };
 
     match &stmt.kind {
         // Direct expression statement: `balances[msg.sender] = 0;`
@@ -342,9 +388,7 @@ fn find_state_updates_in_stmt(ast: &NormalizedAst, stmt_id: u32) -> Vec<StateUpd
                 if let ExprKind::Assign { lhs, .. } = &expr.kind {
                     let names = collect_assigned_names(ast, *lhs);
                     if !names.is_empty() {
-                        updates.push(StateUpdateInfo {
-                            var_names: names,
-                        });
+                        updates.push(StateUpdateInfo { var_names: names });
                     }
                 }
             }
@@ -368,7 +412,9 @@ fn find_state_updates_in_stmt(ast: &NormalizedAst, stmt_id: u32) -> Vec<StateUpd
 /// Returns names like "balances", "userBalance", etc.
 fn collect_assigned_names(ast: &NormalizedAst, lhs_id: u32) -> Vec<String> {
     let mut names = Vec::new();
-    let Some(expr) = ast.expressions.get(lhs_id as usize) else { return names };
+    let Some(expr) = ast.expressions.get(lhs_id as usize) else {
+        return names;
+    };
 
     match &expr.kind {
         // Simple identifier: `x = ...`
@@ -400,7 +446,9 @@ fn collect_assigned_names(ast: &NormalizedAst, lhs_id: u32) -> Vec<String> {
 /// found external calls.
 fn find_external_calls_in_stmt(ast: &NormalizedAst, stmt_id: u32) -> Vec<ExternalCallInfo> {
     let mut calls = Vec::new();
-    let Some(stmt) = ast.statements.get(stmt_id as usize) else { return calls };
+    let Some(stmt) = ast.statements.get(stmt_id as usize) else {
+        return calls;
+    };
 
     // Walk every expression in the statement looking for external calls.
     for_each_expr_in_stmt(ast, stmt_id, &mut |eid, _expr| {
@@ -427,11 +475,15 @@ fn stmt_contains_emit(ast: &NormalizedAst, stmt_id: u32) -> bool {
 /// Check whether a statement reads a variable whose name matches the
 /// given `target_names` list (case-insensitive substring).
 fn stmt_reads_var_named(ast: &NormalizedAst, stmt_id: u32, target_names: &[String]) -> bool {
-    if target_names.is_empty() { return false; }
+    if target_names.is_empty() {
+        return false;
+    }
 
     let mut found = false;
     for_each_expr_in_stmt(ast, stmt_id, &mut |_eid, expr| {
-        if found { return; }
+        if found {
+            return;
+        }
         if let ExprKind::Ident(name) = &expr.kind {
             let lower = name.to_lowercase();
             if target_names.iter().any(|t| t.to_lowercase() == lower) {
@@ -445,7 +497,9 @@ fn stmt_reads_var_named(ast: &NormalizedAst, stmt_id: u32, target_names: &[Strin
 /// Returns the flat list of top-level statement ids from a function body
 /// (unwrapping the outer Block if present).
 fn top_level_stmts(ast: &NormalizedAst, body_id: u32) -> Vec<u32> {
-    let Some(stmt) = ast.statements.get(body_id as usize) else { return vec![] };
+    let Some(stmt) = ast.statements.get(body_id as usize) else {
+        return vec![];
+    };
     match &stmt.kind {
         StmtKind::Block(stmts) => stmts.clone(),
         _ => vec![body_id],
@@ -457,7 +511,9 @@ fn top_level_stmts(ast: &NormalizedAst, body_id: u32) -> Vec<u32> {
 /// method invocation like `token.balanceOf(...)` or `vault.withdraw()`).
 fn find_cross_contract_calls_in_stmt(ast: &NormalizedAst, stmt_id: u32) -> Vec<ExternalCallInfo> {
     let mut calls = Vec::new();
-    let Some(stmt) = ast.statements.get(stmt_id as usize) else { return calls };
+    let Some(stmt) = ast.statements.get(stmt_id as usize) else {
+        return calls;
+    };
 
     for_each_expr_in_stmt(ast, stmt_id, &mut |_eid, expr| {
         // Look for calls via Member access: `someContract.someFunc(...)`
@@ -539,7 +595,9 @@ fn detect_reentrancy_negative_events(ast: &NormalizedAst) -> Vec<Finding> {
         for (i, &sid) in stmts.iter().enumerate() {
             // Find all external calls in this statement.
             let ext_calls = find_external_calls_in_stmt(ast, sid);
-            if ext_calls.is_empty() { continue; }
+            if ext_calls.is_empty() {
+                continue;
+            }
 
             // Look ahead in subsequent statements for state updates + emits.
             let mut found_state_update = false;
@@ -607,12 +665,12 @@ fn detect_reentrancy_transfer(ast: &NormalizedAst) -> Vec<Finding> {
         for (i, &sid) in stmts.iter().enumerate() {
             // Find external calls that are specifically transfer / send.
             let ext_calls = find_external_calls_in_stmt(ast, sid);
-            let transfer_calls: Vec<_> = ext_calls
-                .iter()
-                .filter(|c| c.is_transfer_or_send)
-                .collect();
+            let transfer_calls: Vec<_> =
+                ext_calls.iter().filter(|c| c.is_transfer_or_send).collect();
 
-            if transfer_calls.is_empty() { continue; }
+            if transfer_calls.is_empty() {
+                continue;
+            }
 
             // Look ahead for state updates.
             for &later_sid in &stmts[i + 1..] {
@@ -672,7 +730,9 @@ fn detect_reentrancy_same_effect(ast: &NormalizedAst) -> Vec<Finding> {
 
         for (i, &sid) in stmts.iter().enumerate() {
             let ext_calls = find_external_calls_in_stmt(ast, sid);
-            if ext_calls.is_empty() { continue; }
+            if ext_calls.is_empty() {
+                continue;
+            }
 
             // Collect variable names written AFTER the call.
             let mut written_after: Vec<String> = Vec::new();
@@ -682,7 +742,9 @@ fn detect_reentrancy_same_effect(ast: &NormalizedAst) -> Vec<Finding> {
                 }
             }
 
-            if written_after.is_empty() { continue; }
+            if written_after.is_empty() {
+                continue;
+            }
 
             // Check if any of those variables were read BEFORE the call.
             let mut read_before = false;
@@ -748,12 +810,11 @@ fn detect_reentrancy_eth_transfer(ast: &NormalizedAst) -> Vec<Finding> {
         for (i, &sid) in stmts.iter().enumerate() {
             let ext_calls = find_external_calls_in_stmt(ast, sid);
             // Filter to only calls that send ETH.
-            let eth_calls: Vec<_> = ext_calls
-                .iter()
-                .filter(|c| c.sends_eth)
-                .collect();
+            let eth_calls: Vec<_> = ext_calls.iter().filter(|c| c.sends_eth).collect();
 
-            if eth_calls.is_empty() { continue; }
+            if eth_calls.is_empty() {
+                continue;
+            }
 
             // Look ahead for state updates.
             for &later_sid in &stmts[i + 1..] {
@@ -819,11 +880,15 @@ fn detect_reentrancy_no_eth_transfer(ast: &NormalizedAst) -> Vec<Finding> {
                 .filter(|c| !c.sends_eth && c.is_low_level_call)
                 .collect();
 
-            if cc_calls.is_empty() && no_eth_calls.is_empty() { continue; }
+            if cc_calls.is_empty() && no_eth_calls.is_empty() {
+                continue;
+            }
 
             // Exclude if already caught by RE-04 (ETH transfer).
             let has_eth_call = ext_calls.iter().any(|c| c.sends_eth);
-            if has_eth_call { continue; }
+            if has_eth_call {
+                continue;
+            }
 
             // Look ahead for state updates.
             for &later_sid in &stmts[i + 1..] {

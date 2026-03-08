@@ -2,9 +2,7 @@
 //! 4 vulnerability detectors covering integer division before multiplication,
 //! integer overflow, integer underflow, unsafe array length assignment.
 
-use crate::norm::{
-    CallOption, CallTarget, ExprKind, NormalizedAst, Span, StmtKind,
-};
+use crate::norm::{CallOption, CallTarget, ExprKind, NormalizedAst, Span, StmtKind};
 
 use super::{Finding, FindingKind, Severity};
 
@@ -15,9 +13,9 @@ pub fn detect_all(ast: &NormalizedAst) -> Vec<Finding> {
     let mut findings = Vec::new();
 
     findings.extend(detect_division_before_multiplication(ast)); // AR-01
-    findings.extend(detect_integer_overflow(ast));                // AR-02
-    findings.extend(detect_integer_underflow(ast));               // AR-03
-    findings.extend(detect_unsafe_array_length_assignment(ast));  // AR-04
+    findings.extend(detect_integer_overflow(ast)); // AR-02
+    findings.extend(detect_integer_underflow(ast)); // AR-03
+    findings.extend(detect_unsafe_array_length_assignment(ast)); // AR-04
 
     findings
 }
@@ -118,18 +116,28 @@ fn for_each_expr_in_stmt(
     stmt_id: u32,
     cb: &mut impl FnMut(u32, &crate::norm::Expr),
 ) {
-    let Some(stmt) = ast.statements.get(stmt_id as usize) else { return };
+    let Some(stmt) = ast.statements.get(stmt_id as usize) else {
+        return;
+    };
 
     match &stmt.kind {
         StmtKind::Block(stmts) => {
-            for &s in stmts { for_each_expr_in_stmt(ast, s, cb); }
+            for &s in stmts {
+                for_each_expr_in_stmt(ast, s, cb);
+            }
         }
         StmtKind::Expr(e) => for_each_expr(ast, *e, cb),
         StmtKind::Return(Some(e)) => for_each_expr(ast, *e, cb),
-        StmtKind::If { cond, then_id, else_id } => {
+        StmtKind::If {
+            cond,
+            then_id,
+            else_id,
+        } => {
             for_each_expr(ast, *cond, cb);
             for_each_expr_in_stmt(ast, *then_id, cb);
-            if let Some(e) = else_id { for_each_expr_in_stmt(ast, *e, cb); }
+            if let Some(e) = else_id {
+                for_each_expr_in_stmt(ast, *e, cb);
+            }
         }
         StmtKind::While { cond, body } => {
             for_each_expr(ast, *cond, cb);
@@ -139,10 +147,21 @@ fn for_each_expr_in_stmt(
             for_each_expr_in_stmt(ast, *body, cb);
             for_each_expr(ast, *cond, cb);
         }
-        StmtKind::For { init, cond, step, body } => {
-            if let Some(s) = init { for_each_expr_in_stmt(ast, *s, cb); }
-            if let Some(e) = cond { for_each_expr(ast, *e, cb); }
-            if let Some(e) = step { for_each_expr(ast, *e, cb); }
+        StmtKind::For {
+            init,
+            cond,
+            step,
+            body,
+        } => {
+            if let Some(s) = init {
+                for_each_expr_in_stmt(ast, *s, cb);
+            }
+            if let Some(e) = cond {
+                for_each_expr(ast, *e, cb);
+            }
+            if let Some(e) = step {
+                for_each_expr(ast, *e, cb);
+            }
             for_each_expr_in_stmt(ast, *body, cb);
         }
         StmtKind::Emit(e) => for_each_expr(ast, *e, cb),
@@ -150,25 +169,27 @@ fn for_each_expr_in_stmt(
         StmtKind::VarDecl { init: Some(e), .. } => for_each_expr(ast, *e, cb),
         StmtKind::Try { call, clauses } => {
             for_each_expr(ast, *call, cb);
-            for clause in clauses { for_each_expr_in_stmt(ast, clause.body, cb); }
+            for clause in clauses {
+                for_each_expr_in_stmt(ast, clause.body, cb);
+            }
         }
         _ => {}
     }
 }
 
 /// Walk every sub-expression under `expr_id`, calling `cb` for each.
-fn for_each_expr(
-    ast: &NormalizedAst,
-    expr_id: u32,
-    cb: &mut impl FnMut(u32, &crate::norm::Expr),
-) {
-    let Some(expr) = ast.expressions.get(expr_id as usize) else { return };
+fn for_each_expr(ast: &NormalizedAst, expr_id: u32, cb: &mut impl FnMut(u32, &crate::norm::Expr)) {
+    let Some(expr) = ast.expressions.get(expr_id as usize) else {
+        return;
+    };
     cb(expr_id, expr);
 
     match &expr.kind {
         ExprKind::Call { callee, args } => {
             for_each_expr(ast, *callee, cb);
-            for arg in args { for_each_expr(ast, *arg, cb); }
+            for arg in args {
+                for_each_expr(ast, *arg, cb);
+            }
         }
         ExprKind::CallOptions { callee, options } => {
             for_each_expr(ast, *callee, cb);
@@ -183,7 +204,9 @@ fn for_each_expr(
         ExprKind::Member { base, .. } => for_each_expr(ast, *base, cb),
         ExprKind::Index { base, index } => {
             for_each_expr(ast, *base, cb);
-            if let Some(i) = index { for_each_expr(ast, *i, cb); }
+            if let Some(i) = index {
+                for_each_expr(ast, *i, cb);
+            }
         }
         ExprKind::Binary { lhs, rhs, .. } => {
             for_each_expr(ast, *lhs, cb);
@@ -195,9 +218,15 @@ fn for_each_expr(
             for_each_expr(ast, *rhs, cb);
         }
         ExprKind::Tuple(entries) => {
-            for e in entries { for_each_expr(ast, *e, cb); }
+            for e in entries {
+                for_each_expr(ast, *e, cb);
+            }
         }
-        ExprKind::Conditional { cond, then_expr, else_expr } => {
+        ExprKind::Conditional {
+            cond,
+            then_expr,
+            else_expr,
+        } => {
             for_each_expr(ast, *cond, cb);
             for_each_expr(ast, *then_expr, cb);
             for_each_expr(ast, *else_expr, cb);
@@ -212,7 +241,9 @@ fn for_each_expr(
 /// 100 bytes before the expression, we assume it is inside an unchecked block
 /// (meaning overflow/underflow protection is disabled and we should flag it).
 fn is_inside_unchecked_block(ast: &NormalizedAst, span: &Span) -> bool {
-    let Some(file) = ast.files.get(span.file as usize) else { return false };
+    let Some(file) = ast.files.get(span.file as usize) else {
+        return false;
+    };
     // Look back up to 100 bytes before the expression for `unchecked`
     let lookback = 100.min(span.start as usize);
     let start = span.start as usize - lookback;
@@ -233,7 +264,9 @@ fn expr_references_any_ident(
     expr_id: u32,
     names: &std::collections::HashSet<&str>,
 ) -> bool {
-    let Some(expr) = ast.expressions.get(expr_id as usize) else { return false };
+    let Some(expr) = ast.expressions.get(expr_id as usize) else {
+        return false;
+    };
     match &expr.kind {
         ExprKind::Ident(n) => names.contains(n.as_str()),
         ExprKind::Binary { lhs, rhs, .. } => {
@@ -244,7 +277,9 @@ fn expr_references_any_ident(
         ExprKind::Member { base, .. } => expr_references_any_ident(ast, *base, names),
         ExprKind::Call { callee, args } => {
             expr_references_any_ident(ast, *callee, names)
-                || args.iter().any(|&a| expr_references_any_ident(ast, a, names))
+                || args
+                    .iter()
+                    .any(|&a| expr_references_any_ident(ast, a, names))
         }
         ExprKind::Index { base, index } => {
             expr_references_any_ident(ast, *base, names)
@@ -477,9 +512,7 @@ fn detect_unsafe_array_length_assignment(ast: &NormalizedAst) -> Vec<Finding> {
                 }
 
                 // Does RHS reference any function parameter? (user-controlled)
-                if !params.is_empty()
-                    && expr_references_any_ident(ast, *rhs, &params)
-                {
+                if !params.is_empty() && expr_references_any_ident(ast, *rhs, &params) {
                     findings.push(Finding {
                         kind: FindingKind::UnsafeArrayLengthAssignment,
                         severity: Severity::High,

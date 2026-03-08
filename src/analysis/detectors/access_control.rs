@@ -5,8 +5,8 @@
 use crate::analysis::CallGraph;
 use crate::analysis::taint::TaintSummary;
 use crate::norm::{
-    CallOption, CallTarget, ChainSegment, ExprKind, FunctionKind,
-    NormalizedAst, Span, StmtKind, Visibility,
+    CallOption, CallTarget, ChainSegment, ExprKind, FunctionKind, NormalizedAst, Span, StmtKind,
+    Visibility,
 };
 
 use super::{Finding, FindingKind, Severity};
@@ -34,9 +34,21 @@ const AC_MODIFIERS: &[&str] = &[
 
 /// Parameter-name fragments that hint the value is an address.
 const ADDR_PARAM_HINTS: &[&str] = &[
-    "addr", "address", "to", "from", "sender", "recipient", "owner",
-    "spender", "account", "beneficiary", "receiver", "target",
-    "destination", "operator", "delegate",
+    "addr",
+    "address",
+    "to",
+    "from",
+    "sender",
+    "recipient",
+    "owner",
+    "spender",
+    "account",
+    "beneficiary",
+    "receiver",
+    "target",
+    "destination",
+    "operator",
+    "delegate",
 ];
 
 // ── Entry point ──────────────────────────────────────────────────────────────
@@ -49,24 +61,24 @@ pub fn detect_all(
 ) -> Vec<Finding> {
     let mut findings = Vec::new();
 
-    findings.extend(detect_arbitrary_transfer_from(ast));            // AC-01
-    findings.extend(detect_arbitrary_calldata(ast));                  // AC-02
-    findings.extend(detect_caller_not_checked(ast));                  // AC-03
-    findings.extend(detect_contract_destructable(ast, call_graph));   // AC-04
-    findings.extend(detect_dangerous_state_var_init(ast));            // AC-05
-    findings.extend(detect_tx_origin(ast));                           // AC-06
-    findings.extend(detect_default_visibility(ast));                  // AC-07
-    findings.extend(detect_uninit_permission_check(ast));             // AC-08
-    findings.extend(detect_permit_arbitrary_transfer_from(ast));      // AC-09
-    findings.extend(detect_missing_sender_check_transfer_from(ast));  // AC-10
-    findings.extend(detect_missing_input_validation(ast));            // AC-11
-    findings.extend(detect_arbitrary_ether_send(ast));                // AC-12
-    findings.extend(detect_unprotected_selfdestruct(ast, call_graph));// AC-13
-    findings.extend(detect_unprotected_ether_withdrawal(ast));        // AC-14
-    findings.extend(detect_unsafe_delegatecall(call_graph));          // AC-15
-    findings.extend(detect_unused_return_value(ast));                 // AC-16
-    findings.extend(detect_public_mint_burn(ast));                    // AC-17
-    findings.extend(detect_arbitrary_storage_write(ast));             // AC-18
+    findings.extend(detect_arbitrary_transfer_from(ast)); // AC-01
+    findings.extend(detect_arbitrary_calldata(ast)); // AC-02
+    findings.extend(detect_caller_not_checked(ast)); // AC-03
+    findings.extend(detect_contract_destructable(ast, call_graph)); // AC-04
+    findings.extend(detect_dangerous_state_var_init(ast)); // AC-05
+    findings.extend(detect_tx_origin(ast)); // AC-06
+    findings.extend(detect_default_visibility(ast)); // AC-07
+    findings.extend(detect_uninit_permission_check(ast)); // AC-08
+    findings.extend(detect_permit_arbitrary_transfer_from(ast)); // AC-09
+    findings.extend(detect_missing_sender_check_transfer_from(ast)); // AC-10
+    findings.extend(detect_missing_input_validation(ast)); // AC-11
+    findings.extend(detect_arbitrary_ether_send(ast)); // AC-12
+    findings.extend(detect_unprotected_selfdestruct(ast, call_graph)); // AC-13
+    findings.extend(detect_unprotected_ether_withdrawal(ast)); // AC-14
+    findings.extend(detect_unsafe_delegatecall(call_graph)); // AC-15
+    findings.extend(detect_unused_return_value(ast)); // AC-16
+    findings.extend(detect_public_mint_burn(ast)); // AC-17
+    findings.extend(detect_arbitrary_storage_write(ast)); // AC-18
 
     findings
 }
@@ -131,7 +143,9 @@ fn function_calls_method(ast: &NormalizedAst, func: &crate::norm::Function, meth
     let Some(body) = func.body else { return false };
     let mut found = false;
     for_each_expr_in_stmt(ast, body, &mut |_eid, expr| {
-        if found { return; }
+        if found {
+            return;
+        }
         if let Some(call) = &expr.meta.call {
             if call_target_name(call) == method {
                 found = true;
@@ -194,11 +208,17 @@ fn expr_references_ident(ast: &NormalizedAst, expr_id: u32, name: &str) -> bool 
 
 /// Returns `true` when the function body contains a `require` / `assert` that
 /// references the given parameter name (heuristic for zero-address validation).
-fn has_validation_for_param(ast: &NormalizedAst, func: &crate::norm::Function, param: &str) -> bool {
+fn has_validation_for_param(
+    ast: &NormalizedAst,
+    func: &crate::norm::Function,
+    param: &str,
+) -> bool {
     let Some(body) = func.body else { return false };
     let mut found = false;
     for_each_expr_in_stmt(ast, body, &mut |_eid, expr| {
-        if found { return; }
+        if found {
+            return;
+        }
         if let Some(call) = &expr.meta.call {
             let cn = call_target_name(call);
             if cn == "require" || cn == "assert" || cn == "revert" {
@@ -219,10 +239,14 @@ fn has_validation_for_param(ast: &NormalizedAst, func: &crate::norm::Function, p
 /// Returns `true` if the name looks like a mint or burn function.
 fn is_mint_or_burn_name(name: &str) -> bool {
     let lower = name.to_lowercase();
-    lower == "mint" || lower == "burn"
-        || lower.starts_with("mint") || lower.starts_with("burn")
-        || lower.ends_with("mint") || lower.ends_with("burn")
-        || lower.contains("_mint") || lower.contains("_burn")
+    lower == "mint"
+        || lower == "burn"
+        || lower.starts_with("mint")
+        || lower.starts_with("burn")
+        || lower.ends_with("mint")
+        || lower.ends_with("burn")
+        || lower.contains("_mint")
+        || lower.contains("_burn")
 }
 
 // ── Generic AST walkers ──────────────────────────────────────────────────────
@@ -233,7 +257,9 @@ fn for_each_expr_in_stmt(
     stmt_id: u32,
     cb: &mut impl FnMut(u32, &crate::norm::Expr),
 ) {
-    let Some(stmt) = ast.statements.get(stmt_id as usize) else { return };
+    let Some(stmt) = ast.statements.get(stmt_id as usize) else {
+        return;
+    };
 
     match &stmt.kind {
         StmtKind::Block(stmts) => {
@@ -243,7 +269,11 @@ fn for_each_expr_in_stmt(
         }
         StmtKind::Expr(e) => for_each_expr(ast, *e, cb),
         StmtKind::Return(Some(e)) => for_each_expr(ast, *e, cb),
-        StmtKind::If { cond, then_id, else_id } => {
+        StmtKind::If {
+            cond,
+            then_id,
+            else_id,
+        } => {
             for_each_expr(ast, *cond, cb);
             for_each_expr_in_stmt(ast, *then_id, cb);
             if let Some(e) = else_id {
@@ -258,10 +288,21 @@ fn for_each_expr_in_stmt(
             for_each_expr_in_stmt(ast, *body, cb);
             for_each_expr(ast, *cond, cb);
         }
-        StmtKind::For { init, cond, step, body } => {
-            if let Some(s) = init { for_each_expr_in_stmt(ast, *s, cb); }
-            if let Some(e) = cond { for_each_expr(ast, *e, cb); }
-            if let Some(e) = step { for_each_expr(ast, *e, cb); }
+        StmtKind::For {
+            init,
+            cond,
+            step,
+            body,
+        } => {
+            if let Some(s) = init {
+                for_each_expr_in_stmt(ast, *s, cb);
+            }
+            if let Some(e) = cond {
+                for_each_expr(ast, *e, cb);
+            }
+            if let Some(e) = step {
+                for_each_expr(ast, *e, cb);
+            }
             for_each_expr_in_stmt(ast, *body, cb);
         }
         StmtKind::Emit(e) => for_each_expr(ast, *e, cb),
@@ -278,18 +319,18 @@ fn for_each_expr_in_stmt(
 }
 
 /// Walk every sub-expression under `expr_id`, calling `cb` for each.
-fn for_each_expr(
-    ast: &NormalizedAst,
-    expr_id: u32,
-    cb: &mut impl FnMut(u32, &crate::norm::Expr),
-) {
-    let Some(expr) = ast.expressions.get(expr_id as usize) else { return };
+fn for_each_expr(ast: &NormalizedAst, expr_id: u32, cb: &mut impl FnMut(u32, &crate::norm::Expr)) {
+    let Some(expr) = ast.expressions.get(expr_id as usize) else {
+        return;
+    };
     cb(expr_id, expr);
 
     match &expr.kind {
         ExprKind::Call { callee, args } => {
             for_each_expr(ast, *callee, cb);
-            for arg in args { for_each_expr(ast, *arg, cb); }
+            for arg in args {
+                for_each_expr(ast, *arg, cb);
+            }
         }
         ExprKind::CallOptions { callee, options } => {
             for_each_expr(ast, *callee, cb);
@@ -304,7 +345,9 @@ fn for_each_expr(
         ExprKind::Member { base, .. } => for_each_expr(ast, *base, cb),
         ExprKind::Index { base, index } => {
             for_each_expr(ast, *base, cb);
-            if let Some(i) = index { for_each_expr(ast, *i, cb); }
+            if let Some(i) = index {
+                for_each_expr(ast, *i, cb);
+            }
         }
         ExprKind::Binary { lhs, rhs, .. } => {
             for_each_expr(ast, *lhs, cb);
@@ -316,9 +359,15 @@ fn for_each_expr(
             for_each_expr(ast, *rhs, cb);
         }
         ExprKind::Tuple(entries) => {
-            for e in entries { for_each_expr(ast, *e, cb); }
+            for e in entries {
+                for_each_expr(ast, *e, cb);
+            }
         }
-        ExprKind::Conditional { cond, then_expr, else_expr } => {
+        ExprKind::Conditional {
+            cond,
+            then_expr,
+            else_expr,
+        } => {
             for_each_expr(ast, *cond, cb);
             for_each_expr(ast, *then_expr, cb);
             for_each_expr(ast, *else_expr, cb);
@@ -328,31 +377,39 @@ fn for_each_expr(
 }
 
 /// Walk every statement under `stmt_id`, calling `cb` for each.
-fn for_each_stmt(
-    ast: &NormalizedAst,
-    stmt_id: u32,
-    cb: &mut impl FnMut(u32, &crate::norm::Stmt),
-) {
-    let Some(stmt) = ast.statements.get(stmt_id as usize) else { return };
+fn for_each_stmt(ast: &NormalizedAst, stmt_id: u32, cb: &mut impl FnMut(u32, &crate::norm::Stmt)) {
+    let Some(stmt) = ast.statements.get(stmt_id as usize) else {
+        return;
+    };
     cb(stmt_id, stmt);
 
     match &stmt.kind {
         StmtKind::Block(stmts) => {
-            for &s in stmts { for_each_stmt(ast, s, cb); }
+            for &s in stmts {
+                for_each_stmt(ast, s, cb);
+            }
         }
-        StmtKind::If { then_id, else_id, .. } => {
+        StmtKind::If {
+            then_id, else_id, ..
+        } => {
             for_each_stmt(ast, *then_id, cb);
-            if let Some(e) = else_id { for_each_stmt(ast, *e, cb); }
+            if let Some(e) = else_id {
+                for_each_stmt(ast, *e, cb);
+            }
         }
         StmtKind::While { body, .. } | StmtKind::DoWhile { body, .. } => {
             for_each_stmt(ast, *body, cb);
         }
         StmtKind::For { init, body, .. } => {
-            if let Some(s) = init { for_each_stmt(ast, *s, cb); }
+            if let Some(s) = init {
+                for_each_stmt(ast, *s, cb);
+            }
             for_each_stmt(ast, *body, cb);
         }
         StmtKind::Try { clauses, .. } => {
-            for c in clauses { for_each_stmt(ast, c.body, cb); }
+            for c in clauses {
+                for_each_stmt(ast, c.body, cb);
+            }
         }
         _ => {}
     }
@@ -368,10 +425,14 @@ fn detect_arbitrary_transfer_from(ast: &NormalizedAst) -> Vec<Finding> {
     let mut findings = Vec::new();
     for func in &ast.functions {
         // If function already has an access-control modifier, skip
-        if has_access_control_modifier(func) { continue; }
+        if has_access_control_modifier(func) {
+            continue;
+        }
         // If function body contains msg.sender somewhere, skip
         let has_sender = body_contains_msg_sender(ast, func);
-        if has_sender { continue; }
+        if has_sender {
+            continue;
+        }
 
         let Some(body) = func.body else { continue };
 
@@ -408,7 +469,9 @@ fn detect_arbitrary_calldata(ast: &NormalizedAst) -> Vec<Finding> {
         let Some(body) = func.body else { continue };
         let params: std::collections::HashSet<&str> =
             func.params.iter().map(|s| s.as_str()).collect();
-        if params.is_empty() { continue; }
+        if params.is_empty() {
+            continue;
+        }
 
         for_each_expr_in_stmt(ast, body, &mut |_eid, expr| {
             if let Some(call) = &expr.meta.call {
@@ -469,12 +532,16 @@ fn detect_caller_not_checked(ast: &NormalizedAst) -> Vec<Finding> {
 fn detect_contract_destructable(ast: &NormalizedAst, call_graph: &CallGraph) -> Vec<Finding> {
     let mut findings = Vec::new();
     for site in &call_graph.sites {
-        let Some(call) = site.call.as_ref() else { continue };
+        let Some(call) = site.call.as_ref() else {
+            continue;
+        };
         let name = match &call.target {
             CallTarget::Direct { name } => name.as_str(),
             _ => continue,
         };
-        if name != "selfdestruct" && name != "suicide" { continue; }
+        if name != "selfdestruct" && name != "suicide" {
+            continue;
+        }
 
         // Only flag when the function HAS access control (AC-13 handles unprotected)
         if let Some(func) = ast.functions.get(site.function as usize) {
@@ -500,7 +567,9 @@ fn detect_contract_destructable(ast: &NormalizedAst, call_graph: &CallGraph) -> 
 fn detect_dangerous_state_var_init(ast: &NormalizedAst) -> Vec<Finding> {
     let mut findings = Vec::new();
     for sv in &ast.state_vars {
-        if sv.constant || sv.immutable { continue; }
+        if sv.constant || sv.immutable {
+            continue;
+        }
         if let Some(source) = get_source_at_span(ast, &sv.span) {
             if let Some(eq_pos) = source.find('=') {
                 let rhs = &source[eq_pos + 1..];
@@ -548,7 +617,9 @@ fn walk_for_tx_origin(
     function_id: u32,
     findings: &mut Vec<Finding>,
 ) {
-    let Some(stmt) = ast.statements.get(stmt_id as usize) else { return };
+    let Some(stmt) = ast.statements.get(stmt_id as usize) else {
+        return;
+    };
 
     match &stmt.kind {
         StmtKind::Block(stmts) => {
@@ -562,7 +633,11 @@ fn walk_for_tx_origin(
                 walk_expr_for_tx_origin(ast, *expr, function_id, findings);
             }
         }
-        StmtKind::If { cond, then_id, else_id } => {
+        StmtKind::If {
+            cond,
+            then_id,
+            else_id,
+        } => {
             walk_expr_for_tx_origin(ast, *cond, function_id, findings);
             walk_for_tx_origin(ast, *then_id, function_id, findings);
             if let Some(else_id) = else_id {
@@ -577,18 +652,33 @@ fn walk_for_tx_origin(
             walk_for_tx_origin(ast, *body, function_id, findings);
             walk_expr_for_tx_origin(ast, *cond, function_id, findings);
         }
-        StmtKind::For { init, cond, step, body } => {
-            if let Some(init) = init { walk_for_tx_origin(ast, *init, function_id, findings); }
-            if let Some(cond) = cond { walk_expr_for_tx_origin(ast, *cond, function_id, findings); }
-            if let Some(step) = step { walk_expr_for_tx_origin(ast, *step, function_id, findings); }
+        StmtKind::For {
+            init,
+            cond,
+            step,
+            body,
+        } => {
+            if let Some(init) = init {
+                walk_for_tx_origin(ast, *init, function_id, findings);
+            }
+            if let Some(cond) = cond {
+                walk_expr_for_tx_origin(ast, *cond, function_id, findings);
+            }
+            if let Some(step) = step {
+                walk_expr_for_tx_origin(ast, *step, function_id, findings);
+            }
             walk_for_tx_origin(ast, *body, function_id, findings);
         }
         StmtKind::Emit(expr) => walk_expr_for_tx_origin(ast, *expr, function_id, findings),
         StmtKind::Revert(expr) => {
-            if let Some(expr) = expr { walk_expr_for_tx_origin(ast, *expr, function_id, findings); }
+            if let Some(expr) = expr {
+                walk_expr_for_tx_origin(ast, *expr, function_id, findings);
+            }
         }
         StmtKind::VarDecl { init, .. } => {
-            if let Some(expr) = init { walk_expr_for_tx_origin(ast, *expr, function_id, findings); }
+            if let Some(expr) = init {
+                walk_expr_for_tx_origin(ast, *expr, function_id, findings);
+            }
         }
         StmtKind::Try { call, clauses } => {
             walk_expr_for_tx_origin(ast, *call, function_id, findings);
@@ -606,7 +696,9 @@ fn walk_expr_for_tx_origin(
     function_id: u32,
     findings: &mut Vec<Finding>,
 ) {
-    let Some(expr) = ast.expressions.get(expr_id as usize) else { return };
+    let Some(expr) = ast.expressions.get(expr_id as usize) else {
+        return;
+    };
 
     if is_tx_origin(ast, expr) {
         findings.push(Finding {
@@ -621,7 +713,9 @@ fn walk_expr_for_tx_origin(
     match &expr.kind {
         ExprKind::Call { callee, args } => {
             walk_expr_for_tx_origin(ast, *callee, function_id, findings);
-            for arg in args { walk_expr_for_tx_origin(ast, *arg, function_id, findings); }
+            for arg in args {
+                walk_expr_for_tx_origin(ast, *arg, function_id, findings);
+            }
         }
         ExprKind::CallOptions { callee, options } => {
             walk_expr_for_tx_origin(ast, *callee, function_id, findings);
@@ -636,7 +730,9 @@ fn walk_expr_for_tx_origin(
         ExprKind::Member { base, .. } => walk_expr_for_tx_origin(ast, *base, function_id, findings),
         ExprKind::Index { base, index } => {
             walk_expr_for_tx_origin(ast, *base, function_id, findings);
-            if let Some(index) = index { walk_expr_for_tx_origin(ast, *index, function_id, findings); }
+            if let Some(index) = index {
+                walk_expr_for_tx_origin(ast, *index, function_id, findings);
+            }
         }
         ExprKind::Binary { lhs, rhs, .. } => {
             walk_expr_for_tx_origin(ast, *lhs, function_id, findings);
@@ -648,9 +744,15 @@ fn walk_expr_for_tx_origin(
             walk_expr_for_tx_origin(ast, *rhs, function_id, findings);
         }
         ExprKind::Tuple(entries) => {
-            for entry in entries { walk_expr_for_tx_origin(ast, *entry, function_id, findings); }
+            for entry in entries {
+                walk_expr_for_tx_origin(ast, *entry, function_id, findings);
+            }
         }
-        ExprKind::Conditional { cond, then_expr, else_expr } => {
+        ExprKind::Conditional {
+            cond,
+            then_expr,
+            else_expr,
+        } => {
             walk_expr_for_tx_origin(ast, *cond, function_id, findings);
             walk_expr_for_tx_origin(ast, *then_expr, function_id, findings);
             walk_expr_for_tx_origin(ast, *else_expr, function_id, findings);
@@ -673,7 +775,9 @@ fn is_tx_origin(ast: &NormalizedAst, expr: &crate::norm::Expr) -> bool {
         if field == "origin" {
             if let Some(be) = ast.expressions.get(*base as usize) {
                 if let ExprKind::Ident(n) = &be.kind {
-                    if n == "tx" { return true; }
+                    if n == "tx" {
+                        return true;
+                    }
                 }
             }
         }
@@ -687,7 +791,9 @@ fn detect_default_visibility(ast: &NormalizedAst) -> Vec<Finding> {
     let mut findings = Vec::new();
     for func in &ast.functions {
         // Only regular functions – constructors / fallback / receive have special rules
-        if !matches!(func.kind, FunctionKind::Function) { continue; }
+        if !matches!(func.kind, FunctionKind::Function) {
+            continue;
+        }
 
         if func.visibility == Visibility::Unknown {
             findings.push(Finding {
@@ -717,11 +823,17 @@ fn detect_uninit_permission_check(ast: &NormalizedAst) -> Vec<Finding> {
             || name.starts_with("initialize_")
             || name.starts_with("init_");
 
-        if !is_initializer { continue; }
-        if has_access_control_modifier(func) { continue; }
+        if !is_initializer {
+            continue;
+        }
+        if has_access_control_modifier(func) {
+            continue;
+        }
 
         // Also skip if function checks msg.sender in body
-        if body_contains_msg_sender(ast, func) { continue; }
+        if body_contains_msg_sender(ast, func) {
+            continue;
+        }
 
         findings.push(Finding {
             kind: FindingKind::UninitializedPermissionCheck,
@@ -743,7 +855,9 @@ fn detect_permit_arbitrary_transfer_from(ast: &NormalizedAst) -> Vec<Finding> {
     let mut findings = Vec::new();
     for func in &ast.functions {
         // Only care about functions that call both permit() and transferFrom()
-        if !function_calls_method(ast, func, "permit") { continue; }
+        if !function_calls_method(ast, func, "permit") {
+            continue;
+        }
 
         let Some(body) = func.body else { continue };
 
@@ -844,19 +958,22 @@ fn detect_arbitrary_ether_send(ast: &NormalizedAst) -> Vec<Finding> {
         let Some(body) = func.body else { continue };
         let params: std::collections::HashSet<&str> =
             func.params.iter().map(|s| s.as_str()).collect();
-        if params.is_empty() { continue; }
+        if params.is_empty() {
+            continue;
+        }
 
         for_each_expr_in_stmt(ast, body, &mut |_eid, expr| {
             if let Some(call) = &expr.meta.call {
                 if let CallTarget::Member { name, receiver } = &call.target {
                     let is_ether_send = match name.as_str() {
                         "transfer" | "send" => true,
-                        "call" => call.options.iter().any(|o| matches!(o, CallOption::Value(_))),
+                        "call" => call
+                            .options
+                            .iter()
+                            .any(|o| matches!(o, CallOption::Value(_))),
                         _ => false,
                     };
-                    if is_ether_send
-                        && receiver.iter().any(|r| params.contains(r.as_str()))
-                    {
+                    if is_ether_send && receiver.iter().any(|r| params.contains(r.as_str())) {
                         findings.push(Finding {
                             kind: FindingKind::ArbitraryEtherSend,
                             severity: Severity::High,
@@ -879,12 +996,16 @@ fn detect_arbitrary_ether_send(ast: &NormalizedAst) -> Vec<Finding> {
 fn detect_unprotected_selfdestruct(ast: &NormalizedAst, call_graph: &CallGraph) -> Vec<Finding> {
     let mut findings = Vec::new();
     for site in &call_graph.sites {
-        let Some(call) = site.call.as_ref() else { continue };
+        let Some(call) = site.call.as_ref() else {
+            continue;
+        };
         let name = match &call.target {
             CallTarget::Direct { name } => name.as_str(),
             _ => continue,
         };
-        if name != "selfdestruct" && name != "suicide" { continue; }
+        if name != "selfdestruct" && name != "suicide" {
+            continue;
+        }
 
         if let Some(func) = ast.functions.get(site.function as usize) {
             if !has_access_control_modifier(func) {
@@ -908,21 +1029,35 @@ fn detect_unprotected_selfdestruct(ast: &NormalizedAst, call_graph: &CallGraph) 
 fn detect_unprotected_ether_withdrawal(ast: &NormalizedAst) -> Vec<Finding> {
     let mut findings = Vec::new();
     for func in &ast.functions {
-        if !matches!(func.kind, FunctionKind::Function) { continue; }
-        if has_access_control_modifier(func) { continue; }
-        if matches!(func.visibility, Visibility::Internal | Visibility::Private) { continue; }
+        if !matches!(func.kind, FunctionKind::Function) {
+            continue;
+        }
+        if has_access_control_modifier(func) {
+            continue;
+        }
+        if matches!(func.visibility, Visibility::Internal | Visibility::Private) {
+            continue;
+        }
 
         let Some(body) = func.body else { continue };
         let mut sends_ether = false;
 
         for_each_expr_in_stmt(ast, body, &mut |_eid, expr| {
-            if sends_ether { return; }
+            if sends_ether {
+                return;
+            }
             if let Some(call) = &expr.meta.call {
                 if let CallTarget::Member { name, .. } = &call.target {
                     match name.as_str() {
-                        "transfer" | "send" => { sends_ether = true; }
+                        "transfer" | "send" => {
+                            sends_ether = true;
+                        }
                         "call" => {
-                            if call.options.iter().any(|o| matches!(o, CallOption::Value(_))) {
+                            if call
+                                .options
+                                .iter()
+                                .any(|o| matches!(o, CallOption::Value(_)))
+                            {
                                 sends_ether = true;
                             }
                         }
@@ -953,7 +1088,9 @@ fn detect_unprotected_ether_withdrawal(ast: &NormalizedAst) -> Vec<Finding> {
 fn detect_unsafe_delegatecall(call_graph: &CallGraph) -> Vec<Finding> {
     let mut findings = Vec::new();
     for site in &call_graph.sites {
-        let Some(call) = site.call.as_ref() else { continue };
+        let Some(call) = site.call.as_ref() else {
+            continue;
+        };
         let name = match &call.target {
             CallTarget::Member { name, .. } => name.as_str(),
             _ => continue,
@@ -989,7 +1126,9 @@ fn walk_for_unchecked(
     function_id: u32,
     findings: &mut Vec<Finding>,
 ) {
-    let Some(stmt) = ast.statements.get(stmt_id as usize) else { return };
+    let Some(stmt) = ast.statements.get(stmt_id as usize) else {
+        return;
+    };
 
     match &stmt.kind {
         StmtKind::Block(stmts) => {
@@ -1008,7 +1147,9 @@ fn walk_for_unchecked(
                 });
             }
         }
-        StmtKind::If { then_id, else_id, .. } => {
+        StmtKind::If {
+            then_id, else_id, ..
+        } => {
             walk_for_unchecked(ast, *then_id, function_id, findings);
             if let Some(else_id) = else_id {
                 walk_for_unchecked(ast, *else_id, function_id, findings);
@@ -1052,13 +1193,20 @@ fn detect_public_mint_burn(ast: &NormalizedAst) -> Vec<Finding> {
     let mut findings = Vec::new();
     for func in &ast.functions {
         let name = func.name.as_deref().unwrap_or("");
-        if !is_mint_or_burn_name(name) { continue; }
-
-        // Only flag public / external functions without access control
-        if !matches!(func.visibility, Visibility::Public | Visibility::External | Visibility::Unknown) {
+        if !is_mint_or_burn_name(name) {
             continue;
         }
-        if has_access_control_modifier(func) { continue; }
+
+        // Only flag public / external functions without access control
+        if !matches!(
+            func.visibility,
+            Visibility::Public | Visibility::External | Visibility::Unknown
+        ) {
+            continue;
+        }
+        if has_access_control_modifier(func) {
+            continue;
+        }
 
         findings.push(Finding {
             kind: FindingKind::PublicMintBurn,

@@ -18,6 +18,7 @@ enum AnalysisMode {
     Static,
     Symbolic,
     Fuzzing,
+    Hybrid,
 }
 
 impl AnalysisMode {
@@ -26,6 +27,7 @@ impl AnalysisMode {
             "--static" => Some(Self::Static),
             "--symbolic" => Some(Self::Symbolic),
             "--fuzzing" => Some(Self::Fuzzing),
+            "--hybrid" => Some(Self::Hybrid),
             _ => None,
         }
     }
@@ -35,6 +37,7 @@ impl AnalysisMode {
             Self::Static => "static",
             Self::Symbolic => "symbolic",
             Self::Fuzzing => "fuzzing",
+            Self::Hybrid => "hybrid",
         }
     }
 }
@@ -48,7 +51,7 @@ fn main() {
 
 fn print_usage() {
     eprintln!(
-        "usage: static-analyzer [--static|--symbolic|--fuzzing] <path> [--json|--text|--format <json|text>] [--dump-ir <text|json|tuple>]"
+        "usage: static-analyzer [--static|--symbolic|--fuzzing|--hybrid] <path> [--json|--text|--format <json|text>] [--dump-ir <text|json|tuple>]"
     );
 }
 
@@ -56,7 +59,6 @@ fn run() -> Result<()> {
     let mut input = None;
     let mut format = report::OutputFormat::Text;
     let mut dump_ir = None;
-    let mut do_fuzz = false;
     let mut mode = AnalysisMode::Static;
     let mut mode_flag = None::<&'static str>;
     let mut args = std::env::args().skip(1);
@@ -74,6 +76,7 @@ fn run() -> Result<()> {
                     AnalysisMode::Static => "--static",
                     AnalysisMode::Symbolic => "--symbolic",
                     AnalysisMode::Fuzzing => "--fuzzing",
+                    AnalysisMode::Hybrid => "--hybrid",
                 });
             }
             continue;
@@ -108,7 +111,18 @@ fn run() -> Result<()> {
                 };
                 dump_ir = Some(ir_format);
             }
-            "--fuzz" | "--fuzzing" => do_fuzz = true,
+            "--fuzz" => {
+                if let Some(existing_flag) = mode_flag {
+                    if mode != AnalysisMode::Fuzzing {
+                        return Err(Error::msg(format!(
+                            "multiple analysis modes provided: {existing_flag} and --fuzz"
+                        )));
+                    }
+                } else {
+                    mode = AnalysisMode::Fuzzing;
+                    mode_flag = Some("--fuzz");
+                }
+            }
             _ => {
                 if arg.starts_with('-') {
                     return Err(Error::msg(format!("unknown flag: {arg}")));
@@ -123,12 +137,13 @@ fn run() -> Result<()> {
     }
 
     let Some(input) = input else {
-        eprintln!(
-            "usage: static-analyzer <path> [--json|--text|--format <json|text>] [--dump-ir <text|json>] [--fuzz|--fuzzing]"
-        );
         print_usage();
         return Ok(());
     };
+
+    if dump_ir.is_some() && mode != AnalysisMode::Static {
+        return Err(Error::msg("--dump-ir is only supported in --static mode"));
+    }
 
     match mode {
         AnalysisMode::Static => {
@@ -142,28 +157,20 @@ fn run() -> Result<()> {
             report::print_report(&output, format)?;
         }
         AnalysisMode::Symbolic => {
-            if dump_ir.is_some() {
-                return Err(Error::msg("--dump-ir is only supported in --static mode"));
-            }
             let output = frontend::load_project(&input)?;
             symbolic::run(&output, format)?;
         }
         AnalysisMode::Fuzzing => {
-            if dump_ir.is_some() {
-                return Err(Error::msg("--dump-ir is only supported in --static mode"));
-            }
-            return Err(Error::msg(format!(
-                "{} mode is not implemented yet",
-                mode.as_str()
-            )));
+            let output = frontend::load_project(&input)?;
+            let config = fuzzing::types::FuzzConfig::default();
+            fuzzing::run_fuzzer(&output.ast, &config);
+        }
+        AnalysisMode::Hybrid => {
+            return Err(Error::msg(
+                "hybrid mode placeholder: not implemented yet (planned static + symbolic + fuzzing pipeline)",
+            ));
         }
     }
-    if do_fuzz {
-        let config = fuzzing::types::FuzzConfig::default();
-        fuzzing::run_fuzzer(&output.ast, &config);
-        return Ok(());
-    }
-    report::print_report(&output, format)?;
 
     Ok(())
 }

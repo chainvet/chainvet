@@ -38,13 +38,8 @@ const HARDCODED_GAS_METHODS: &[&str] = &["transfer", "send"];
 
 /// Method names that perform external value transfers.
 /// Used by DS-04 to detect external calls inside loops.
-const EXTERNAL_CALL_METHODS: &[&str] = &[
-    "transfer",
-    "transferFrom",
-    "send",
-    "call",
-    "delegatecall",
-];
+const EXTERNAL_CALL_METHODS: &[&str] =
+    &["transfer", "transferFrom", "send", "call", "delegatecall"];
 
 /// Function name fragments that typically represent a withdrawal pattern.
 /// If a contract contains ANY function whose name matches these hints,
@@ -68,12 +63,12 @@ const WITHDRAW_HINTS: &[&str] = &[
 pub fn detect_all(ast: &NormalizedAst) -> Vec<Finding> {
     let mut findings = Vec::new();
 
-    findings.extend(detect_hardcoded_gas_transfer(ast));         // DS-01
-    findings.extend(detect_locked_ether(ast));                   // DS-02
-    findings.extend(detect_dos_block_gas_limit(ast));            // DS-03
-    findings.extend(detect_dos_with_failed_call(ast));           // DS-04
-    findings.extend(detect_force_ether_balance_check(ast));      // DS-05
-    findings.extend(detect_unsafe_send_in_require(ast));         // DS-06
+    findings.extend(detect_hardcoded_gas_transfer(ast)); // DS-01
+    findings.extend(detect_locked_ether(ast)); // DS-02
+    findings.extend(detect_dos_block_gas_limit(ast)); // DS-03
+    findings.extend(detect_dos_with_failed_call(ast)); // DS-04
+    findings.extend(detect_force_ether_balance_check(ast)); // DS-05
+    findings.extend(detect_unsafe_send_in_require(ast)); // DS-06
 
     findings
 }
@@ -92,22 +87,32 @@ fn for_each_expr_in_stmt(
     stmt_id: u32,
     cb: &mut impl FnMut(u32, &crate::norm::Expr),
 ) {
-    let Some(stmt) = ast.statements.get(stmt_id as usize) else { return };
+    let Some(stmt) = ast.statements.get(stmt_id as usize) else {
+        return;
+    };
 
     match &stmt.kind {
         // Recurse into each child of a block.
         StmtKind::Block(stmts) => {
-            for &s in stmts { for_each_expr_in_stmt(ast, s, cb); }
+            for &s in stmts {
+                for_each_expr_in_stmt(ast, s, cb);
+            }
         }
         // Expression statement — walk the expression.
         StmtKind::Expr(e) => for_each_expr(ast, *e, cb),
         // Return with a value — walk the return expression.
         StmtKind::Return(Some(e)) => for_each_expr(ast, *e, cb),
         // If — walk condition, then branch, and optional else branch.
-        StmtKind::If { cond, then_id, else_id } => {
+        StmtKind::If {
+            cond,
+            then_id,
+            else_id,
+        } => {
             for_each_expr(ast, *cond, cb);
             for_each_expr_in_stmt(ast, *then_id, cb);
-            if let Some(e) = else_id { for_each_expr_in_stmt(ast, *e, cb); }
+            if let Some(e) = else_id {
+                for_each_expr_in_stmt(ast, *e, cb);
+            }
         }
         // While — walk condition and body.
         StmtKind::While { cond, body } => {
@@ -120,10 +125,21 @@ fn for_each_expr_in_stmt(
             for_each_expr(ast, *cond, cb);
         }
         // For — walk init, condition, step, and body.
-        StmtKind::For { init, cond, step, body } => {
-            if let Some(s) = init { for_each_expr_in_stmt(ast, *s, cb); }
-            if let Some(e) = cond { for_each_expr(ast, *e, cb); }
-            if let Some(e) = step { for_each_expr(ast, *e, cb); }
+        StmtKind::For {
+            init,
+            cond,
+            step,
+            body,
+        } => {
+            if let Some(s) = init {
+                for_each_expr_in_stmt(ast, *s, cb);
+            }
+            if let Some(e) = cond {
+                for_each_expr(ast, *e, cb);
+            }
+            if let Some(e) = step {
+                for_each_expr(ast, *e, cb);
+            }
             for_each_expr_in_stmt(ast, *body, cb);
         }
         // Emit — walk the emitted expression.
@@ -135,25 +151,27 @@ fn for_each_expr_in_stmt(
         // Try-catch: walk the call and each clause's body.
         StmtKind::Try { call, clauses } => {
             for_each_expr(ast, *call, cb);
-            for clause in clauses { for_each_expr_in_stmt(ast, clause.body, cb); }
+            for clause in clauses {
+                for_each_expr_in_stmt(ast, clause.body, cb);
+            }
         }
         _ => {}
     }
 }
 
 /// Walk every sub-expression under `expr_id`, calling `cb` for each.
-fn for_each_expr(
-    ast: &NormalizedAst,
-    expr_id: u32,
-    cb: &mut impl FnMut(u32, &crate::norm::Expr),
-) {
-    let Some(expr) = ast.expressions.get(expr_id as usize) else { return };
+fn for_each_expr(ast: &NormalizedAst, expr_id: u32, cb: &mut impl FnMut(u32, &crate::norm::Expr)) {
+    let Some(expr) = ast.expressions.get(expr_id as usize) else {
+        return;
+    };
     cb(expr_id, expr);
 
     match &expr.kind {
         ExprKind::Call { callee, args } => {
             for_each_expr(ast, *callee, cb);
-            for arg in args { for_each_expr(ast, *arg, cb); }
+            for arg in args {
+                for_each_expr(ast, *arg, cb);
+            }
         }
         ExprKind::CallOptions { callee, options } => {
             for_each_expr(ast, *callee, cb);
@@ -168,7 +186,9 @@ fn for_each_expr(
         ExprKind::Member { base, .. } => for_each_expr(ast, *base, cb),
         ExprKind::Index { base, index } => {
             for_each_expr(ast, *base, cb);
-            if let Some(i) = index { for_each_expr(ast, *i, cb); }
+            if let Some(i) = index {
+                for_each_expr(ast, *i, cb);
+            }
         }
         ExprKind::Binary { lhs, rhs, .. } => {
             for_each_expr(ast, *lhs, cb);
@@ -180,9 +200,15 @@ fn for_each_expr(
             for_each_expr(ast, *rhs, cb);
         }
         ExprKind::Tuple(entries) => {
-            for e in entries { for_each_expr(ast, *e, cb); }
+            for e in entries {
+                for_each_expr(ast, *e, cb);
+            }
         }
-        ExprKind::Conditional { cond, then_expr, else_expr } => {
+        ExprKind::Conditional {
+            cond,
+            then_expr,
+            else_expr,
+        } => {
             for_each_expr(ast, *cond, cb);
             for_each_expr(ast, *then_expr, cb);
             for_each_expr(ast, *else_expr, cb);
@@ -192,31 +218,39 @@ fn for_each_expr(
 }
 
 /// Walk every statement under `stmt_id`, calling `cb` for each.
-fn for_each_stmt(
-    ast: &NormalizedAst,
-    stmt_id: u32,
-    cb: &mut impl FnMut(u32, &crate::norm::Stmt),
-) {
-    let Some(stmt) = ast.statements.get(stmt_id as usize) else { return };
+fn for_each_stmt(ast: &NormalizedAst, stmt_id: u32, cb: &mut impl FnMut(u32, &crate::norm::Stmt)) {
+    let Some(stmt) = ast.statements.get(stmt_id as usize) else {
+        return;
+    };
     cb(stmt_id, stmt);
 
     match &stmt.kind {
         StmtKind::Block(stmts) => {
-            for &s in stmts { for_each_stmt(ast, s, cb); }
+            for &s in stmts {
+                for_each_stmt(ast, s, cb);
+            }
         }
-        StmtKind::If { then_id, else_id, .. } => {
+        StmtKind::If {
+            then_id, else_id, ..
+        } => {
             for_each_stmt(ast, *then_id, cb);
-            if let Some(e) = else_id { for_each_stmt(ast, *e, cb); }
+            if let Some(e) = else_id {
+                for_each_stmt(ast, *e, cb);
+            }
         }
         StmtKind::While { body, .. } | StmtKind::DoWhile { body, .. } => {
             for_each_stmt(ast, *body, cb);
         }
         StmtKind::For { init, body, .. } => {
-            if let Some(s) = init { for_each_stmt(ast, *s, cb); }
+            if let Some(s) = init {
+                for_each_stmt(ast, *s, cb);
+            }
             for_each_stmt(ast, *body, cb);
         }
         StmtKind::Try { clauses, .. } => {
-            for c in clauses { for_each_stmt(ast, c.body, cb); }
+            for c in clauses {
+                for_each_stmt(ast, c.body, cb);
+            }
         }
         _ => {}
     }
@@ -334,7 +368,9 @@ fn is_selfdestruct_call(ast: &NormalizedAst, expr: &crate::norm::Expr) -> bool {
 ///      argument `this` — representing `address(this).balance`.
 ///   4. Member AST chain: `address(this).balance`.
 fn contains_this_balance(ast: &NormalizedAst, expr_id: u32) -> bool {
-    let Some(expr) = ast.expressions.get(expr_id as usize) else { return false };
+    let Some(expr) = ast.expressions.get(expr_id as usize) else {
+        return false;
+    };
 
     // --- Pattern 1: Chain metadata [this, balance] ---
     if let Some(chain) = expr.meta.chain.as_deref() {
@@ -422,7 +458,9 @@ fn is_require_call(expr: &crate::norm::Expr) -> bool {
 /// Returns `true` if the expression contains a `.send(...)` call anywhere
 /// within its sub-expression tree.
 fn contains_send_call(ast: &NormalizedAst, expr_id: u32) -> bool {
-    let Some(expr) = ast.expressions.get(expr_id as usize) else { return false };
+    let Some(expr) = ast.expressions.get(expr_id as usize) else {
+        return false;
+    };
 
     // Check call metadata for "send".
     if let Some(call) = &expr.meta.call {
@@ -476,7 +514,9 @@ fn stmt_body_contains_external_call(ast: &NormalizedAst, body_id: u32) -> bool {
 fn cond_uses_dynamic_length(ast: &NormalizedAst, cond_id: u32) -> bool {
     let mut found = false;
     for_each_expr(ast, cond_id, &mut |_eid, expr| {
-        if found { return; }
+        if found {
+            return;
+        }
         // Look for `.length` member access.
         if let ExprKind::Member { field, .. } = &expr.kind {
             if field == "length" {
@@ -492,7 +532,9 @@ fn cond_uses_dynamic_length(ast: &NormalizedAst, cond_id: u32) -> bool {
 fn body_contains_push(ast: &NormalizedAst, body_id: u32) -> bool {
     let mut found = false;
     for_each_expr_in_stmt(ast, body_id, &mut |_eid, expr| {
-        if found { return; }
+        if found {
+            return;
+        }
         // Check call metadata for "push".
         if let Some(call) = &expr.meta.call {
             let name = match &call.target {
@@ -531,9 +573,7 @@ fn recurse_contains(
         ExprKind::Unary { expr, .. } => pred(ast, *expr),
         ExprKind::Member { base, .. } => pred(ast, *base),
         ExprKind::Tuple(entries) => entries.iter().any(|&e| pred(ast, e)),
-        ExprKind::Call { callee, args } => {
-            pred(ast, *callee) || args.iter().any(|&a| pred(ast, a))
-        }
+        ExprKind::Call { callee, args } => pred(ast, *callee) || args.iter().any(|&a| pred(ast, a)),
         ExprKind::CallOptions { callee, options } => {
             pred(ast, *callee)
                 || options.iter().any(|opt| match opt {
@@ -546,9 +586,11 @@ fn recurse_contains(
         ExprKind::Index { base, index } => {
             pred(ast, *base) || index.map_or(false, |i| pred(ast, i))
         }
-        ExprKind::Conditional { cond, then_expr, else_expr } => {
-            pred(ast, *cond) || pred(ast, *then_expr) || pred(ast, *else_expr)
-        }
+        ExprKind::Conditional {
+            cond,
+            then_expr,
+            else_expr,
+        } => pred(ast, *cond) || pred(ast, *then_expr) || pred(ast, *else_expr),
         _ => false,
     }
 }
@@ -613,16 +655,24 @@ fn detected_method_name(ast: &NormalizedAst, expr: &crate::norm::Expr) -> &'stat
             CallTarget::Member { name, .. } => name.as_str(),
             CallTarget::Unknown => "",
         };
-        if name == "transfer" { return "transfer"; }
-        if name == "send" { return "send"; }
+        if name == "transfer" {
+            return "transfer";
+        }
+        if name == "send" {
+            return "send";
+        }
     }
 
     // Fall back to callee Member field.
     if let ExprKind::Call { callee, .. } = &expr.kind {
         if let Some(callee_expr) = ast.expressions.get(*callee as usize) {
             if let ExprKind::Member { field, .. } = &callee_expr.kind {
-                if field == "transfer" { return "transfer"; }
-                if field == "send" { return "send"; }
+                if field == "transfer" {
+                    return "transfer";
+                }
+                if field == "send" {
+                    return "send";
+                }
             }
         }
     }
@@ -653,7 +703,10 @@ fn detect_locked_ether(ast: &NormalizedAst) -> Vec<Finding> {
 
     for contract in &ast.contracts {
         // Skip interfaces and libraries — they cannot hold Ether directly.
-        if matches!(contract.kind, ContractKind::Interface | ContractKind::Library) {
+        if matches!(
+            contract.kind,
+            ContractKind::Interface | ContractKind::Library
+        ) {
             continue;
         }
 
@@ -665,7 +718,9 @@ fn detect_locked_ether(ast: &NormalizedAst) -> Vec<Finding> {
         let mut can_receive_ether = false;
 
         for &func_id in &contract.functions {
-            let Some(func) = ast.functions.get(func_id as usize) else { continue };
+            let Some(func) = ast.functions.get(func_id as usize) else {
+                continue;
+            };
 
             // `receive()` is always payable by definition.
             if matches!(func.kind, FunctionKind::Receive) {
@@ -698,7 +753,9 @@ fn detect_locked_ether(ast: &NormalizedAst) -> Vec<Finding> {
         let mut can_send_ether = false;
 
         for &func_id in &contract.functions {
-            let Some(func) = ast.functions.get(func_id as usize) else { continue };
+            let Some(func) = ast.functions.get(func_id as usize) else {
+                continue;
+            };
 
             // Check function name for withdrawal hints.
             if let Some(ref name) = func.name {
@@ -712,7 +769,9 @@ fn detect_locked_ether(ast: &NormalizedAst) -> Vec<Finding> {
             // Check function body for outgoing Ether calls.
             if let Some(body) = func.body {
                 for_each_expr_in_stmt(ast, body, &mut |_eid, expr| {
-                    if can_send_ether { return; }
+                    if can_send_ether {
+                        return;
+                    }
 
                     // .transfer(), .send(), .call{value:}, selfdestruct()
                     if is_external_call(ast, expr) || is_selfdestruct_call(ast, expr) {
@@ -720,7 +779,9 @@ fn detect_locked_ether(ast: &NormalizedAst) -> Vec<Finding> {
                     }
                 });
 
-                if can_send_ether { break; }
+                if can_send_ether {
+                    break;
+                }
             }
         }
 
@@ -771,7 +832,11 @@ fn detect_dos_block_gas_limit(ast: &NormalizedAst) -> Vec<Finding> {
         for_each_stmt(ast, body, &mut |_sid, stmt| {
             match &stmt.kind {
                 // `for (...; i < arr.length; ...)` — condition uses `.length`.
-                StmtKind::For { cond: Some(cond), body: loop_body, .. } => {
+                StmtKind::For {
+                    cond: Some(cond),
+                    body: loop_body,
+                    ..
+                } => {
                     if cond_uses_dynamic_length(ast, *cond) {
                         let func_name = func.name.as_deref().unwrap_or("<anonymous>");
                         findings.push(Finding {
@@ -805,7 +870,10 @@ fn detect_dos_block_gas_limit(ast: &NormalizedAst) -> Vec<Finding> {
                     }
                 }
                 // `while (i < arr.length)` — same pattern.
-                StmtKind::While { cond, body: loop_body } => {
+                StmtKind::While {
+                    cond,
+                    body: loop_body,
+                } => {
                     if cond_uses_dynamic_length(ast, *cond) {
                         let func_name = func.name.as_deref().unwrap_or("<anonymous>");
                         findings.push(Finding {
@@ -870,7 +938,9 @@ fn detect_dos_with_failed_call(ast: &NormalizedAst) -> Vec<Finding> {
         for_each_stmt(ast, body, &mut |_sid, stmt| {
             match &stmt.kind {
                 // `for (...; ...; ...) { ... externalCall ... }`
-                StmtKind::For { body: loop_body, .. } => {
+                StmtKind::For {
+                    body: loop_body, ..
+                } => {
                     if stmt_body_contains_external_call(ast, *loop_body) {
                         let func_name = func.name.as_deref().unwrap_or("<anonymous>");
                         findings.push(Finding {
@@ -888,7 +958,9 @@ fn detect_dos_with_failed_call(ast: &NormalizedAst) -> Vec<Finding> {
                     }
                 }
                 // `while (...) { ... externalCall ... }`
-                StmtKind::While { body: loop_body, .. } => {
+                StmtKind::While {
+                    body: loop_body, ..
+                } => {
                     if stmt_body_contains_external_call(ast, *loop_body) {
                         let func_name = func.name.as_deref().unwrap_or("<anonymous>");
                         findings.push(Finding {
@@ -905,7 +977,9 @@ fn detect_dos_with_failed_call(ast: &NormalizedAst) -> Vec<Finding> {
                     }
                 }
                 // `do { ... externalCall ... } while (...)`
-                StmtKind::DoWhile { body: loop_body, .. } => {
+                StmtKind::DoWhile {
+                    body: loop_body, ..
+                } => {
                     if stmt_body_contains_external_call(ast, *loop_body) {
                         let func_name = func.name.as_deref().unwrap_or("<anonymous>");
                         findings.push(Finding {

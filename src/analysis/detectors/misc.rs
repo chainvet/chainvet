@@ -18,8 +18,8 @@ use super::{Finding, FindingKind, Severity};
 pub fn detect_all(ast: &NormalizedAst, taint_summaries: &[TaintSummary]) -> Vec<Finding> {
     let mut findings = Vec::new();
 
-    findings.extend(detect_shadowing(ast));                   // MI-01
-    findings.extend(detect_taint(ast, taint_summaries));      // MI-02
+    findings.extend(detect_shadowing(ast)); // MI-01
+    findings.extend(detect_taint(ast, taint_summaries)); // MI-02
 
     findings
 }

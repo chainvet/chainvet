@@ -1,20 +1,20 @@
 // Symbolic Execution Engine
 // Consumes IR/CFG/SSA from M3 to perform path exploration and constraint solving.
 
+use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
-use serde::Serialize;
 use z3::{
     SatResult, Solver,
     ast::{Bool, Int},
 };
 
+use crate::cfg;
 use crate::frontend::FrontendOutput;
 use crate::ir::{ControlKind, IrInstr, IrPlace, IrValue, IrVar, PlaceClass};
 use crate::norm::Span;
 use crate::report::OutputFormat;
 use crate::util::error::{Error, Result};
-use crate::cfg;
 
 #[derive(Clone)]
 struct State {
@@ -397,7 +397,10 @@ pub fn run(output: &FrontendOutput, format: OutputFormat) -> Result<()> {
                     if vuln.path_constraints.is_empty() {
                         println!("     path_constraints: <none>");
                     } else {
-                        println!("     path_constraints_count: {}", vuln.path_constraints.len());
+                        println!(
+                            "     path_constraints_count: {}",
+                            vuln.path_constraints.len()
+                        );
                         for (idx, c) in vuln.path_constraints.iter().enumerate() {
                             println!("     constraint[{}]: {}", idx, c);
                         }
@@ -409,8 +412,9 @@ pub fn run(output: &FrontendOutput, format: OutputFormat) -> Result<()> {
             }
         }
         OutputFormat::Json => {
-            let payload = serde_json::to_string_pretty(&report)
-                .map_err(|err| Error::msg(format!("failed to encode symbolic JSON report: {err}")))?;
+            let payload = serde_json::to_string_pretty(&report).map_err(|err| {
+                Error::msg(format!("failed to encode symbolic JSON report: {err}"))
+            })?;
             println!("{payload}");
         }
     }
@@ -543,7 +547,8 @@ fn engine(cfg_fn: &cfg::CfgFunction) -> EngineStats {
                     let lhs_v = state.eval_value(lhs);
                     let rhs_v = state.eval_value(rhs);
                     if op == "-" {
-                        if let Some(model) = check_underflow(&state.path_constraints, &lhs_v, &rhs_v)
+                        if let Some(model) =
+                            check_underflow(&state.path_constraints, &lhs_v, &rhs_v)
                         {
                             vulnerabilities.push(LocalVulnerability {
                                 kind: VulnerabilityKind::Underflow,
@@ -562,7 +567,12 @@ fn engine(cfg_fn: &cfg::CfgFunction) -> EngineStats {
                     }
                     let out = eval_binary(op, lhs_v, rhs_v);
                     state.set_var(dest, out);
-                    let expr = format!("({} {} {})", state.value_expr(lhs), op, state.value_expr(rhs));
+                    let expr = format!(
+                        "({} {} {})",
+                        state.value_expr(lhs),
+                        op,
+                        state.value_expr(rhs)
+                    );
                     state.expr_env.insert(var_key(dest), expr);
                 }
                 IrInstr::Unary { dest, op, expr, .. } => {
@@ -824,7 +834,10 @@ fn stable_literal_value(raw: &str) -> i64 {
 fn normalize_literal(raw: &str) -> String {
     let trimmed = raw.trim();
     for prefix in ["number(", "address(", "int(", "uint("] {
-        if let Some(inner) = trimmed.strip_prefix(prefix).and_then(|s| s.strip_suffix(')')) {
+        if let Some(inner) = trimmed
+            .strip_prefix(prefix)
+            .and_then(|s| s.strip_suffix(')'))
+        {
             return inner.trim().to_string();
         }
     }

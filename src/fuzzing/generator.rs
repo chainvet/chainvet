@@ -1,8 +1,8 @@
 use rand::Rng;
 
 use crate::fuzzing::types::{
-    ContractAbi, DependencyMap, Dictionary, Environment, FuzzConfig, FuzzValue,
-    Individual, Transaction,
+    ContractAbi, DependencyMap, Dictionary, Environment, FuzzConfig, FuzzValue, Individual,
+    Transaction,
 };
 use crate::ir::IrModule;
 
@@ -105,7 +105,11 @@ pub(crate) fn random_transaction_with_dict(
     }
 
     let func = eligible[rng.gen_range(0..eligible.len())];
-    let args: Vec<FuzzValue> = func.params.iter().map(|_p| random_value_with_dict(rng, dict)).collect();
+    let args: Vec<FuzzValue> = func
+        .params
+        .iter()
+        .map(|_p| random_value_with_dict(rng, dict))
+        .collect();
     let value = if func.is_payable {
         random_value_amount(rng)
     } else {
@@ -160,22 +164,38 @@ fn dependency_aware_sequence(
         if let Some((rid, _)) = matching.first() {
             // Generate the writer transaction
             if let Some(func) = abi.functions.iter().find(|f| f.id == *wid) {
-                let args: Vec<FuzzValue> = func.params.iter().map(|_| random_value_with_dict(rng, dict)).collect();
+                let args: Vec<FuzzValue> = func
+                    .params
+                    .iter()
+                    .map(|_| random_value_with_dict(rng, dict))
+                    .collect();
                 txs.push(Transaction {
                     function_id: func.id,
                     args,
                     sender: random_sender(rng, config.address_pool_size),
-                    value: if func.is_payable { random_value_amount(rng) } else { 0 },
+                    value: if func.is_payable {
+                        random_value_amount(rng)
+                    } else {
+                        0
+                    },
                 });
             }
             // Generate the reader transaction
             if let Some(func) = abi.functions.iter().find(|f| f.id == *rid) {
-                let args: Vec<FuzzValue> = func.params.iter().map(|_| random_value_with_dict(rng, dict)).collect();
+                let args: Vec<FuzzValue> = func
+                    .params
+                    .iter()
+                    .map(|_| random_value_with_dict(rng, dict))
+                    .collect();
                 txs.push(Transaction {
                     function_id: func.id,
                     args,
                     sender: random_sender(rng, config.address_pool_size),
-                    value: if func.is_payable { random_value_amount(rng) } else { 0 },
+                    value: if func.is_payable {
+                        random_value_amount(rng)
+                    } else {
+                        0
+                    },
                 });
             }
         }
@@ -219,7 +239,9 @@ fn collect_literals_from_instr(
 ) {
     use crate::ir::IrInstr;
 
-    let collect = |val: &crate::ir::IrValue, seen: &mut std::collections::HashSet<u128>, values: &mut Vec<u128>| {
+    let collect = |val: &crate::ir::IrValue,
+                   seen: &mut std::collections::HashSet<u128>,
+                   values: &mut Vec<u128>| {
         if let crate::ir::IrValue::Literal(lit) = val {
             if let Ok(n) = lit.value.parse::<u128>() {
                 if seen.insert(n) {
@@ -333,7 +355,9 @@ mod tests {
                 FunctionAbi {
                     id: 0,
                     name: "deposit".to_string(),
-                    params: vec![ParamInfo { name: "amount".to_string() }],
+                    params: vec![ParamInfo {
+                        name: "amount".to_string(),
+                    }],
                     visibility: Visibility::External,
                     mutability: Mutability::Payable,
                     kind: FunctionKind::Function,
@@ -342,7 +366,9 @@ mod tests {
                 FunctionAbi {
                     id: 1,
                     name: "withdraw".to_string(),
-                    params: vec![ParamInfo { name: "amount".to_string() }],
+                    params: vec![ParamInfo {
+                        name: "amount".to_string(),
+                    }],
                     visibility: Visibility::External,
                     mutability: Mutability::NonPayable,
                     kind: FunctionKind::Function,
@@ -387,14 +413,18 @@ mod tests {
         };
         let pop = generate_initial_population(&abi, &deps, &config);
         // At least some payable transactions should have non-zero value
-        let has_value = pop.iter().flat_map(|i| &i.transactions)
+        let has_value = pop
+            .iter()
+            .flat_map(|i| &i.transactions)
             .any(|tx| tx.function_id == 0 && tx.value > 0);
         assert!(has_value, "expected at least one payable tx with value > 0");
     }
 
     #[test]
     fn dictionary_values_used() {
-        let dict = Dictionary { values: vec![42, 1337, 9999] };
+        let dict = Dictionary {
+            values: vec![42, 1337, 9999],
+        };
         let mut rng = <rand::rngs::StdRng as rand::SeedableRng>::seed_from_u64(0);
         let mut found_dict_val = false;
         for _ in 0..100 {
@@ -406,6 +436,9 @@ mod tests {
                 }
             }
         }
-        assert!(found_dict_val, "expected dictionary value to be used at least once in 100 tries");
+        assert!(
+            found_dict_val,
+            "expected dictionary value to be used at least once in 100 tries"
+        );
     }
 }

@@ -1,9 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::ir::{IrInstr, IrModule, IrPlace, IrValue, IrVar, PlaceClass};
-use crate::norm::{
-    FunctionKind, Mutability, NormalizedAst, Visibility,
-};
+use crate::norm::{FunctionKind, Mutability, NormalizedAst, Visibility};
 
 // ---------------------------------------------------------------------------
 // ABI-like extraction from NormalizedAst
@@ -91,7 +89,13 @@ impl FuzzValue {
         match self {
             FuzzValue::Uint(v) => *v,
             FuzzValue::Int(v) => *v as u128,
-            FuzzValue::Bool(v) => if *v { 1 } else { 0 },
+            FuzzValue::Bool(v) => {
+                if *v {
+                    1
+                } else {
+                    0
+                }
+            }
             FuzzValue::Address(v) => *v as u128,
             _ => 0,
         }
@@ -251,7 +255,8 @@ pub fn build_dependency_map(ir_module: &IrModule, ast: &NormalizedAst) -> Depend
                 }
             }
         }
-        map.functions.insert(func.id, FunctionDeps { reads, writes });
+        map.functions
+            .insert(func.id, FunctionDeps { reads, writes });
     }
     map
 }
@@ -266,8 +271,13 @@ fn is_storage_place(place: &IrPlace) -> bool {
 
 fn place_root_name(place: &IrPlace, contract_name: Option<&str>) -> Option<String> {
     match place {
-        IrPlace::Var { var: IrVar::Named(name), .. } => Some(name.clone()),
-        IrPlace::Member { base, field, root, .. } => {
+        IrPlace::Var {
+            var: IrVar::Named(name),
+            ..
+        } => Some(name.clone()),
+        IrPlace::Member {
+            base, field, root, ..
+        } => {
             if is_contract_receiver(base, contract_name) {
                 Some(field.clone())
             } else {
@@ -282,8 +292,7 @@ fn place_root_name(place: &IrPlace, contract_name: Option<&str>) -> Option<Strin
 fn is_contract_receiver(value: &IrValue, contract_name: Option<&str>) -> bool {
     match value {
         IrValue::Var(IrVar::Named(name)) => {
-            name == "this" || name == "super"
-                || contract_name.map(|cn| cn == name).unwrap_or(false)
+            name == "this" || name == "super" || contract_name.map(|cn| cn == name).unwrap_or(false)
         }
         _ => false,
     }
@@ -301,14 +310,32 @@ pub struct TraceEvent {
 
 #[derive(Debug, Clone)]
 pub enum TraceEventKind {
-    BlockVisited { block_id: u32 },
-    StorageWrite { var_name: String },
-    StorageRead { var_name: String },
-    ExternalCall { callee: String, has_value: bool },
-    Revert { message: Option<String> },
+    BlockVisited {
+        block_id: u32,
+    },
+    StorageWrite {
+        var_name: String,
+    },
+    StorageRead {
+        var_name: String,
+    },
+    ExternalCall {
+        callee: String,
+        has_value: bool,
+    },
+    Revert {
+        message: Option<String>,
+    },
     BranchOnTimestamp,
-    ArithmeticOp { op: String, lhs: u128, rhs: u128, result: u128 },
-    CallReturnUnchecked { callee: String },
+    ArithmeticOp {
+        op: String,
+        lhs: u128,
+        rhs: u128,
+        result: u128,
+    },
+    CallReturnUnchecked {
+        callee: String,
+    },
     /// msg.sender was compared to a storage value (owner check pattern)
     SenderChecked,
     /// tx.origin was loaded / used
@@ -316,25 +343,42 @@ pub enum TraceEventKind {
     /// selfdestruct / suicide called
     SelfDestructCall,
     /// Loop condition depends on a storage-derived value (unbounded iteration)
-    UnboundedLoop { var_name: String },
+    UnboundedLoop {
+        var_name: String,
+    },
     /// External call followed by state write; `checked` = whether return was require'd
-    ExternalCallThenState { callee: String, checked: bool },
+    ExternalCallThenState {
+        callee: String,
+        checked: bool,
+    },
     /// delegatecall detected
-    DelegatecallDetected { callee: String },
+    DelegatecallDetected {
+        callee: String,
+    },
     /// Inline assembly block executed
     InlineAssemblyDetected,
     /// delegatecall inside a loop
-    DelegatecallInLoop { callee: String },
+    DelegatecallInLoop {
+        callee: String,
+    },
     /// block.number or blockhash used (PRNG / randomness source)
     BlockNumberUsed,
     /// ecrecover called
-    EcrecoverCalled { checked_zero: bool },
+    EcrecoverCalled {
+        checked_zero: bool,
+    },
     /// .transfer() or .send() with hardcoded gas
-    HardcodedGasCall { callee: String },
+    HardcodedGasCall {
+        callee: String,
+    },
     /// Division followed by multiplication pattern
-    DivisionBeforeMultiplication { function_id_inner: u32 },
+    DivisionBeforeMultiplication {
+        function_id_inner: u32,
+    },
     /// Ether sent to arbitrary / user-controlled address
-    EtherSent { callee: String },
+    EtherSent {
+        callee: String,
+    },
 }
 
 #[derive(Debug, Clone, Default)]
@@ -429,25 +473,21 @@ impl FuzzFindingKind {
             | Self::UnprotectedEtherWithdrawal
             | Self::ArbitraryWrite => "Access Control",
 
-            Self::IntegerOverflow
-            | Self::IntegerUnderflow
-            | Self::DivisionBeforeMultiplication => "Arithmetic",
+            Self::IntegerOverflow | Self::IntegerUnderflow | Self::DivisionBeforeMultiplication => {
+                "Arithmetic"
+            }
 
-            Self::TimestampDependency
-            | Self::WeakPRNG => "Block Manipulation",
+            Self::TimestampDependency | Self::WeakPRNG => "Block Manipulation",
 
             Self::CryptographicIssue => "Cryptographic",
 
-            Self::DenialOfService
-            | Self::HardcodedGas
-            | Self::LockedEther => "Denial of Service",
+            Self::DenialOfService | Self::HardcodedGas | Self::LockedEther => "Denial of Service",
 
             Self::Reentrancy => "Reentrancy",
 
             Self::StorageMemoryIssue => "Storage and Memory",
 
-            Self::ExceptionDisorder
-            | Self::InvariantViolation => "Access Control",
+            Self::ExceptionDisorder | Self::InvariantViolation => "Access Control",
         }
     }
 }
@@ -488,8 +528,8 @@ pub struct FuzzReport {
 mod tests {
     use super::*;
     use crate::norm::{
-        Contract, ContractKind, Function, FunctionKind, Mutability, NormalizedAst,
-        SourceFile, Span, Visibility,
+        Contract, ContractKind, Function, FunctionKind, Mutability, NormalizedAst, SourceFile,
+        Span, Visibility,
     };
 
     fn make_ast() -> NormalizedAst {
@@ -509,7 +549,11 @@ mod tests {
             returns: Vec::new(),
             modifiers: Vec::new(),
             body: None,
-            span: Span { file: 0, start: 0, end: 0 },
+            span: Span {
+                file: 0,
+                start: 0,
+                end: 0,
+            },
         });
         ast.functions.push(Function {
             id: 1,
@@ -522,7 +566,11 @@ mod tests {
             returns: Vec::new(),
             modifiers: Vec::new(),
             body: None,
-            span: Span { file: 0, start: 0, end: 0 },
+            span: Span {
+                file: 0,
+                start: 0,
+                end: 0,
+            },
         });
         ast.contracts.push(Contract {
             id: 0,
@@ -534,7 +582,11 @@ mod tests {
             modifiers: Vec::new(),
             events: Vec::new(),
             errors: Vec::new(),
-            span: Span { file: 0, start: 0, end: 0 },
+            span: Span {
+                file: 0,
+                start: 0,
+                end: 0,
+            },
         });
         ast
     }

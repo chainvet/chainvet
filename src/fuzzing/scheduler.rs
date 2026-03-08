@@ -2,9 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use rand::Rng;
 
-use crate::fuzzing::types::{
-    Corpus, CorpusEntry, ExecutionTrace, Individual,
-};
+use crate::fuzzing::types::{Corpus, CorpusEntry, ExecutionTrace, Individual};
 
 // ---------------------------------------------------------------------------
 // Hit-count buckets (AFL-style): map raw hit count → bucket index 0..7
@@ -186,7 +184,9 @@ pub fn minimize_corpus(corpus: &mut Corpus) {
             // If j's coverage is a strict subset of i's, remove j
             // (unless j found findings — keep those always)
             if corpus.entries[j].finding_hashes.is_empty()
-                && corpus.entries[j].coverage.is_subset(&corpus.entries[i].coverage)
+                && corpus.entries[j]
+                    .coverage
+                    .is_subset(&corpus.entries[i].coverage)
                 && corpus.entries[j].coverage.len() < corpus.entries[i].coverage.len()
             {
                 to_keep[j] = false;

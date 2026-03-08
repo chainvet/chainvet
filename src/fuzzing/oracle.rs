@@ -1,8 +1,7 @@
 use sha2::{Digest, Sha256};
 
 use crate::fuzzing::types::{
-    ExecutionTrace, FuzzFinding, FuzzFindingKind, FuzzSeverity,
-    TraceEventKind, Transaction,
+    ExecutionTrace, FuzzFinding, FuzzFindingKind, FuzzSeverity, TraceEventKind, Transaction,
 };
 
 /// Run all oracle checks on an execution trace.
@@ -32,7 +31,8 @@ pub fn check_all(trace: &ExecutionTrace, tx_sequence: &[Transaction]) -> Vec<Fuz
 /// Reentrancy: external call followed by a storage write in the same function.
 fn check_reentrancy(trace: &ExecutionTrace, tx_sequence: &[Transaction]) -> Vec<FuzzFinding> {
     let mut findings = Vec::new();
-    let mut external_call_seen: std::collections::HashMap<u32, bool> = std::collections::HashMap::new();
+    let mut external_call_seen: std::collections::HashMap<u32, bool> =
+        std::collections::HashMap::new();
 
     for event in &trace.events {
         match &event.kind {
@@ -42,7 +42,11 @@ fn check_reentrancy(trace: &ExecutionTrace, tx_sequence: &[Transaction]) -> Vec<
                 }
             }
             TraceEventKind::StorageWrite { var_name } => {
-                if external_call_seen.get(&event.function_id).copied().unwrap_or(false) {
+                if external_call_seen
+                    .get(&event.function_id)
+                    .copied()
+                    .unwrap_or(false)
+                {
                     let hash = hash_finding("reentrancy", event.function_id, var_name);
                     findings.push(FuzzFinding {
                         kind: FuzzFindingKind::Reentrancy,
@@ -93,10 +97,7 @@ fn check_timestamp_dependency(
 }
 
 /// Unchecked call: an external call whose return value is not checked.
-fn check_unchecked_call(
-    trace: &ExecutionTrace,
-    tx_sequence: &[Transaction],
-) -> Vec<FuzzFinding> {
+fn check_unchecked_call(trace: &ExecutionTrace, tx_sequence: &[Transaction]) -> Vec<FuzzFinding> {
     let mut findings = Vec::new();
     let mut seen = std::collections::HashSet::new();
 
@@ -155,15 +156,18 @@ fn check_exception_disorder(
 }
 
 /// Integer overflow: arithmetic op where wrapping occurred.
-fn check_integer_overflow(
-    trace: &ExecutionTrace,
-    tx_sequence: &[Transaction],
-) -> Vec<FuzzFinding> {
+fn check_integer_overflow(trace: &ExecutionTrace, tx_sequence: &[Transaction]) -> Vec<FuzzFinding> {
     let mut findings = Vec::new();
     let mut seen = std::collections::HashSet::new();
 
     for event in &trace.events {
-        if let TraceEventKind::ArithmeticOp { op, lhs, rhs, result } = &event.kind {
+        if let TraceEventKind::ArithmeticOp {
+            op,
+            lhs,
+            rhs,
+            result,
+        } = &event.kind
+        {
             let overflowed = match op.as_str() {
                 "+" => {
                     // Wrapping addition: result < either operand
@@ -201,16 +205,15 @@ fn check_integer_overflow(
 
     findings
 }
-fn check_access_control(
-    trace: &ExecutionTrace,
-    tx_sequence: &[Transaction],
-) -> Vec<FuzzFinding> {
+fn check_access_control(trace: &ExecutionTrace, tx_sequence: &[Transaction]) -> Vec<FuzzFinding> {
     let mut findings = Vec::new();
     let mut seen_functions = std::collections::HashSet::new();
 
     // Find functions that write to storage but never check msg.sender
-    let mut functions_with_writes: std::collections::HashSet<u32> = std::collections::HashSet::new();
-    let mut functions_with_sender_check: std::collections::HashSet<u32> = std::collections::HashSet::new();
+    let mut functions_with_writes: std::collections::HashSet<u32> =
+        std::collections::HashSet::new();
+    let mut functions_with_sender_check: std::collections::HashSet<u32> =
+        std::collections::HashSet::new();
 
     for event in &trace.events {
         match &event.kind {
@@ -246,10 +249,7 @@ fn check_access_control(
 }
 
 /// tx.origin authentication: using tx.origin for authorization.
-fn check_tx_origin(
-    trace: &ExecutionTrace,
-    tx_sequence: &[Transaction],
-) -> Vec<FuzzFinding> {
+fn check_tx_origin(trace: &ExecutionTrace, tx_sequence: &[Transaction]) -> Vec<FuzzFinding> {
     let mut findings = Vec::new();
     let mut seen_functions = std::collections::HashSet::new();
 
@@ -275,16 +275,15 @@ fn check_tx_origin(
 }
 
 /// Unprotected selfdestruct: selfdestruct without access control.
-fn check_selfdestruct(
-    trace: &ExecutionTrace,
-    tx_sequence: &[Transaction],
-) -> Vec<FuzzFinding> {
+fn check_selfdestruct(trace: &ExecutionTrace, tx_sequence: &[Transaction]) -> Vec<FuzzFinding> {
     let mut findings = Vec::new();
     let mut seen_functions = std::collections::HashSet::new();
 
     // Collect functions with selfdestruct and check if they have sender checks
-    let mut functions_with_selfdestruct: std::collections::HashSet<u32> = std::collections::HashSet::new();
-    let mut functions_with_sender_check: std::collections::HashSet<u32> = std::collections::HashSet::new();
+    let mut functions_with_selfdestruct: std::collections::HashSet<u32> =
+        std::collections::HashSet::new();
+    let mut functions_with_sender_check: std::collections::HashSet<u32> =
+        std::collections::HashSet::new();
 
     for event in &trace.events {
         match &event.kind {
@@ -308,7 +307,10 @@ fn check_selfdestruct(
             let msg = if functions_with_sender_check.contains(func_id) {
                 format!("selfdestruct in function {} (has sender check)", func_id)
             } else {
-                format!("Unprotected selfdestruct in function {} — anyone can destroy the contract", func_id)
+                format!(
+                    "Unprotected selfdestruct in function {} — anyone can destroy the contract",
+                    func_id
+                )
             };
             let hash = hash_finding("selfdestruct", *func_id, "call");
             findings.push(FuzzFinding {
@@ -325,10 +327,7 @@ fn check_selfdestruct(
 }
 
 /// Denial of service: unbounded loops over storage arrays.
-fn check_dos(
-    trace: &ExecutionTrace,
-    tx_sequence: &[Transaction],
-) -> Vec<FuzzFinding> {
+fn check_dos(trace: &ExecutionTrace, tx_sequence: &[Transaction]) -> Vec<FuzzFinding> {
     let mut findings = Vec::new();
     let mut seen = std::collections::HashSet::new();
 
@@ -377,7 +376,13 @@ fn check_integer_underflow(
     let mut seen = std::collections::HashSet::new();
 
     for event in &trace.events {
-        if let TraceEventKind::ArithmeticOp { op, lhs, rhs, result } = &event.kind {
+        if let TraceEventKind::ArithmeticOp {
+            op,
+            lhs,
+            rhs,
+            result,
+        } = &event.kind
+        {
             if op == "-" && *result > *lhs && *rhs > 0 {
                 let key = (event.function_id, op.clone());
                 if seen.insert(key) {
@@ -408,13 +413,16 @@ fn check_unsafe_delegatecall(
     let mut findings = Vec::new();
     let mut seen = std::collections::HashSet::new();
 
-    let mut functions_with_delegatecall: std::collections::HashMap<u32, String> = std::collections::HashMap::new();
-    let mut functions_with_sender_check: std::collections::HashSet<u32> = std::collections::HashSet::new();
+    let mut functions_with_delegatecall: std::collections::HashMap<u32, String> =
+        std::collections::HashMap::new();
+    let mut functions_with_sender_check: std::collections::HashSet<u32> =
+        std::collections::HashSet::new();
 
     for event in &trace.events {
         match &event.kind {
             TraceEventKind::DelegatecallDetected { callee } => {
-                functions_with_delegatecall.entry(event.function_id)
+                functions_with_delegatecall
+                    .entry(event.function_id)
                     .or_insert_with(|| callee.clone());
             }
             TraceEventKind::SenderChecked => {
@@ -444,10 +452,7 @@ fn check_unsafe_delegatecall(
 }
 
 /// Weak PRNG: block.number or blockhash used (predictable randomness).
-fn check_weak_prng(
-    trace: &ExecutionTrace,
-    tx_sequence: &[Transaction],
-) -> Vec<FuzzFinding> {
+fn check_weak_prng(trace: &ExecutionTrace, tx_sequence: &[Transaction]) -> Vec<FuzzFinding> {
     let mut findings = Vec::new();
     let mut seen_functions = std::collections::HashSet::new();
 
@@ -473,10 +478,7 @@ fn check_weak_prng(
 }
 
 /// Hardcoded gas: .transfer() or .send() with fixed 2300 gas stipend.
-fn check_hardcoded_gas(
-    trace: &ExecutionTrace,
-    tx_sequence: &[Transaction],
-) -> Vec<FuzzFinding> {
+fn check_hardcoded_gas(trace: &ExecutionTrace, tx_sequence: &[Transaction]) -> Vec<FuzzFinding> {
     let mut findings = Vec::new();
     let mut seen = std::collections::HashSet::new();
 
@@ -503,10 +505,7 @@ fn check_hardcoded_gas(
 }
 
 /// Locked ether: contract receives ETH (payable) but has no ether-sending call.
-fn check_locked_ether(
-    trace: &ExecutionTrace,
-    tx_sequence: &[Transaction],
-) -> Vec<FuzzFinding> {
+fn check_locked_ether(trace: &ExecutionTrace, tx_sequence: &[Transaction]) -> Vec<FuzzFinding> {
     // Check if any transaction sent value (payable function)
     let has_payable = tx_sequence.iter().any(|tx| tx.value > 0);
     // Check if any ether was sent out
@@ -530,10 +529,7 @@ fn check_locked_ether(
 }
 
 /// Storage/memory issues: inline assembly, delegatecall in loop.
-fn check_storage_memory(
-    trace: &ExecutionTrace,
-    tx_sequence: &[Transaction],
-) -> Vec<FuzzFinding> {
+fn check_storage_memory(trace: &ExecutionTrace, tx_sequence: &[Transaction]) -> Vec<FuzzFinding> {
     let mut findings = Vec::new();
     let mut seen = std::collections::HashSet::new();
 
@@ -606,10 +602,7 @@ fn check_division_before_multiplication(
 }
 
 /// Cryptographic issue: ecrecover without zero-address check.
-fn check_cryptographic(
-    trace: &ExecutionTrace,
-    tx_sequence: &[Transaction],
-) -> Vec<FuzzFinding> {
+fn check_cryptographic(trace: &ExecutionTrace, tx_sequence: &[Transaction]) -> Vec<FuzzFinding> {
     let mut findings = Vec::new();
     let mut seen = std::collections::HashSet::new();
 
@@ -642,13 +635,16 @@ fn check_unprotected_ether_withdrawal(
     let mut findings = Vec::new();
     let mut seen = std::collections::HashSet::new();
 
-    let mut functions_with_ether_send: std::collections::HashMap<u32, String> = std::collections::HashMap::new();
-    let mut functions_with_sender_check: std::collections::HashSet<u32> = std::collections::HashSet::new();
+    let mut functions_with_ether_send: std::collections::HashMap<u32, String> =
+        std::collections::HashMap::new();
+    let mut functions_with_sender_check: std::collections::HashSet<u32> =
+        std::collections::HashSet::new();
 
     for event in &trace.events {
         match &event.kind {
             TraceEventKind::EtherSent { callee } => {
-                functions_with_ether_send.entry(event.function_id)
+                functions_with_ether_send
+                    .entry(event.function_id)
                     .or_insert_with(|| callee.clone());
             }
             TraceEventKind::SenderChecked => {
@@ -692,7 +688,7 @@ pub fn deduplicate(findings: Vec<FuzzFinding>) -> Vec<FuzzFinding> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::fuzzing::types::{TraceEvent, FuzzValue};
+    use crate::fuzzing::types::{FuzzValue, TraceEvent};
 
     fn make_tx() -> Vec<Transaction> {
         vec![Transaction {

@@ -40,11 +40,10 @@ use super::{Finding, FindingKind, Severity};
 /// enforce the `s`-value lower-half-order check internally.
 /// If the contract uses one of these, we do NOT flag CR-02.
 const SAFE_RECOVER_WRAPPERS: &[&str] = &[
-    "recover",          // OpenZeppelin ECDSA.recover
-    "tryRecover",       // OpenZeppelin ECDSA.tryRecover
-    "recoverSigner",    // common custom wrapper name
+    "recover",       // OpenZeppelin ECDSA.recover
+    "tryRecover",    // OpenZeppelin ECDSA.tryRecover
+    "recoverSigner", // common custom wrapper name
 ];
-
 
 // ═══════════════════════════════════════════════════════════════════════════════
 //  Entry point
@@ -55,7 +54,7 @@ pub fn detect_all(ast: &NormalizedAst) -> Vec<Finding> {
     let mut findings = Vec::new();
 
     findings.extend(detect_lack_of_signature_verification(ast)); // CR-01
-    findings.extend(detect_signature_malleability(ast));          // CR-02
+    findings.extend(detect_signature_malleability(ast)); // CR-02
 
     findings
 }
@@ -74,22 +73,32 @@ fn for_each_expr_in_stmt(
     stmt_id: u32,
     cb: &mut impl FnMut(u32, &crate::norm::Expr),
 ) {
-    let Some(stmt) = ast.statements.get(stmt_id as usize) else { return };
+    let Some(stmt) = ast.statements.get(stmt_id as usize) else {
+        return;
+    };
 
     match &stmt.kind {
         // Recurse into each child of a block.
         StmtKind::Block(stmts) => {
-            for &s in stmts { for_each_expr_in_stmt(ast, s, cb); }
+            for &s in stmts {
+                for_each_expr_in_stmt(ast, s, cb);
+            }
         }
         // Expression statement — walk the expression.
         StmtKind::Expr(e) => for_each_expr(ast, *e, cb),
         // Return with a value — walk the return expression.
         StmtKind::Return(Some(e)) => for_each_expr(ast, *e, cb),
         // If — walk condition, then branch, and optional else branch.
-        StmtKind::If { cond, then_id, else_id } => {
+        StmtKind::If {
+            cond,
+            then_id,
+            else_id,
+        } => {
             for_each_expr(ast, *cond, cb);
             for_each_expr_in_stmt(ast, *then_id, cb);
-            if let Some(e) = else_id { for_each_expr_in_stmt(ast, *e, cb); }
+            if let Some(e) = else_id {
+                for_each_expr_in_stmt(ast, *e, cb);
+            }
         }
         // While — walk condition and body.
         StmtKind::While { cond, body } => {
@@ -102,10 +111,21 @@ fn for_each_expr_in_stmt(
             for_each_expr(ast, *cond, cb);
         }
         // For — walk init, condition, step, and body.
-        StmtKind::For { init, cond, step, body } => {
-            if let Some(s) = init { for_each_expr_in_stmt(ast, *s, cb); }
-            if let Some(e) = cond { for_each_expr(ast, *e, cb); }
-            if let Some(e) = step { for_each_expr(ast, *e, cb); }
+        StmtKind::For {
+            init,
+            cond,
+            step,
+            body,
+        } => {
+            if let Some(s) = init {
+                for_each_expr_in_stmt(ast, *s, cb);
+            }
+            if let Some(e) = cond {
+                for_each_expr(ast, *e, cb);
+            }
+            if let Some(e) = step {
+                for_each_expr(ast, *e, cb);
+            }
             for_each_expr_in_stmt(ast, *body, cb);
         }
         // Emit — walk the emitted expression.
@@ -117,25 +137,27 @@ fn for_each_expr_in_stmt(
         // Try-catch: walk the call and each clause's body.
         StmtKind::Try { call, clauses } => {
             for_each_expr(ast, *call, cb);
-            for clause in clauses { for_each_expr_in_stmt(ast, clause.body, cb); }
+            for clause in clauses {
+                for_each_expr_in_stmt(ast, clause.body, cb);
+            }
         }
         _ => {}
     }
 }
 
 /// Walk every sub-expression under `expr_id`, calling `cb` for each.
-fn for_each_expr(
-    ast: &NormalizedAst,
-    expr_id: u32,
-    cb: &mut impl FnMut(u32, &crate::norm::Expr),
-) {
-    let Some(expr) = ast.expressions.get(expr_id as usize) else { return };
+fn for_each_expr(ast: &NormalizedAst, expr_id: u32, cb: &mut impl FnMut(u32, &crate::norm::Expr)) {
+    let Some(expr) = ast.expressions.get(expr_id as usize) else {
+        return;
+    };
     cb(expr_id, expr);
 
     match &expr.kind {
         ExprKind::Call { callee, args } => {
             for_each_expr(ast, *callee, cb);
-            for arg in args { for_each_expr(ast, *arg, cb); }
+            for arg in args {
+                for_each_expr(ast, *arg, cb);
+            }
         }
         ExprKind::CallOptions { callee, options } => {
             for_each_expr(ast, *callee, cb);
@@ -150,7 +172,9 @@ fn for_each_expr(
         ExprKind::Member { base, .. } => for_each_expr(ast, *base, cb),
         ExprKind::Index { base, index } => {
             for_each_expr(ast, *base, cb);
-            if let Some(i) = index { for_each_expr(ast, *i, cb); }
+            if let Some(i) = index {
+                for_each_expr(ast, *i, cb);
+            }
         }
         ExprKind::Binary { lhs, rhs, .. } => {
             for_each_expr(ast, *lhs, cb);
@@ -162,9 +186,15 @@ fn for_each_expr(
             for_each_expr(ast, *rhs, cb);
         }
         ExprKind::Tuple(entries) => {
-            for e in entries { for_each_expr(ast, *e, cb); }
+            for e in entries {
+                for_each_expr(ast, *e, cb);
+            }
         }
-        ExprKind::Conditional { cond, then_expr, else_expr } => {
+        ExprKind::Conditional {
+            cond,
+            then_expr,
+            else_expr,
+        } => {
             for_each_expr(ast, *cond, cb);
             for_each_expr(ast, *then_expr, cb);
             for_each_expr(ast, *else_expr, cb);
@@ -174,31 +204,39 @@ fn for_each_expr(
 }
 
 /// Walk every statement under `stmt_id`, calling `cb` for each.
-fn for_each_stmt(
-    ast: &NormalizedAst,
-    stmt_id: u32,
-    cb: &mut impl FnMut(u32, &crate::norm::Stmt),
-) {
-    let Some(stmt) = ast.statements.get(stmt_id as usize) else { return };
+fn for_each_stmt(ast: &NormalizedAst, stmt_id: u32, cb: &mut impl FnMut(u32, &crate::norm::Stmt)) {
+    let Some(stmt) = ast.statements.get(stmt_id as usize) else {
+        return;
+    };
     cb(stmt_id, stmt);
 
     match &stmt.kind {
         StmtKind::Block(stmts) => {
-            for &s in stmts { for_each_stmt(ast, s, cb); }
+            for &s in stmts {
+                for_each_stmt(ast, s, cb);
+            }
         }
-        StmtKind::If { then_id, else_id, .. } => {
+        StmtKind::If {
+            then_id, else_id, ..
+        } => {
             for_each_stmt(ast, *then_id, cb);
-            if let Some(e) = else_id { for_each_stmt(ast, *e, cb); }
+            if let Some(e) = else_id {
+                for_each_stmt(ast, *e, cb);
+            }
         }
         StmtKind::While { body, .. } | StmtKind::DoWhile { body, .. } => {
             for_each_stmt(ast, *body, cb);
         }
         StmtKind::For { init, body, .. } => {
-            if let Some(s) = init { for_each_stmt(ast, *s, cb); }
+            if let Some(s) = init {
+                for_each_stmt(ast, *s, cb);
+            }
             for_each_stmt(ast, *body, cb);
         }
         StmtKind::Try { clauses, .. } => {
-            for c in clauses { for_each_stmt(ast, c.body, cb); }
+            for c in clauses {
+                for_each_stmt(ast, c.body, cb);
+            }
         }
         _ => {}
     }
@@ -240,7 +278,9 @@ fn is_ecrecover_call(ast: &NormalizedAst, expr: &crate::norm::Expr) -> bool {
 /// `ecrecover`.  Used to check whether a larger expression tree involves
 /// signature recovery.
 fn contains_ecrecover_call(ast: &NormalizedAst, expr_id: u32) -> bool {
-    let Some(expr) = ast.expressions.get(expr_id as usize) else { return false };
+    let Some(expr) = ast.expressions.get(expr_id as usize) else {
+        return false;
+    };
 
     // Check this node itself.
     if is_ecrecover_call(ast, expr) {
@@ -274,7 +314,11 @@ fn contains_ecrecover_call(ast: &NormalizedAst, expr_id: u32) -> bool {
             contains_ecrecover_call(ast, *base)
                 || index.map_or(false, |i| contains_ecrecover_call(ast, i))
         }
-        ExprKind::Conditional { cond, then_expr, else_expr } => {
+        ExprKind::Conditional {
+            cond,
+            then_expr,
+            else_expr,
+        } => {
             contains_ecrecover_call(ast, *cond)
                 || contains_ecrecover_call(ast, *then_expr)
                 || contains_ecrecover_call(ast, *else_expr)
@@ -288,7 +332,9 @@ fn contains_ecrecover_call(ast: &NormalizedAst, expr_id: u32) -> bool {
 /// These are the zero-address constants that a well-written contract
 /// compares the `ecrecover` result against.
 fn is_zero_address(ast: &NormalizedAst, expr_id: u32) -> bool {
-    let Some(expr) = ast.expressions.get(expr_id as usize) else { return false };
+    let Some(expr) = ast.expressions.get(expr_id as usize) else {
+        return false;
+    };
 
     // Pattern 1: `address(0)` — a type-cast call whose argument is literal 0.
     //   ExprKind::Call { callee: Ident("address"), args: [Literal("0")] }
@@ -311,10 +357,7 @@ fn is_zero_address(ast: &NormalizedAst, expr_id: u32) -> bool {
     // Pattern 2: Literal zero address `0x0000000000000000000000000000000000000000`.
     if let ExprKind::Literal(lit) = &expr.kind {
         let v = lit.value.trim();
-        if v == "0x0000000000000000000000000000000000000000"
-            || v == "0x0"
-            || v == "0"
-        {
+        if v == "0x0000000000000000000000000000000000000000" || v == "0x0" || v == "0" {
             return true;
         }
     }
@@ -333,7 +376,11 @@ fn collect_ecrecover_result_vars(ast: &NormalizedAst, body: u32) -> Vec<String> 
 
     for_each_stmt(ast, body, &mut |_sid, stmt| {
         // VarDecl:  `address signer = ecrecover(...);`
-        if let StmtKind::VarDecl { names, init: Some(init) } = &stmt.kind {
+        if let StmtKind::VarDecl {
+            names,
+            init: Some(init),
+        } = &stmt.kind
+        {
             if contains_ecrecover_call(ast, *init) {
                 for name in names {
                     vars.push(name.clone());
@@ -360,7 +407,9 @@ fn collect_ecrecover_result_vars(ast: &NormalizedAst, body: u32) -> Vec<String> 
 
 /// Returns `true` if `expr_id` is an identifier whose name is in `var_names`.
 fn expr_is_one_of(ast: &NormalizedAst, expr_id: u32, var_names: &[String]) -> bool {
-    let Some(expr) = ast.expressions.get(expr_id as usize) else { return false };
+    let Some(expr) = ast.expressions.get(expr_id as usize) else {
+        return false;
+    };
     if let ExprKind::Ident(name) = &expr.kind {
         return var_names.iter().any(|v| v == name);
     }
@@ -384,7 +433,9 @@ fn body_has_zero_address_check(ast: &NormalizedAst, body: u32) -> bool {
     let mut found = false;
 
     for_each_expr_in_stmt(ast, body, &mut |_eid, expr| {
-        if found { return; }
+        if found {
+            return;
+        }
 
         if let ExprKind::Binary { op, lhs, rhs } = &expr.kind {
             if op == "!=" || op == "==" {
@@ -419,14 +470,14 @@ fn body_has_zero_address_check(ast: &NormalizedAst, body: u32) -> bool {
 /// Recursively checks if a single expression is (or contains) a comparison
 /// of an ecrecover result variable against the zero address.
 fn body_expr_has_zero_check(ast: &NormalizedAst, expr_id: u32, ec_vars: &[String]) -> bool {
-    let Some(expr) = ast.expressions.get(expr_id as usize) else { return false };
+    let Some(expr) = ast.expressions.get(expr_id as usize) else {
+        return false;
+    };
 
     if let ExprKind::Binary { op, lhs, rhs } = &expr.kind {
         if op == "!=" || op == "==" {
-            let lhs_ec = contains_ecrecover_call(ast, *lhs)
-                || expr_is_one_of(ast, *lhs, ec_vars);
-            let rhs_ec = contains_ecrecover_call(ast, *rhs)
-                || expr_is_one_of(ast, *rhs, ec_vars);
+            let lhs_ec = contains_ecrecover_call(ast, *lhs) || expr_is_one_of(ast, *lhs, ec_vars);
+            let rhs_ec = contains_ecrecover_call(ast, *rhs) || expr_is_one_of(ast, *rhs, ec_vars);
             let lhs_z = is_zero_address(ast, *lhs);
             let rhs_z = is_zero_address(ast, *rhs);
             if (lhs_ec && rhs_z) || (rhs_ec && lhs_z) {
@@ -479,7 +530,9 @@ fn body_relies_on_msg_sender_for_sig(ast: &NormalizedAst, body: u32) -> bool {
 
 /// Returns `true` if the expression is or contains `msg.sender`.
 fn contains_msg_sender(ast: &NormalizedAst, expr_id: u32) -> bool {
-    let Some(expr) = ast.expressions.get(expr_id as usize) else { return false };
+    let Some(expr) = ast.expressions.get(expr_id as usize) else {
+        return false;
+    };
 
     // Chain metadata: [Ident("msg"), Member("sender")]
     if let Some(chain) = expr.meta.chain.as_deref() {
@@ -515,18 +568,20 @@ fn contains_msg_sender(ast: &NormalizedAst, expr_id: u32) -> bool {
         ExprKind::Unary { expr, .. } => contains_msg_sender(ast, *expr),
         ExprKind::Member { base, .. } => contains_msg_sender(ast, *base),
         ExprKind::Call { callee, args } => {
-            contains_msg_sender(ast, *callee)
-                || args.iter().any(|&a| contains_msg_sender(ast, a))
+            contains_msg_sender(ast, *callee) || args.iter().any(|&a| contains_msg_sender(ast, a))
         }
         ExprKind::Assign { lhs, rhs, .. } => {
             contains_msg_sender(ast, *lhs) || contains_msg_sender(ast, *rhs)
         }
         ExprKind::Tuple(entries) => entries.iter().any(|&e| contains_msg_sender(ast, e)),
         ExprKind::Index { base, index } => {
-            contains_msg_sender(ast, *base)
-                || index.map_or(false, |i| contains_msg_sender(ast, i))
+            contains_msg_sender(ast, *base) || index.map_or(false, |i| contains_msg_sender(ast, i))
         }
-        ExprKind::Conditional { cond, then_expr, else_expr } => {
+        ExprKind::Conditional {
+            cond,
+            then_expr,
+            else_expr,
+        } => {
             contains_msg_sender(ast, *cond)
                 || contains_msg_sender(ast, *then_expr)
                 || contains_msg_sender(ast, *else_expr)
@@ -540,14 +595,12 @@ fn contains_msg_sender(ast: &NormalizedAst, expr_id: u32) -> bool {
 /// ECDSA signatures.
 fn function_has_signature_params(func: &crate::norm::Function) -> bool {
     // Common signature-related parameter name fragments.
-    const SIG_HINTS: &[&str] = &[
-        "signature", "sig", "v", "r", "s", "hash", "digest",
-    ];
+    const SIG_HINTS: &[&str] = &["signature", "sig", "v", "r", "s", "hash", "digest"];
 
     // We need at least 2 matches among the short names (v, r, s) or at
     // least 1 match for the longer descriptive names.
-    let mut short_matches = 0u32;  // matches for "v", "r", "s"
-    let mut long_match = false;    // matches for "signature", "sig", "hash", "digest"
+    let mut short_matches = 0u32; // matches for "v", "r", "s"
+    let mut long_match = false; // matches for "signature", "sig", "hash", "digest"
 
     for param in &func.params {
         let lower = param.to_lowercase();
@@ -572,7 +625,9 @@ fn body_uses_safe_recover(ast: &NormalizedAst, body: u32) -> bool {
     let mut found = false;
 
     for_each_expr_in_stmt(ast, body, &mut |_eid, expr| {
-        if found { return; }
+        if found {
+            return;
+        }
 
         // Strategy 1: CallMeta with a Member target whose name is "recover"
         // or "tryRecover" — typically `ECDSA.recover(hash, v, r, s)`.
@@ -628,7 +683,9 @@ fn body_has_s_value_check(ast: &NormalizedAst, body: u32) -> bool {
     let mut found = false;
 
     for_each_expr_in_stmt(ast, body, &mut |_eid, expr| {
-        if found { return; }
+        if found {
+            return;
+        }
 
         if let ExprKind::Binary { op, lhs, rhs } = &expr.kind {
             // Only look at ordering comparisons.
@@ -651,11 +708,15 @@ fn body_has_s_value_check(ast: &NormalizedAst, body: u32) -> bool {
 /// Returns `true` if the expression resolves to an identifier named `s`
 /// (possibly cast, e.g. `uint256(s)`).
 fn expr_is_s_ident(ast: &NormalizedAst, expr_id: u32) -> bool {
-    let Some(expr) = ast.expressions.get(expr_id as usize) else { return false };
+    let Some(expr) = ast.expressions.get(expr_id as usize) else {
+        return false;
+    };
 
     // Direct identifier: `s`
     if let ExprKind::Ident(name) = &expr.kind {
-        if name == "s" { return true; }
+        if name == "s" {
+            return true;
+        }
     }
 
     // Type-cast: `uint256(s)` — the normalizer represents this as a Call
@@ -672,13 +733,16 @@ fn expr_is_s_ident(ast: &NormalizedAst, expr_id: u32) -> bool {
 /// Returns `true` if the expression is a literal whose value starts with
 /// the known secp256k1 half-order upper-bound prefix.
 fn expr_is_s_upper_bound(ast: &NormalizedAst, expr_id: u32) -> bool {
-    let Some(expr) = ast.expressions.get(expr_id as usize) else { return false };
+    let Some(expr) = ast.expressions.get(expr_id as usize) else {
+        return false;
+    };
 
     if let ExprKind::Literal(lit) = &expr.kind {
         // Normalize: strip optional `0x` / `0X`, then check the remaining
         // hex digits start with "7FFFFFFF" (case-insensitive).
         let v = lit.value.trim();
-        let hex_part = v.strip_prefix("0x")
+        let hex_part = v
+            .strip_prefix("0x")
             .or_else(|| v.strip_prefix("0X"))
             .unwrap_or(v);
         if hex_part.to_ascii_uppercase().starts_with("7FFFFFFF") {
@@ -705,7 +769,9 @@ fn body_validates_recovered_signer(ast: &NormalizedAst, body: u32) -> bool {
     let mut found = false;
 
     for_each_expr_in_stmt(ast, body, &mut |_eid, expr| {
-        if found { return; }
+        if found {
+            return;
+        }
 
         if let ExprKind::Binary { op, lhs, rhs } = &expr.kind {
             if op == "==" || op == "!=" {

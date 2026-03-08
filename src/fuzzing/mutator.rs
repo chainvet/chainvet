@@ -1,16 +1,10 @@
 use rand::Rng;
 
-use crate::fuzzing::types::{
-    ContractAbi, Dictionary, FuzzValue, Individual, Transaction,
-};
+use crate::fuzzing::types::{ContractAbi, Dictionary, FuzzValue, Individual, Transaction};
 
 /// Mutate an individual to produce a new test case.
 /// Selects from 10 mutation strategies including the new havoc and arithmetic modes.
-pub fn mutate_individual(
-    ind: &Individual,
-    abi: &ContractAbi,
-    rng: &mut impl Rng,
-) -> Individual {
+pub fn mutate_individual(ind: &Individual, abi: &ContractAbi, rng: &mut impl Rng) -> Individual {
     mutate_individual_with_dict(ind, abi, rng, None, false)
 }
 
@@ -154,8 +148,8 @@ fn mutate_arithmetic(ind: &mut Individual, rng: &mut impl Rng) {
     if let FuzzValue::Uint(val) = &mut tx.args[arg_idx] {
         let op: u32 = rng.gen_range(0..3);
         match op {
-            0 => *val = val.wrapping_mul(2),   // *2
-            1 => *val /= 2,                     // /2
+            0 => *val = val.wrapping_mul(2),      // *2
+            1 => *val /= 2,                       // /2
             _ => *val = 0u128.wrapping_sub(*val), // negate (two's complement)
         }
     }
@@ -169,9 +163,16 @@ fn insert_transaction(ind: &mut Individual, abi: &ContractAbi, rng: &mut impl Rn
 }
 
 /// Insert a random transaction, optionally using dictionary values.
-fn insert_transaction_with_dict(ind: &mut Individual, abi: &ContractAbi, rng: &mut impl Rng, dict: Option<&Dictionary>) {
+fn insert_transaction_with_dict(
+    ind: &mut Individual,
+    abi: &ContractAbi,
+    rng: &mut impl Rng,
+    dict: Option<&Dictionary>,
+) {
     let config = crate::fuzzing::types::FuzzConfig::default();
-    if let Some(tx) = crate::fuzzing::generator::random_transaction_with_dict(abi, rng, &config, dict) {
+    if let Some(tx) =
+        crate::fuzzing::generator::random_transaction_with_dict(abi, rng, &config, dict)
+    {
         let pos = if ind.transactions.is_empty() {
             0
         } else {
@@ -223,8 +224,7 @@ fn mutate_environment(ind: &mut Individual, rng: &mut impl Rng) {
             // Mutate a random transaction's sender
             if !ind.transactions.is_empty() {
                 let idx = rng.gen_range(0..ind.transactions.len());
-                ind.transactions[idx].sender =
-                    rng.gen_range(0..ind.environment.address_pool_size);
+                ind.transactions[idx].sender = rng.gen_range(0..ind.environment.address_pool_size);
             }
         }
     }
@@ -240,8 +240,8 @@ fn mutate_sender_role(ind: &mut Individual, rng: &mut impl Rng) {
     // Bias toward interesting senders: 0=owner, 1=attacker, rest=random
     let choice: u32 = rng.gen_range(0..4);
     ind.transactions[idx].sender = match choice {
-        0 => 0,  // likely contract owner
-        1 => 1,  // likely attacker
+        0 => 0, // likely contract owner
+        1 => 1, // likely attacker
         _ => rng.gen_range(0..ind.environment.address_pool_size),
     };
 }
@@ -250,7 +250,12 @@ fn mutate_sender_role(ind: &mut Individual, rng: &mut impl Rng) {
 
 /// Havoc mutation: stack 2–16 random mutations in a single round.
 /// This is a key AFL technique for escaping local optima.
-fn havoc_mutate(ind: &mut Individual, abi: &ContractAbi, rng: &mut impl Rng, dict: Option<&Dictionary>) {
+fn havoc_mutate(
+    ind: &mut Individual,
+    abi: &ContractAbi,
+    rng: &mut impl Rng,
+    dict: Option<&Dictionary>,
+) {
     let num_mutations = rng.gen_range(2..=16);
     for _ in 0..num_mutations {
         let strategy: u32 = rng.gen_range(0..9);
@@ -267,7 +272,6 @@ fn havoc_mutate(ind: &mut Individual, abi: &ContractAbi, rng: &mut impl Rng, dic
         }
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -303,7 +307,9 @@ mod tests {
                 FunctionAbi {
                     id: 0,
                     name: "deposit".to_string(),
-                    params: vec![ParamInfo { name: "amount".to_string() }],
+                    params: vec![ParamInfo {
+                        name: "amount".to_string(),
+                    }],
                     visibility: Visibility::External,
                     mutability: Mutability::Payable,
                     kind: FunctionKind::Function,
@@ -312,7 +318,9 @@ mod tests {
                 FunctionAbi {
                     id: 1,
                     name: "withdraw".to_string(),
-                    params: vec![ParamInfo { name: "amount".to_string() }],
+                    params: vec![ParamInfo {
+                        name: "amount".to_string(),
+                    }],
                     visibility: Visibility::External,
                     mutability: Mutability::NonPayable,
                     kind: FunctionKind::Function,
@@ -345,7 +353,10 @@ mod tests {
                 break;
             }
         }
-        assert!(any_different, "expected at least one mutation to produce a different individual");
+        assert!(
+            any_different,
+            "expected at least one mutation to produce a different individual"
+        );
     }
 
     #[test]
@@ -374,15 +385,29 @@ mod tests {
         let mutant = mutate_individual_with_dict(&ind, &abi, &mut rng, None, true);
         // Havoc should produce some change (stacks 2-16 mutations)
         let different = mutant.transactions.len() != ind.transactions.len()
-            || mutant.transactions.iter().zip(ind.transactions.iter())
-                .any(|(a, b)| a.function_id != b.function_id || a.sender != b.sender || a.args.len() != b.args.len());
-        assert!(different, "havoc mode should produce a different individual");
+            || mutant
+                .transactions
+                .iter()
+                .zip(ind.transactions.iter())
+                .any(|(a, b)| {
+                    a.function_id != b.function_id
+                        || a.sender != b.sender
+                        || a.args.len() != b.args.len()
+                });
+        assert!(
+            different,
+            "havoc mode should produce a different individual"
+        );
     }
 
     #[test]
     fn arithmetic_mutation_changes_value() {
         let mut ind = sample_individual();
-        let original_val = if let FuzzValue::Uint(v) = &ind.transactions[0].args[0] { *v } else { 0 };
+        let original_val = if let FuzzValue::Uint(v) = &ind.transactions[0].args[0] {
+            *v
+        } else {
+            0
+        };
         let mut rng = <rand::rngs::StdRng as rand::SeedableRng>::seed_from_u64(42);
         // Run several times; arithmetic should change at least one value
         let mut changed = false;

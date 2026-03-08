@@ -634,15 +634,13 @@ fn parse_ts_for(node: Node, ctx: &mut TsContext) -> Option<u32> {
         .child_by_field_name("initialization")
         .or_else(|| node.child_by_field_name("initial"))
         .and_then(|child| parse_ts_statement(child, ctx));
-    let cond = node
-        .child_by_field_name("condition")
-        .and_then(|child| {
-            if is_ts_expr_node(child.kind()) {
-                Some(parse_ts_expr(child, ctx))
-            } else {
-                first_ts_expr_child(child).map(|expr| parse_ts_expr(expr, ctx))
-            }
-        });
+    let cond = node.child_by_field_name("condition").and_then(|child| {
+        if is_ts_expr_node(child.kind()) {
+            Some(parse_ts_expr(child, ctx))
+        } else {
+            first_ts_expr_child(child).map(|expr| parse_ts_expr(expr, ctx))
+        }
+    });
     let step = node
         .child_by_field_name("update")
         .and_then(|child| Some(parse_ts_expr(child, ctx)));
@@ -3294,13 +3292,19 @@ mod tests {
             .expect("top-level return expression");
         let (top_lhs, top_rhs) = match &top_expr.kind {
             ExprKind::Binary { op, lhs, rhs } => {
-                assert_eq!(op, "*", "top-level return expression should be multiplication");
+                assert_eq!(
+                    op, "*",
+                    "top-level return expression should be multiplication"
+                );
                 (*lhs, *rhs)
             }
             _ => panic!("expected binary expression at return top-level"),
         };
 
-        let lhs_expr = ast.expressions.get(top_lhs as usize).expect("lhs expression");
+        let lhs_expr = ast
+            .expressions
+            .get(top_lhs as usize)
+            .expect("lhs expression");
         match &lhs_expr.kind {
             ExprKind::Binary { op, .. } => {
                 assert_eq!(op, "/", "lhs should preserve nested division expression");
@@ -3308,7 +3312,10 @@ mod tests {
             _ => panic!("expected nested binary expression on multiplication lhs"),
         }
 
-        let rhs_expr = ast.expressions.get(top_rhs as usize).expect("rhs expression");
+        let rhs_expr = ast
+            .expressions
+            .get(top_rhs as usize)
+            .expect("rhs expression");
         match &rhs_expr.kind {
             ExprKind::Ident(name) => {
                 assert_eq!(name, "factor");

@@ -186,13 +186,25 @@ fn fmt_tuple_instr(instr: &IrInstr) -> String {
             None => format!("(\"declare\", {})", fmt_tuple_string_list(names)),
         },
         IrInstr::Assign { dest, src, .. } => {
-            format!("(\"assign\", {}, {})", fmt_tuple_var(dest), fmt_tuple_value(src))
+            format!(
+                "(\"assign\", {}, {})",
+                fmt_tuple_var(dest),
+                fmt_tuple_value(src)
+            )
         }
         IrInstr::Store { dest, src, .. } => {
-            format!("(\"store\", {}, {})", fmt_tuple_place(dest), fmt_tuple_value(src))
+            format!(
+                "(\"store\", {}, {})",
+                fmt_tuple_place(dest),
+                fmt_tuple_value(src)
+            )
         }
         IrInstr::Load { dest, src, .. } => {
-            format!("(\"load\", {}, {})", fmt_tuple_var(dest), fmt_tuple_place(src))
+            format!(
+                "(\"load\", {}, {})",
+                fmt_tuple_var(dest),
+                fmt_tuple_place(src)
+            )
         }
         IrInstr::Binary {
             dest, op, lhs, rhs, ..

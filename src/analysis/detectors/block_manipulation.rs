@@ -50,9 +50,9 @@ const ORDER_SENSITIVE_VAR_HINTS: &[&str] = &[
 pub fn detect_all(ast: &NormalizedAst) -> Vec<Finding> {
     let mut findings = Vec::new();
 
-    findings.extend(detect_dangerous_timestamp(ast));          // BM-01
+    findings.extend(detect_dangerous_timestamp(ast)); // BM-01
     findings.extend(detect_transaction_order_dependency(ast)); // BM-02
-    findings.extend(detect_weak_prng(ast));                    // BM-03
+    findings.extend(detect_weak_prng(ast)); // BM-03
 
     findings
 }
@@ -69,18 +69,28 @@ fn for_each_expr_in_stmt(
     stmt_id: u32,
     cb: &mut impl FnMut(u32, &crate::norm::Expr),
 ) {
-    let Some(stmt) = ast.statements.get(stmt_id as usize) else { return };
+    let Some(stmt) = ast.statements.get(stmt_id as usize) else {
+        return;
+    };
 
     match &stmt.kind {
         StmtKind::Block(stmts) => {
-            for &s in stmts { for_each_expr_in_stmt(ast, s, cb); }
+            for &s in stmts {
+                for_each_expr_in_stmt(ast, s, cb);
+            }
         }
         StmtKind::Expr(e) => for_each_expr(ast, *e, cb),
         StmtKind::Return(Some(e)) => for_each_expr(ast, *e, cb),
-        StmtKind::If { cond, then_id, else_id } => {
+        StmtKind::If {
+            cond,
+            then_id,
+            else_id,
+        } => {
             for_each_expr(ast, *cond, cb);
             for_each_expr_in_stmt(ast, *then_id, cb);
-            if let Some(e) = else_id { for_each_expr_in_stmt(ast, *e, cb); }
+            if let Some(e) = else_id {
+                for_each_expr_in_stmt(ast, *e, cb);
+            }
         }
         StmtKind::While { cond, body } => {
             for_each_expr(ast, *cond, cb);
@@ -90,10 +100,21 @@ fn for_each_expr_in_stmt(
             for_each_expr_in_stmt(ast, *body, cb);
             for_each_expr(ast, *cond, cb);
         }
-        StmtKind::For { init, cond, step, body } => {
-            if let Some(s) = init { for_each_expr_in_stmt(ast, *s, cb); }
-            if let Some(e) = cond { for_each_expr(ast, *e, cb); }
-            if let Some(e) = step { for_each_expr(ast, *e, cb); }
+        StmtKind::For {
+            init,
+            cond,
+            step,
+            body,
+        } => {
+            if let Some(s) = init {
+                for_each_expr_in_stmt(ast, *s, cb);
+            }
+            if let Some(e) = cond {
+                for_each_expr(ast, *e, cb);
+            }
+            if let Some(e) = step {
+                for_each_expr(ast, *e, cb);
+            }
             for_each_expr_in_stmt(ast, *body, cb);
         }
         StmtKind::Emit(e) => for_each_expr(ast, *e, cb),
@@ -101,25 +122,27 @@ fn for_each_expr_in_stmt(
         StmtKind::VarDecl { init: Some(e), .. } => for_each_expr(ast, *e, cb),
         StmtKind::Try { call, clauses } => {
             for_each_expr(ast, *call, cb);
-            for clause in clauses { for_each_expr_in_stmt(ast, clause.body, cb); }
+            for clause in clauses {
+                for_each_expr_in_stmt(ast, clause.body, cb);
+            }
         }
         _ => {}
     }
 }
 
 /// Walk every sub-expression under `expr_id`, calling `cb` for each.
-fn for_each_expr(
-    ast: &NormalizedAst,
-    expr_id: u32,
-    cb: &mut impl FnMut(u32, &crate::norm::Expr),
-) {
-    let Some(expr) = ast.expressions.get(expr_id as usize) else { return };
+fn for_each_expr(ast: &NormalizedAst, expr_id: u32, cb: &mut impl FnMut(u32, &crate::norm::Expr)) {
+    let Some(expr) = ast.expressions.get(expr_id as usize) else {
+        return;
+    };
     cb(expr_id, expr);
 
     match &expr.kind {
         ExprKind::Call { callee, args } => {
             for_each_expr(ast, *callee, cb);
-            for arg in args { for_each_expr(ast, *arg, cb); }
+            for arg in args {
+                for_each_expr(ast, *arg, cb);
+            }
         }
         ExprKind::CallOptions { callee, options } => {
             for_each_expr(ast, *callee, cb);
@@ -134,7 +157,9 @@ fn for_each_expr(
         ExprKind::Member { base, .. } => for_each_expr(ast, *base, cb),
         ExprKind::Index { base, index } => {
             for_each_expr(ast, *base, cb);
-            if let Some(i) = index { for_each_expr(ast, *i, cb); }
+            if let Some(i) = index {
+                for_each_expr(ast, *i, cb);
+            }
         }
         ExprKind::Binary { lhs, rhs, .. } => {
             for_each_expr(ast, *lhs, cb);
@@ -146,9 +171,15 @@ fn for_each_expr(
             for_each_expr(ast, *rhs, cb);
         }
         ExprKind::Tuple(entries) => {
-            for e in entries { for_each_expr(ast, *e, cb); }
+            for e in entries {
+                for_each_expr(ast, *e, cb);
+            }
         }
-        ExprKind::Conditional { cond, then_expr, else_expr } => {
+        ExprKind::Conditional {
+            cond,
+            then_expr,
+            else_expr,
+        } => {
             for_each_expr(ast, *cond, cb);
             for_each_expr(ast, *then_expr, cb);
             for_each_expr(ast, *else_expr, cb);
@@ -158,31 +189,39 @@ fn for_each_expr(
 }
 
 /// Walk every statement under `stmt_id`, calling `cb` for each.
-fn for_each_stmt(
-    ast: &NormalizedAst,
-    stmt_id: u32,
-    cb: &mut impl FnMut(u32, &crate::norm::Stmt),
-) {
-    let Some(stmt) = ast.statements.get(stmt_id as usize) else { return };
+fn for_each_stmt(ast: &NormalizedAst, stmt_id: u32, cb: &mut impl FnMut(u32, &crate::norm::Stmt)) {
+    let Some(stmt) = ast.statements.get(stmt_id as usize) else {
+        return;
+    };
     cb(stmt_id, stmt);
 
     match &stmt.kind {
         StmtKind::Block(stmts) => {
-            for &s in stmts { for_each_stmt(ast, s, cb); }
+            for &s in stmts {
+                for_each_stmt(ast, s, cb);
+            }
         }
-        StmtKind::If { then_id, else_id, .. } => {
+        StmtKind::If {
+            then_id, else_id, ..
+        } => {
             for_each_stmt(ast, *then_id, cb);
-            if let Some(e) = else_id { for_each_stmt(ast, *e, cb); }
+            if let Some(e) = else_id {
+                for_each_stmt(ast, *e, cb);
+            }
         }
         StmtKind::While { body, .. } | StmtKind::DoWhile { body, .. } => {
             for_each_stmt(ast, *body, cb);
         }
         StmtKind::For { init, body, .. } => {
-            if let Some(s) = init { for_each_stmt(ast, *s, cb); }
+            if let Some(s) = init {
+                for_each_stmt(ast, *s, cb);
+            }
             for_each_stmt(ast, *body, cb);
         }
         StmtKind::Try { clauses, .. } => {
-            for c in clauses { for_each_stmt(ast, c.body, cb); }
+            for c in clauses {
+                for_each_stmt(ast, c.body, cb);
+            }
         }
         _ => {}
     }
@@ -196,11 +235,15 @@ fn for_each_stmt(
 ///   2. `ExprKind::Member { base: Ident("block"), field: "timestamp" }`
 ///   3. `ExprKind::Ident("now")` (pre-0.7 alias for `block.timestamp`)
 fn contains_timestamp(ast: &NormalizedAst, expr_id: u32) -> bool {
-    let Some(expr) = ast.expressions.get(expr_id as usize) else { return false };
+    let Some(expr) = ast.expressions.get(expr_id as usize) else {
+        return false;
+    };
 
     // Direct `now` keyword
     if let ExprKind::Ident(name) = &expr.kind {
-        if name == "now" { return true; }
+        if name == "now" {
+            return true;
+        }
     }
 
     // Chain metadata: block.timestamp
@@ -209,7 +252,9 @@ fn contains_timestamp(ast: &NormalizedAst, expr_id: u32) -> bool {
             if let (ChainSegment::Ident(base), ChainSegment::Member(member)) =
                 (&chain[0], &chain[1])
             {
-                if base == "block" && member == "timestamp" { return true; }
+                if base == "block" && member == "timestamp" {
+                    return true;
+                }
             }
         }
     }
@@ -219,7 +264,9 @@ fn contains_timestamp(ast: &NormalizedAst, expr_id: u32) -> bool {
         if field == "timestamp" {
             if let Some(base_expr) = ast.expressions.get(*base as usize) {
                 if let ExprKind::Ident(name) = &base_expr.kind {
-                    if name == "block" { return true; }
+                    if name == "block" {
+                        return true;
+                    }
                 }
             }
         }
@@ -233,7 +280,9 @@ fn contains_timestamp(ast: &NormalizedAst, expr_id: u32) -> bool {
 /// (also known as `block.prevrandao` since The Merge, but still miner-
 /// influenceable on PoW chains and predictable on PoS chains).
 fn contains_block_difficulty(ast: &NormalizedAst, expr_id: u32) -> bool {
-    let Some(expr) = ast.expressions.get(expr_id as usize) else { return false };
+    let Some(expr) = ast.expressions.get(expr_id as usize) else {
+        return false;
+    };
 
     // Chain metadata: block.difficulty OR block.prevrandao
     if let Some(chain) = expr.meta.chain.as_deref() {
@@ -253,7 +302,9 @@ fn contains_block_difficulty(ast: &NormalizedAst, expr_id: u32) -> bool {
         if field == "difficulty" || field == "prevrandao" {
             if let Some(base_expr) = ast.expressions.get(*base as usize) {
                 if let ExprKind::Ident(name) = &base_expr.kind {
-                    if name == "block" { return true; }
+                    if name == "block" {
+                        return true;
+                    }
                 }
             }
         }
@@ -264,17 +315,23 @@ fn contains_block_difficulty(ast: &NormalizedAst, expr_id: u32) -> bool {
 
 /// Returns `true` if `expr_id` is (or contains) a call to `blockhash(...)`.
 fn contains_blockhash(ast: &NormalizedAst, expr_id: u32) -> bool {
-    let Some(expr) = ast.expressions.get(expr_id as usize) else { return false };
+    let Some(expr) = ast.expressions.get(expr_id as usize) else {
+        return false;
+    };
 
     // Direct call: blockhash(number)
     if let Some(call) = &expr.meta.call {
         if let CallTarget::Direct { name } = &call.target {
-            if name == "blockhash" { return true; }
+            if name == "blockhash" {
+                return true;
+            }
         }
     }
     // Ident node named "blockhash" (callee before Call resolution)
     if let ExprKind::Ident(name) = &expr.kind {
-        if name == "blockhash" { return true; }
+        if name == "blockhash" {
+            return true;
+        }
     }
 
     recurse_contains(ast, expr, contains_blockhash)
@@ -282,7 +339,9 @@ fn contains_blockhash(ast: &NormalizedAst, expr_id: u32) -> bool {
 
 /// Returns `true` if the expression contains `block.number`.
 fn contains_block_number(ast: &NormalizedAst, expr_id: u32) -> bool {
-    let Some(expr) = ast.expressions.get(expr_id as usize) else { return false };
+    let Some(expr) = ast.expressions.get(expr_id as usize) else {
+        return false;
+    };
 
     // Chain metadata: block.number
     if let Some(chain) = expr.meta.chain.as_deref() {
@@ -290,7 +349,9 @@ fn contains_block_number(ast: &NormalizedAst, expr_id: u32) -> bool {
             if let (ChainSegment::Ident(base), ChainSegment::Member(member)) =
                 (&chain[0], &chain[1])
             {
-                if base == "block" && member == "number" { return true; }
+                if base == "block" && member == "number" {
+                    return true;
+                }
             }
         }
     }
@@ -300,7 +361,9 @@ fn contains_block_number(ast: &NormalizedAst, expr_id: u32) -> bool {
         if field == "number" {
             if let Some(base_expr) = ast.expressions.get(*base as usize) {
                 if let ExprKind::Ident(name) = &base_expr.kind {
-                    if name == "block" { return true; }
+                    if name == "block" {
+                        return true;
+                    }
                 }
             }
         }
@@ -331,9 +394,7 @@ fn recurse_contains(
         ExprKind::Unary { expr, .. } => pred(ast, *expr),
         ExprKind::Member { base, .. } => pred(ast, *base),
         ExprKind::Tuple(entries) => entries.iter().any(|&e| pred(ast, e)),
-        ExprKind::Call { callee, args } => {
-            pred(ast, *callee) || args.iter().any(|&a| pred(ast, a))
-        }
+        ExprKind::Call { callee, args } => pred(ast, *callee) || args.iter().any(|&a| pred(ast, a)),
         ExprKind::CallOptions { callee, options } => {
             pred(ast, *callee)
                 || options.iter().any(|opt| match opt {
@@ -346,9 +407,11 @@ fn recurse_contains(
         ExprKind::Index { base, index } => {
             pred(ast, *base) || index.map_or(false, |i| pred(ast, i))
         }
-        ExprKind::Conditional { cond, then_expr, else_expr } => {
-            pred(ast, *cond) || pred(ast, *then_expr) || pred(ast, *else_expr)
-        }
+        ExprKind::Conditional {
+            cond,
+            then_expr,
+            else_expr,
+        } => pred(ast, *cond) || pred(ast, *then_expr) || pred(ast, *else_expr),
         _ => false,
     }
 }
@@ -365,7 +428,9 @@ fn call_target_name(call: &crate::norm::CallMeta) -> &str {
 /// Returns `true` when an expression tree contains a call to one of the
 /// value-transfer methods listed in `TRANSFER_METHODS`.
 fn expr_contains_transfer_call(ast: &NormalizedAst, expr_id: u32) -> bool {
-    let Some(expr) = ast.expressions.get(expr_id as usize) else { return false };
+    let Some(expr) = ast.expressions.get(expr_id as usize) else {
+        return false;
+    };
 
     // Strategy 1: Check call metadata (works when parser resolves target)
     if let Some(call) = &expr.meta.call {
@@ -410,7 +475,11 @@ fn expr_contains_transfer_call(ast: &NormalizedAst, expr_id: u32) -> bool {
         ExprKind::Assign { lhs, rhs, .. } => {
             expr_contains_transfer_call(ast, *lhs) || expr_contains_transfer_call(ast, *rhs)
         }
-        ExprKind::Conditional { cond, then_expr, else_expr } => {
+        ExprKind::Conditional {
+            cond,
+            then_expr,
+            else_expr,
+        } => {
             expr_contains_transfer_call(ast, *cond)
                 || expr_contains_transfer_call(ast, *then_expr)
                 || expr_contains_transfer_call(ast, *else_expr)
@@ -422,7 +491,9 @@ fn expr_contains_transfer_call(ast: &NormalizedAst, expr_id: u32) -> bool {
 /// Returns `true` if an expression contains an identifier whose lowercase
 /// name matches one of the `ORDER_SENSITIVE_VAR_HINTS` fragments.
 fn expr_references_order_sensitive_var(ast: &NormalizedAst, expr_id: u32) -> bool {
-    let Some(expr) = ast.expressions.get(expr_id as usize) else { return false };
+    let Some(expr) = ast.expressions.get(expr_id as usize) else {
+        return false;
+    };
 
     if let ExprKind::Ident(name) = &expr.kind {
         let lower = name.to_lowercase();
@@ -440,7 +511,9 @@ fn expr_references_order_sensitive_var(ast: &NormalizedAst, expr_id: u32) -> boo
         ExprKind::Member { base, .. } => expr_references_order_sensitive_var(ast, *base),
         ExprKind::Call { callee, args } => {
             expr_references_order_sensitive_var(ast, *callee)
-                || args.iter().any(|&a| expr_references_order_sensitive_var(ast, a))
+                || args
+                    .iter()
+                    .any(|&a| expr_references_order_sensitive_var(ast, a))
         }
         ExprKind::Assign { lhs, rhs, .. } => {
             expr_references_order_sensitive_var(ast, *lhs)
@@ -464,10 +537,18 @@ fn stmt_contains_transfer(ast: &NormalizedAst, stmt_id: u32) -> bool {
 
 /// Describe which block-value source was found (for human-readable messages).
 fn block_value_label(ast: &NormalizedAst, expr_id: u32) -> &'static str {
-    if contains_timestamp(ast, expr_id) { return "block.timestamp / now"; }
-    if contains_block_difficulty(ast, expr_id) { return "block.difficulty / prevrandao"; }
-    if contains_blockhash(ast, expr_id) { return "blockhash()"; }
-    if contains_block_number(ast, expr_id) { return "block.number"; }
+    if contains_timestamp(ast, expr_id) {
+        return "block.timestamp / now";
+    }
+    if contains_block_difficulty(ast, expr_id) {
+        return "block.difficulty / prevrandao";
+    }
+    if contains_blockhash(ast, expr_id) {
+        return "blockhash()";
+    }
+    if contains_block_number(ast, expr_id) {
+        return "block.number";
+    }
     "block value"
 }
 
@@ -507,10 +588,9 @@ fn detect_dangerous_timestamp(ast: &NormalizedAst) -> Vec<Finding> {
                         findings.push(Finding {
                             kind: FindingKind::DangerousBlockTimestamp,
                             severity: Severity::Low,
-                            message:
-                                "dangerous use of `block.timestamp` / `now` in if-condition; \
+                            message: "dangerous use of `block.timestamp` / `now` in if-condition; \
                                 miners can manipulate this value within ~15 seconds"
-                                    .into(),
+                                .into(),
                             span: stmt.span,
                             function: Some(func.id),
                         });
@@ -532,7 +612,9 @@ fn detect_dangerous_timestamp(ast: &NormalizedAst) -> Vec<Finding> {
                     }
                 }
                 // for (...; block.timestamp < ...; ...)
-                StmtKind::For { cond: Some(cond), .. } => {
+                StmtKind::For {
+                    cond: Some(cond), ..
+                } => {
                     if contains_timestamp(ast, *cond) {
                         findings.push(Finding {
                             kind: FindingKind::DangerousBlockTimestamp,
@@ -557,11 +639,10 @@ fn detect_dangerous_timestamp(ast: &NormalizedAst) -> Vec<Finding> {
                     findings.push(Finding {
                         kind: FindingKind::DangerousBlockTimestamp,
                         severity: Severity::Low,
-                        message:
-                            "assignment from `block.timestamp` / `now`; \
+                        message: "assignment from `block.timestamp` / `now`; \
                             value is miner-manipulable and should not be \
                             relied upon for critical logic"
-                                .into(),
+                            .into(),
                         span: expr.span,
                         function: Some(func.id),
                     });
@@ -577,11 +658,10 @@ fn detect_dangerous_timestamp(ast: &NormalizedAst) -> Vec<Finding> {
                         findings.push(Finding {
                             kind: FindingKind::DangerousBlockTimestamp,
                             severity: Severity::Low,
-                            message:
-                                "`block.timestamp` / `now` passed as function argument; \
+                            message: "`block.timestamp` / `now` passed as function argument; \
                                 the called function may make decisions based on this \
                                 miner-manipulable value"
-                                    .into(),
+                                .into(),
                             span: expr.span,
                             function: Some(func.id),
                         });
@@ -593,15 +673,17 @@ fn detect_dangerous_timestamp(ast: &NormalizedAst) -> Vec<Finding> {
 
         // --- 4. Check variable declarations: `uint t = block.timestamp` ---
         for_each_stmt(ast, body, &mut |_sid, stmt| {
-            if let StmtKind::VarDecl { init: Some(init), .. } = &stmt.kind {
+            if let StmtKind::VarDecl {
+                init: Some(init), ..
+            } = &stmt.kind
+            {
                 if contains_timestamp(ast, *init) {
                     findings.push(Finding {
                         kind: FindingKind::DangerousBlockTimestamp,
                         severity: Severity::Low,
-                        message:
-                            "variable initialized from `block.timestamp` / `now`; \
+                        message: "variable initialized from `block.timestamp` / `now`; \
                             value is miner-manipulable"
-                                .into(),
+                            .into(),
                         span: stmt.span,
                         function: Some(func.id),
                     });
@@ -662,14 +744,15 @@ fn detect_transaction_order_dependency(ast: &NormalizedAst) -> Vec<Finding> {
         // --- Step 2:  Does the body contain a value-transfer call? ---------
         let has_transfer = stmt_contains_transfer(ast, body);
 
-        if !reads_sensitive { continue; }
-        if !has_transfer { continue; }
+        if !reads_sensitive {
+            continue;
+        }
+        if !has_transfer {
+            continue;
+        }
 
         // --- Step 3:  Both conditions met → report TOD --------------------
-        let func_name = func
-            .name
-            .as_deref()
-            .unwrap_or("<anonymous>");
+        let func_name = func.name.as_deref().unwrap_or("<anonymous>");
 
         findings.push(Finding {
             kind: FindingKind::TransactionOrderDependency,

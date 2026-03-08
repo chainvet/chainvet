@@ -14,7 +14,6 @@ use crate::norm::{
 
 use super::{Finding, FindingKind, Severity};
 
-
 // ═══════════════════════════════════════════════════════════════════════════════
 //  Entry point
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -23,13 +22,13 @@ use super::{Finding, FindingKind, Severity};
 pub fn detect_all(ast: &NormalizedAst) -> Vec<Finding> {
     let mut findings = Vec::new();
 
-    findings.extend(detect_arbitrary_function_jump(ast));   // SM-01
-    findings.extend(detect_bytes_variables_risk(ast));       // SM-02
-    findings.extend(detect_msg_value_in_loop(ast));          // SM-03
-    findings.extend(detect_error_prone_assembly(ast));       // SM-04
-    findings.extend(detect_memory_manipulation(ast));        // SM-05
-    findings.extend(detect_storage_array_by_value(ast));     // SM-06
-    findings.extend(detect_delegatecall_in_loop(ast));       // SM-07
+    findings.extend(detect_arbitrary_function_jump(ast)); // SM-01
+    findings.extend(detect_bytes_variables_risk(ast)); // SM-02
+    findings.extend(detect_msg_value_in_loop(ast)); // SM-03
+    findings.extend(detect_error_prone_assembly(ast)); // SM-04
+    findings.extend(detect_memory_manipulation(ast)); // SM-05
+    findings.extend(detect_storage_array_by_value(ast)); // SM-06
+    findings.extend(detect_delegatecall_in_loop(ast)); // SM-07
 
     findings
 }
@@ -46,18 +45,28 @@ fn for_each_expr_in_stmt(
     stmt_id: u32,
     cb: &mut impl FnMut(u32, &crate::norm::Expr),
 ) {
-    let Some(stmt) = ast.statements.get(stmt_id as usize) else { return };
+    let Some(stmt) = ast.statements.get(stmt_id as usize) else {
+        return;
+    };
 
     match &stmt.kind {
         StmtKind::Block(stmts) => {
-            for &s in stmts { for_each_expr_in_stmt(ast, s, cb); }
+            for &s in stmts {
+                for_each_expr_in_stmt(ast, s, cb);
+            }
         }
         StmtKind::Expr(e) => for_each_expr(ast, *e, cb),
         StmtKind::Return(Some(e)) => for_each_expr(ast, *e, cb),
-        StmtKind::If { cond, then_id, else_id } => {
+        StmtKind::If {
+            cond,
+            then_id,
+            else_id,
+        } => {
             for_each_expr(ast, *cond, cb);
             for_each_expr_in_stmt(ast, *then_id, cb);
-            if let Some(e) = else_id { for_each_expr_in_stmt(ast, *e, cb); }
+            if let Some(e) = else_id {
+                for_each_expr_in_stmt(ast, *e, cb);
+            }
         }
         StmtKind::While { cond, body } => {
             for_each_expr(ast, *cond, cb);
@@ -67,10 +76,21 @@ fn for_each_expr_in_stmt(
             for_each_expr_in_stmt(ast, *body, cb);
             for_each_expr(ast, *cond, cb);
         }
-        StmtKind::For { init, cond, step, body } => {
-            if let Some(s) = init { for_each_expr_in_stmt(ast, *s, cb); }
-            if let Some(e) = cond { for_each_expr(ast, *e, cb); }
-            if let Some(e) = step { for_each_expr(ast, *e, cb); }
+        StmtKind::For {
+            init,
+            cond,
+            step,
+            body,
+        } => {
+            if let Some(s) = init {
+                for_each_expr_in_stmt(ast, *s, cb);
+            }
+            if let Some(e) = cond {
+                for_each_expr(ast, *e, cb);
+            }
+            if let Some(e) = step {
+                for_each_expr(ast, *e, cb);
+            }
             for_each_expr_in_stmt(ast, *body, cb);
         }
         StmtKind::Emit(e) => for_each_expr(ast, *e, cb),
@@ -78,25 +98,27 @@ fn for_each_expr_in_stmt(
         StmtKind::VarDecl { init: Some(e), .. } => for_each_expr(ast, *e, cb),
         StmtKind::Try { call, clauses } => {
             for_each_expr(ast, *call, cb);
-            for clause in clauses { for_each_expr_in_stmt(ast, clause.body, cb); }
+            for clause in clauses {
+                for_each_expr_in_stmt(ast, clause.body, cb);
+            }
         }
         _ => {}
     }
 }
 
 /// Walk every sub-expression under `expr_id`, calling `cb` for each.
-fn for_each_expr(
-    ast: &NormalizedAst,
-    expr_id: u32,
-    cb: &mut impl FnMut(u32, &crate::norm::Expr),
-) {
-    let Some(expr) = ast.expressions.get(expr_id as usize) else { return };
+fn for_each_expr(ast: &NormalizedAst, expr_id: u32, cb: &mut impl FnMut(u32, &crate::norm::Expr)) {
+    let Some(expr) = ast.expressions.get(expr_id as usize) else {
+        return;
+    };
     cb(expr_id, expr);
 
     match &expr.kind {
         ExprKind::Call { callee, args } => {
             for_each_expr(ast, *callee, cb);
-            for arg in args { for_each_expr(ast, *arg, cb); }
+            for arg in args {
+                for_each_expr(ast, *arg, cb);
+            }
         }
         ExprKind::CallOptions { callee, options } => {
             for_each_expr(ast, *callee, cb);
@@ -111,7 +133,9 @@ fn for_each_expr(
         ExprKind::Member { base, .. } => for_each_expr(ast, *base, cb),
         ExprKind::Index { base, index } => {
             for_each_expr(ast, *base, cb);
-            if let Some(i) = index { for_each_expr(ast, *i, cb); }
+            if let Some(i) = index {
+                for_each_expr(ast, *i, cb);
+            }
         }
         ExprKind::Binary { lhs, rhs, .. } => {
             for_each_expr(ast, *lhs, cb);
@@ -123,9 +147,15 @@ fn for_each_expr(
             for_each_expr(ast, *rhs, cb);
         }
         ExprKind::Tuple(entries) => {
-            for e in entries { for_each_expr(ast, *e, cb); }
+            for e in entries {
+                for_each_expr(ast, *e, cb);
+            }
         }
-        ExprKind::Conditional { cond, then_expr, else_expr } => {
+        ExprKind::Conditional {
+            cond,
+            then_expr,
+            else_expr,
+        } => {
             for_each_expr(ast, *cond, cb);
             for_each_expr(ast, *then_expr, cb);
             for_each_expr(ast, *else_expr, cb);
@@ -135,31 +165,39 @@ fn for_each_expr(
 }
 
 /// Walk every statement under `stmt_id`, calling `cb` for each.
-fn for_each_stmt(
-    ast: &NormalizedAst,
-    stmt_id: u32,
-    cb: &mut impl FnMut(u32, &crate::norm::Stmt),
-) {
-    let Some(stmt) = ast.statements.get(stmt_id as usize) else { return };
+fn for_each_stmt(ast: &NormalizedAst, stmt_id: u32, cb: &mut impl FnMut(u32, &crate::norm::Stmt)) {
+    let Some(stmt) = ast.statements.get(stmt_id as usize) else {
+        return;
+    };
     cb(stmt_id, stmt);
 
     match &stmt.kind {
         StmtKind::Block(stmts) => {
-            for &s in stmts { for_each_stmt(ast, s, cb); }
+            for &s in stmts {
+                for_each_stmt(ast, s, cb);
+            }
         }
-        StmtKind::If { then_id, else_id, .. } => {
+        StmtKind::If {
+            then_id, else_id, ..
+        } => {
             for_each_stmt(ast, *then_id, cb);
-            if let Some(e) = else_id { for_each_stmt(ast, *e, cb); }
+            if let Some(e) = else_id {
+                for_each_stmt(ast, *e, cb);
+            }
         }
         StmtKind::While { body, .. } | StmtKind::DoWhile { body, .. } => {
             for_each_stmt(ast, *body, cb);
         }
         StmtKind::For { init, body, .. } => {
-            if let Some(s) = init { for_each_stmt(ast, *s, cb); }
+            if let Some(s) = init {
+                for_each_stmt(ast, *s, cb);
+            }
             for_each_stmt(ast, *body, cb);
         }
         StmtKind::Try { clauses, .. } => {
-            for c in clauses { for_each_stmt(ast, c.body, cb); }
+            for c in clauses {
+                for_each_stmt(ast, c.body, cb);
+            }
         }
         _ => {}
     }
@@ -172,7 +210,9 @@ fn for_each_stmt(
 ///   1. Chain metadata `[Ident("msg"), Member("value")]`
 ///   2. `ExprKind::Member { base: Ident("msg"), field: "value" }`
 fn contains_msg_value(ast: &NormalizedAst, expr_id: u32) -> bool {
-    let Some(expr) = ast.expressions.get(expr_id as usize) else { return false };
+    let Some(expr) = ast.expressions.get(expr_id as usize) else {
+        return false;
+    };
 
     // Chain metadata: msg.value
     if let Some(chain) = expr.meta.chain.as_deref() {
@@ -180,7 +220,9 @@ fn contains_msg_value(ast: &NormalizedAst, expr_id: u32) -> bool {
             if let (ChainSegment::Ident(base), ChainSegment::Member(member)) =
                 (&chain[0], &chain[1])
             {
-                if base == "msg" && member == "value" { return true; }
+                if base == "msg" && member == "value" {
+                    return true;
+                }
             }
         }
     }
@@ -190,7 +232,9 @@ fn contains_msg_value(ast: &NormalizedAst, expr_id: u32) -> bool {
         if field == "value" {
             if let Some(base_expr) = ast.expressions.get(*base as usize) {
                 if let ExprKind::Ident(name) = &base_expr.kind {
-                    if name == "msg" { return true; }
+                    if name == "msg" {
+                        return true;
+                    }
                 }
             }
         }
@@ -203,7 +247,9 @@ fn contains_msg_value(ast: &NormalizedAst, expr_id: u32) -> bool {
 /// Returns `true` if `expr_id` is (or contains) `msg.data`.
 /// Checks both chain metadata and Member AST node representations.
 fn contains_msg_data(ast: &NormalizedAst, expr_id: u32) -> bool {
-    let Some(expr) = ast.expressions.get(expr_id as usize) else { return false };
+    let Some(expr) = ast.expressions.get(expr_id as usize) else {
+        return false;
+    };
 
     // Chain metadata: msg.data
     if let Some(chain) = expr.meta.chain.as_deref() {
@@ -211,7 +257,9 @@ fn contains_msg_data(ast: &NormalizedAst, expr_id: u32) -> bool {
             if let (ChainSegment::Ident(base), ChainSegment::Member(member)) =
                 (&chain[0], &chain[1])
             {
-                if base == "msg" && member == "data" { return true; }
+                if base == "msg" && member == "data" {
+                    return true;
+                }
             }
         }
     }
@@ -221,7 +269,9 @@ fn contains_msg_data(ast: &NormalizedAst, expr_id: u32) -> bool {
         if field == "data" {
             if let Some(base_expr) = ast.expressions.get(*base as usize) {
                 if let ExprKind::Ident(name) = &base_expr.kind {
-                    if name == "msg" { return true; }
+                    if name == "msg" {
+                        return true;
+                    }
                 }
             }
         }
@@ -235,19 +285,25 @@ fn contains_msg_data(ast: &NormalizedAst, expr_id: u32) -> bool {
 ///   1. CallMeta with target name == "delegatecall"
 ///   2. ExprKind::Member with field == "delegatecall" (callee of a Call)
 fn contains_delegatecall(ast: &NormalizedAst, expr_id: u32) -> bool {
-    let Some(expr) = ast.expressions.get(expr_id as usize) else { return false };
+    let Some(expr) = ast.expressions.get(expr_id as usize) else {
+        return false;
+    };
 
     // Strategy 1: CallMeta target name
     if let Some(call) = &expr.meta.call {
         let name = call_target_name(call);
-        if name == "delegatecall" { return true; }
+        if name == "delegatecall" {
+            return true;
+        }
     }
 
     // Strategy 2: Call whose callee is a Member { field: "delegatecall" }
     if let ExprKind::Call { callee, .. } = &expr.kind {
         if let Some(callee_expr) = ast.expressions.get(*callee as usize) {
             if let ExprKind::Member { field, .. } = &callee_expr.kind {
-                if field == "delegatecall" { return true; }
+                if field == "delegatecall" {
+                    return true;
+                }
             }
         }
     }
@@ -267,9 +323,7 @@ fn recurse_contains(
         ExprKind::Unary { expr, .. } => pred(ast, *expr),
         ExprKind::Member { base, .. } => pred(ast, *base),
         ExprKind::Tuple(entries) => entries.iter().any(|&e| pred(ast, e)),
-        ExprKind::Call { callee, args } => {
-            pred(ast, *callee) || args.iter().any(|&a| pred(ast, a))
-        }
+        ExprKind::Call { callee, args } => pred(ast, *callee) || args.iter().any(|&a| pred(ast, a)),
         ExprKind::CallOptions { callee, options } => {
             pred(ast, *callee)
                 || options.iter().any(|opt| match opt {
@@ -282,9 +336,11 @@ fn recurse_contains(
         ExprKind::Index { base, index } => {
             pred(ast, *base) || index.map_or(false, |i| pred(ast, i))
         }
-        ExprKind::Conditional { cond, then_expr, else_expr } => {
-            pred(ast, *cond) || pred(ast, *then_expr) || pred(ast, *else_expr)
-        }
+        ExprKind::Conditional {
+            cond,
+            then_expr,
+            else_expr,
+        } => pred(ast, *cond) || pred(ast, *then_expr) || pred(ast, *else_expr),
         _ => false,
     }
 }
@@ -308,7 +364,9 @@ fn for_each_expr_in_loop_bodies(
     stmt_id: u32,
     cb: &mut impl FnMut(u32, &crate::norm::Expr, &crate::norm::Span),
 ) {
-    let Some(stmt) = ast.statements.get(stmt_id as usize) else { return };
+    let Some(stmt) = ast.statements.get(stmt_id as usize) else {
+        return;
+    };
 
     match &stmt.kind {
         // For loops: walk the body and look for expressions
@@ -335,12 +393,18 @@ fn for_each_expr_in_loop_bodies(
         }
         // Block: recurse into children to find loops
         StmtKind::Block(stmts) => {
-            for &s in stmts { for_each_expr_in_loop_bodies(ast, s, cb); }
+            for &s in stmts {
+                for_each_expr_in_loop_bodies(ast, s, cb);
+            }
         }
         // If: recurse into branches to find loops
-        StmtKind::If { then_id, else_id, .. } => {
+        StmtKind::If {
+            then_id, else_id, ..
+        } => {
             for_each_expr_in_loop_bodies(ast, *then_id, cb);
-            if let Some(e) = else_id { for_each_expr_in_loop_bodies(ast, *e, cb); }
+            if let Some(e) = else_id {
+                for_each_expr_in_loop_bodies(ast, *e, cb);
+            }
         }
         // Try: recurse into clauses
         StmtKind::Try { clauses, .. } => {
@@ -358,14 +422,22 @@ fn for_each_nested_loops(
     stmt_id: u32,
     cb: &mut impl FnMut(u32, &crate::norm::Expr, &crate::norm::Span),
 ) {
-    let Some(stmt) = ast.statements.get(stmt_id as usize) else { return };
+    let Some(stmt) = ast.statements.get(stmt_id as usize) else {
+        return;
+    };
     match &stmt.kind {
         StmtKind::Block(stmts) => {
-            for &s in stmts { for_each_expr_in_loop_bodies(ast, s, cb); }
+            for &s in stmts {
+                for_each_expr_in_loop_bodies(ast, s, cb);
+            }
         }
-        StmtKind::If { then_id, else_id, .. } => {
+        StmtKind::If {
+            then_id, else_id, ..
+        } => {
             for_each_expr_in_loop_bodies(ast, *then_id, cb);
-            if let Some(e) = else_id { for_each_expr_in_loop_bodies(ast, *e, cb); }
+            if let Some(e) = else_id {
+                for_each_expr_in_loop_bodies(ast, *e, cb);
+            }
         }
         StmtKind::For { .. } | StmtKind::While { .. } | StmtKind::DoWhile { .. } => {
             // Found a nested loop — process it
@@ -523,9 +595,7 @@ fn detect_msg_value_in_loop(ast: &NormalizedAst) -> Vec<Finding> {
     }
 
     // Deduplicate: only keep one finding per (function, loop_span) pair
-    findings.dedup_by(|a, b| {
-        a.function == b.function && a.span == b.span
-    });
+    findings.dedup_by(|a, b| a.function == b.function && a.span == b.span);
 
     findings
 }
@@ -597,11 +667,8 @@ fn detect_memory_manipulation(ast: &NormalizedAst) -> Vec<Finding> {
     let mut findings = Vec::new();
 
     // Collect all state-variable names for fast lookup
-    let state_var_names: std::collections::HashSet<String> = ast
-        .state_vars
-        .iter()
-        .map(|sv| sv.name.clone())
-        .collect();
+    let state_var_names: std::collections::HashSet<String> =
+        ast.state_vars.iter().map(|sv| sv.name.clone()).collect();
 
     for func in &ast.functions {
         let Some(body) = func.body else { continue };
@@ -619,7 +686,9 @@ fn detect_memory_manipulation(ast: &NormalizedAst) -> Vec<Finding> {
             }
         });
 
-        if !has_asm { continue; }
+        if !has_asm {
+            continue;
+        }
 
         // Check 2: Does the function body reference a state variable
         // or create memory arrays?
@@ -690,23 +759,19 @@ fn detect_storage_array_by_value(ast: &NormalizedAst) -> Vec<Finding> {
     let mut findings = Vec::new();
 
     // Collect all state-variable names for lookup
-    let state_var_names: std::collections::HashSet<String> = ast
-        .state_vars
-        .iter()
-        .map(|sv| sv.name.clone())
-        .collect();
+    let state_var_names: std::collections::HashSet<String> =
+        ast.state_vars.iter().map(|sv| sv.name.clone()).collect();
 
     for func in &ast.functions {
         let Some(body) = func.body else { continue };
 
         // Get function parameter names
-        let param_names: std::collections::HashSet<&str> = func
-            .params
-            .iter()
-            .map(|p| p.as_str())
-            .collect();
+        let param_names: std::collections::HashSet<&str> =
+            func.params.iter().map(|p| p.as_str()).collect();
 
-        if param_names.is_empty() { continue; }
+        if param_names.is_empty() {
+            continue;
+        }
 
         // Walk the body looking for assignments where:
         //  - LHS is a state variable and RHS references a parameter, OR
@@ -764,7 +829,9 @@ fn is_state_var_ref(
     expr_id: u32,
     state_var_names: &std::collections::HashSet<String>,
 ) -> bool {
-    let Some(expr) = ast.expressions.get(expr_id as usize) else { return false };
+    let Some(expr) = ast.expressions.get(expr_id as usize) else {
+        return false;
+    };
     if let ExprKind::Ident(name) = &expr.kind {
         return state_var_names.contains(name);
     }
@@ -781,7 +848,9 @@ fn is_param_ref(
     expr_id: u32,
     param_names: &std::collections::HashSet<&str>,
 ) -> bool {
-    let Some(expr) = ast.expressions.get(expr_id as usize) else { return false };
+    let Some(expr) = ast.expressions.get(expr_id as usize) else {
+        return false;
+    };
     if let ExprKind::Ident(name) = &expr.kind {
         return param_names.contains(name.as_str());
     }
@@ -821,7 +890,9 @@ fn detect_delegatecall_in_loop(ast: &NormalizedAst) -> Vec<Finding> {
     for func in &ast.functions {
         // Only check payable functions — non-payable functions cannot
         // receive Ether, so msg.value is 0 and the risk is mitigated.
-        if func.mutability != Mutability::Payable { continue; }
+        if func.mutability != Mutability::Payable {
+            continue;
+        }
 
         let Some(body) = func.body else { continue };
 
