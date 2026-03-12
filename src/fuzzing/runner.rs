@@ -1,28 +1,39 @@
 use std::time::Instant;
 
 use rand::Rng;
+use sha2::{Digest, Sha256};
 
+use crate::analysis;
+use crate::frontend::FrontendOutput;
 use crate::fuzzing::executor;
 use crate::fuzzing::generator;
 use crate::fuzzing::mutator;
 use crate::fuzzing::oracle;
 use crate::fuzzing::scheduler::{self, CoverageMap};
 use crate::fuzzing::types::{
-    ContractAbi, Corpus, DependencyMap, Dictionary, FuzzConfig, FuzzFinding, FuzzReport,
-    build_dependency_map, extract_abis,
+    ContractAbi, Corpus, DependencyMap, Dictionary, FuzzConfig, FuzzFinding, FuzzFindingKind,
+    FuzzReport, FuzzSeverity, build_dependency_map, extract_abis,
 };
-use crate::norm::NormalizedAst;
-use crate::{cfg, ir};
+use crate::norm::{FunctionKind, Mutability, NormalizedAst};
+use crate::{cfg, ir, meta};
 
 /// Run the fuzzer on a parsed contract.
-pub fn run(ast: &NormalizedAst, config: &FuzzConfig) -> FuzzReport {
+pub fn run(output: &FrontendOutput, config: &FuzzConfig) -> FuzzReport {
     let start = Instant::now();
+    let ast = &output.ast;
 
     // Phase 1: Static analysis pre-pass
     let ir_module = ir::lower_module(ast);
     let cfgs = cfg::build_from_ir(&ir_module);
-    let abis = extract_abis(ast);
+    let abis = extract_abis(ast, &output.compiler);
     let deps = build_dependency_map(&ir_module, ast);
+    let static_call_graph = analysis::build_call_graph(ast);
+    let static_taint = analysis::taint::analyze(ast, &cfgs);
+    let static_findings = analysis::detectors::run_detectors(ast, &static_call_graph, &static_taint);
+    let meta_findings =
+        meta::analyze_for_engine(output, meta::ConsumerEngine::Fuzzing, &static_findings);
+    let (tod_allowed, sig_mall_allowed) = build_static_fp_guards(&static_findings);
+    let locked_ether_candidates = build_locked_ether_candidates(ast, &ir_module);
 
     // Extract dictionary from IR constants for smarter value generation
     let dictionary = generator::extract_dictionary(&ir_module);
@@ -38,7 +49,9 @@ pub fn run(ast: &NormalizedAst, config: &FuzzConfig) -> FuzzReport {
             total_blocks,
             covered_blocks: 0,
             findings: Vec::new(),
+            meta_findings,
             corpus_size: 0,
+            corpus_zero_reason: Some("no contracts or functions available for fuzzing".to_string()),
             elapsed_ms: start.elapsed().as_millis(),
         };
     }
@@ -49,13 +62,19 @@ pub fn run(ast: &NormalizedAst, config: &FuzzConfig) -> FuzzReport {
 
     // Run per-contract
     for abi in &abis {
+        let locked_ether_candidate = locked_ether_candidates
+            .get(&abi.contract_name)
+            .copied()
+            .unwrap_or(false);
         fuzz_contract(
+            output,
             abi,
             &deps,
             config,
             ast,
             &ir_module,
             &cfgs,
+            locked_ether_candidate,
             &mut all_findings,
             &mut global_coverage,
             &mut corpus,
@@ -63,6 +82,12 @@ pub fn run(ast: &NormalizedAst, config: &FuzzConfig) -> FuzzReport {
             &start,
         );
     }
+
+    // Add AST-only shadowing checks (project extension used by scoring fixtures).
+    all_findings.extend(detect_shadowing_findings(ast));
+    // Add AST-level access control pattern for taxonomy parity.
+    all_findings.extend(detect_public_mint_burn_findings(ast, &output.compiler));
+    all_findings = apply_static_fp_guards(all_findings, &tod_allowed, &sig_mall_allowed);
 
     // Deduplicate findings
     let findings = oracle::deduplicate(all_findings);
@@ -79,18 +104,247 @@ pub fn run(ast: &NormalizedAst, config: &FuzzConfig) -> FuzzReport {
         total_blocks,
         covered_blocks,
         findings,
+        meta_findings,
         corpus_size: corpus.entries.len(),
+        corpus_zero_reason: zero_corpus_reason(&abis, &corpus),
         elapsed_ms: start.elapsed().as_millis(),
     }
 }
 
+fn zero_corpus_reason(abis: &[ContractAbi], corpus: &Corpus) -> Option<String> {
+    if !corpus.entries.is_empty() {
+        return None;
+    }
+    let contract_count = abis.len();
+    let function_count = abis.iter().map(|abi| abi.functions.len()).sum::<usize>();
+    let callable_count = abis
+        .iter()
+        .flat_map(|abi| abi.functions.iter())
+        .filter(|func| func.is_fuzz_callable())
+        .count();
+    Some(format!(
+        "no callable entrypoints generated (contracts={contract_count}, functions={function_count}, callable={callable_count})"
+    ))
+}
+
+fn detect_shadowing_findings(ast: &NormalizedAst) -> Vec<FuzzFinding> {
+    let mut by_contract: std::collections::HashMap<u32, std::collections::HashSet<String>> =
+        std::collections::HashMap::new();
+    for state_var in &ast.state_vars {
+        by_contract
+            .entry(state_var.contract)
+            .or_default()
+            .insert(state_var.name.clone());
+    }
+
+    let mut findings = Vec::new();
+    for function in &ast.functions {
+        let Some(contract_id) = function.contract else {
+            continue;
+        };
+        let Some(state_names) = by_contract.get(&contract_id) else {
+            continue;
+        };
+        for param in &function.params {
+            if state_names.contains(param) {
+                let function_name = function
+                    .name
+                    .as_deref()
+                    .filter(|name| !name.is_empty())
+                    .unwrap_or("<anonymous>");
+                let detail = format!("{}:{}", function.id, param);
+                findings.push(FuzzFinding {
+                    kind: FuzzFindingKind::Shadowing,
+                    severity: FuzzSeverity::Medium,
+                    message: format!(
+                        "Parameter '{}' in function '{}' shadows a state variable with the same name",
+                        param, function_name
+                    ),
+                    tx_sequence: Vec::new(),
+                    trace_hash: hash_local_finding("shadowing", &detail),
+                });
+            }
+        }
+    }
+
+    findings
+}
+
+fn detect_public_mint_burn_findings(
+    ast: &NormalizedAst,
+    compiler: &crate::frontend::CompilerInfo,
+) -> Vec<FuzzFinding> {
+    let mut findings = Vec::new();
+    for function in &ast.functions {
+        let Some(name) = function.name.as_deref() else {
+            continue;
+        };
+        let lower = name.to_ascii_lowercase();
+        if lower != "mint" && lower != "burn" {
+            continue;
+        }
+        if !crate::frontend::is_public_entrypoint(function, compiler)
+            || function.kind != FunctionKind::Function
+        {
+            continue;
+        }
+        let detail = format!("{}:{}", function.id, lower);
+        findings.push(FuzzFinding {
+            kind: FuzzFindingKind::PublicMintBurn,
+            severity: FuzzSeverity::High,
+            message: format!(
+                "Public {} function '{}' may allow unauthorized supply manipulation",
+                lower, name
+            ),
+            tx_sequence: Vec::new(),
+            trace_hash: hash_local_finding("public-mint-burn", &detail),
+        });
+    }
+    findings
+}
+
+fn hash_local_finding(kind: &str, detail: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(kind.as_bytes());
+    hasher.update(detail.as_bytes());
+    format!("{:x}", hasher.finalize())
+}
+
+fn build_static_fp_guards(
+    findings: &[analysis::detectors::Finding],
+) -> (
+    std::collections::HashSet<u32>,
+    std::collections::HashSet<u32>,
+) {
+    let mut tod_allowed = std::collections::HashSet::new();
+    let mut sig_mall_allowed = std::collections::HashSet::new();
+    for finding in findings {
+        let Some(function_id) = finding.function else {
+            continue;
+        };
+        match finding.kind {
+            analysis::detectors::FindingKind::TransactionOrderDependency => {
+                tod_allowed.insert(function_id);
+            }
+            analysis::detectors::FindingKind::SignatureMalleability => {
+                sig_mall_allowed.insert(function_id);
+            }
+            _ => {}
+        }
+    }
+    (tod_allowed, sig_mall_allowed)
+}
+
+fn apply_static_fp_guards(
+    findings: Vec<FuzzFinding>,
+    tod_allowed: &std::collections::HashSet<u32>,
+    sig_mall_allowed: &std::collections::HashSet<u32>,
+) -> Vec<FuzzFinding> {
+    findings
+        .into_iter()
+        .filter(|finding| match finding.kind {
+            FuzzFindingKind::TransactionOrderDependency => extract_function_id_from_message(
+                finding.message.as_str(),
+            )
+            .map(|id| tod_allowed.contains(&id))
+            .unwrap_or(false),
+            FuzzFindingKind::SignatureMalleability => extract_function_id_from_message(
+                finding.message.as_str(),
+            )
+            .map(|id| sig_mall_allowed.contains(&id))
+            .unwrap_or(false),
+            _ => true,
+        })
+        .collect()
+}
+
+fn extract_function_id_from_message(message: &str) -> Option<u32> {
+    let tokens = message.split_whitespace().collect::<Vec<_>>();
+    for window in tokens.windows(2) {
+        if window[0] == "function" {
+            if let Ok(id) = window[1]
+                .trim_matches(|c: char| !c.is_ascii_digit())
+                .parse::<u32>()
+            {
+                return Some(id);
+            }
+        }
+    }
+    None
+}
+
+fn build_locked_ether_candidates(
+    ast: &NormalizedAst,
+    ir_module: &ir::IrModule,
+) -> std::collections::HashMap<String, bool> {
+    let mut has_payable_function: std::collections::HashMap<u32, bool> =
+        std::collections::HashMap::new();
+    let mut has_ether_send_path: std::collections::HashMap<u32, bool> =
+        std::collections::HashMap::new();
+
+    for function in &ast.functions {
+        let Some(contract_id) = function.contract else {
+            continue;
+        };
+        if function.kind == FunctionKind::Function && function.mutability == Mutability::Payable {
+            has_payable_function.insert(contract_id, true);
+        }
+    }
+
+    for function in &ir_module.functions {
+        let Some(ast_fn) = ast.functions.get(function.id as usize) else {
+            continue;
+        };
+        let Some(contract_id) = ast_fn.contract else {
+            continue;
+        };
+        if ir_function_has_ether_send(function) {
+            has_ether_send_path.insert(contract_id, true);
+        }
+    }
+
+    let mut candidates = std::collections::HashMap::new();
+    for contract in &ast.contracts {
+        let payable = has_payable_function.get(&contract.id).copied().unwrap_or(false);
+        let has_send = has_ether_send_path.get(&contract.id).copied().unwrap_or(false);
+        candidates.insert(contract.name.clone(), payable && !has_send);
+    }
+    candidates
+}
+
+fn ir_function_has_ether_send(function: &ir::IrFunction) -> bool {
+    function.blocks.iter().any(|block| {
+        block.instrs.iter().any(|instr| {
+            let ir::IrInstr::Call { callee, options, .. } = instr else {
+                return false;
+            };
+            let callee_name = match callee {
+                crate::ir::IrValue::Var(crate::ir::IrVar::Named(name)) => name.to_ascii_lowercase(),
+                crate::ir::IrValue::Var(crate::ir::IrVar::Temp(id)) => format!("tmp_{id}"),
+                crate::ir::IrValue::Literal(lit) => lit.value.to_ascii_lowercase(),
+                crate::ir::IrValue::Unknown => String::new(),
+            };
+            let has_value = options
+                .iter()
+                .any(|opt| matches!(opt, crate::ir::IrCallOption::Value(_)));
+            has_value
+                || callee_name == "send"
+                || callee_name == "transfer"
+                || callee_name.ends_with(".send")
+                || callee_name.ends_with(".transfer")
+        })
+    })
+}
+
 fn fuzz_contract(
+    output: &FrontendOutput,
     abi: &ContractAbi,
     deps: &DependencyMap,
     config: &FuzzConfig,
-    ast: &NormalizedAst,
+    _ast: &NormalizedAst,
     ir_module: &ir::IrModule,
     cfgs: &[cfg::CfgFunction],
+    locked_ether_candidate: bool,
     all_findings: &mut Vec<FuzzFinding>,
     global_coverage: &mut CoverageMap,
     corpus: &mut Corpus,
@@ -103,8 +357,11 @@ fn fuzz_contract(
 
     // Execute initial population
     for ind in &population {
-        let trace = executor::execute_individual(ind, ast, ir_module, cfgs, abi);
-        let findings = oracle::check_all(&trace, &ind.transactions);
+        let trace = executor::execute_individual(ind, output, ir_module, cfgs, abi, deps);
+        let mut findings = oracle::check_all(&trace, &ind.transactions);
+        if !locked_ether_candidate {
+            findings.retain(|finding| finding.kind != FuzzFindingKind::LockedEther);
+        }
         all_findings.extend(findings);
         scheduler::update_corpus(corpus, ind, &trace, global_coverage);
     }
@@ -138,16 +395,26 @@ fn fuzz_contract(
         // Determine if we're in havoc-only mode due to coverage plateau
         let havoc_only = stall_counter >= 100;
 
-        // Mutate (or crossover)
-        let child = if rng.gen_bool(0.2) && corpus.entries.len() >= 2 {
+        // Mutate (or crossover), with occasional dependency-aware reseed on stalls.
+        let child = if stall_counter >= 150 && rng.gen_bool(0.25) {
+            generator::generate_dependency_seed_with_dict(
+                abi,
+                deps,
+                config,
+                &mut rng,
+                Some(dictionary),
+            )
+            .unwrap_or_else(|| parent.clone())
+        } else if rng.gen_bool(0.2) && corpus.entries.len() >= 2 {
             // Crossover with another random parent
             let other_idx = rng.gen_range(0..corpus.entries.len());
             let other = &corpus.entries[other_idx].individual;
             mutator::crossover(&parent, other, &mut rng)
         } else {
-            mutator::mutate_individual_with_dict(
+            mutator::mutate_individual_guided_with_dict(
                 &parent,
                 abi,
+                deps,
                 &mut rng,
                 Some(dictionary),
                 havoc_only,
@@ -155,10 +422,13 @@ fn fuzz_contract(
         };
 
         // Execute
-        let trace = executor::execute_individual(&child, ast, ir_module, cfgs, abi);
+        let trace = executor::execute_individual(&child, output, ir_module, cfgs, abi, deps);
 
         // Oracle check
-        let findings = oracle::check_all(&trace, &child.transactions);
+        let mut findings = oracle::check_all(&trace, &child.transactions);
+        if !locked_ether_candidate {
+            findings.retain(|finding| finding.kind != FuzzFindingKind::LockedEther);
+        }
         if !findings.is_empty() {
             // Tag the corpus entry with finding hashes
             let hashes: Vec<String> = findings.iter().map(|f| f.trace_hash.clone()).collect();
@@ -209,7 +479,11 @@ pub fn print_report(report: &FuzzReport) {
         "coverage: {}/{} blocks ({:.1}%)",
         report.covered_blocks, report.total_blocks, report.coverage_pct
     );
-    println!("findings: {}", report.findings.len());
+    if let Some(reason) = &report.corpus_zero_reason {
+        println!("corpus_zero_reason: {reason}");
+    }
+    println!("runtime_findings: {}", report.findings.len());
+    println!("meta_findings: {}", report.meta_findings.len());
 
     if report.findings.is_empty() {
         println!("  (no vulnerabilities detected)");
@@ -225,10 +499,11 @@ pub fn print_report(report: &FuzzReport) {
             println!("\n  [{}] {} finding(s):", category, findings.len());
             for (idx, f) in findings.iter().enumerate() {
                 println!(
-                    "    {}. [{}] [{}] {}",
+                    "    {}. [{}] [{}] [{}] {}",
                     idx + 1,
-                    f.kind.as_str(),
+                    f.kind.canonical_str(),
                     f.severity.as_str(),
+                    f.kind.confidence().as_str(),
                     f.message
                 );
                 println!("       Transaction sequence ({} txs):", f.tx_sequence.len());
@@ -248,5 +523,253 @@ pub fn print_report(report: &FuzzReport) {
         }
     }
 
+    if !report.meta_findings.is_empty() {
+        println!("\n  [Meta] {} finding(s):", report.meta_findings.len());
+        for (idx, finding) in report.meta_findings.iter().enumerate() {
+            println!(
+                "    {}. kind={} severity={} evidence={} {}",
+                idx + 1,
+                finding.finding_type,
+                finding.severity,
+                finding.evidence_kind,
+                finding.message
+            );
+            if let Some(location) = &finding.location {
+                if let Some(file) = &location.file {
+                    println!(
+                        "       location: {}:{}-{}",
+                        file,
+                        location.start.unwrap_or(0),
+                        location.end.unwrap_or(0)
+                    );
+                }
+            }
+        }
+    }
+
     println!("=== End Report ===");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        apply_static_fp_guards, build_locked_ether_candidates, build_static_fp_guards,
+        extract_function_id_from_message,
+    };
+    use crate::analysis::detectors::{Finding, FindingKind, Severity};
+    use crate::fuzzing::types::{FuzzFinding, FuzzFindingKind, FuzzSeverity};
+    use crate::ir::{IrBlock, IrFunction, IrInstr, IrModule, IrValue, IrVar};
+    use crate::norm::{
+        Contract, ContractKind, Function, FunctionKind, Mutability, NormalizedAst, SourceFile,
+        Span, Visibility,
+    };
+
+    fn finding(kind: FuzzFindingKind, message: &str) -> FuzzFinding {
+        FuzzFinding {
+            kind,
+            severity: FuzzSeverity::Medium,
+            message: message.to_string(),
+            tx_sequence: Vec::new(),
+            trace_hash: format!("hash-{message}"),
+        }
+    }
+
+    #[test]
+    fn extract_function_id_from_message_parses_common_format() {
+        let msg = "Transaction order dependency: function 12 reads order-sensitive storage";
+        assert_eq!(extract_function_id_from_message(msg), Some(12));
+    }
+
+    #[test]
+    fn apply_static_fp_guards_filters_tod_and_sig_mall_without_static_support() {
+        let findings = vec![
+            finding(
+                FuzzFindingKind::TransactionOrderDependency,
+                "Transaction order dependency: function 1 reads order-sensitive storage",
+            ),
+            finding(
+                FuzzFindingKind::SignatureMalleability,
+                "Signature malleability risk: function 2 uses ecrecover",
+            ),
+            finding(
+                FuzzFindingKind::UncheckedCall,
+                "Unchecked external call in function 3",
+            ),
+        ];
+
+        let mut tod_allowed = std::collections::HashSet::new();
+        tod_allowed.insert(1u32);
+        let sig_mall_allowed = std::collections::HashSet::new();
+
+        let filtered = apply_static_fp_guards(findings, &tod_allowed, &sig_mall_allowed);
+        assert_eq!(filtered.len(), 2);
+        assert!(
+            filtered
+                .iter()
+                .any(|f| matches!(f.kind, FuzzFindingKind::TransactionOrderDependency))
+        );
+        assert!(
+            filtered
+                .iter()
+                .any(|f| matches!(f.kind, FuzzFindingKind::UncheckedCall))
+        );
+        assert!(
+            !filtered
+                .iter()
+                .any(|f| matches!(f.kind, FuzzFindingKind::SignatureMalleability))
+        );
+    }
+
+    #[test]
+    fn build_static_fp_guards_collects_only_target_kinds() {
+        let findings = vec![
+            Finding {
+                kind: FindingKind::TransactionOrderDependency,
+                severity: Severity::Medium,
+                message: "tod".to_string(),
+                span: Span {
+                    file: 0,
+                    start: 0,
+                    end: 1,
+                },
+                function: Some(7),
+            },
+            Finding {
+                kind: FindingKind::SignatureMalleability,
+                severity: Severity::Medium,
+                message: "sig".to_string(),
+                span: Span {
+                    file: 0,
+                    start: 0,
+                    end: 1,
+                },
+                function: Some(9),
+            },
+            Finding {
+                kind: FindingKind::TxOrigin,
+                severity: Severity::High,
+                message: "other".to_string(),
+                span: Span {
+                    file: 0,
+                    start: 0,
+                    end: 1,
+                },
+                function: Some(11),
+            },
+        ];
+
+        let (tod, sig) = build_static_fp_guards(&findings);
+        assert!(tod.contains(&7));
+        assert!(sig.contains(&9));
+        assert!(!tod.contains(&11));
+        assert!(!sig.contains(&11));
+    }
+
+    fn make_contract_ast(payable: bool) -> NormalizedAst {
+        let mut ast = NormalizedAst::from_sources(vec![SourceFile {
+            id: 0,
+            path: "test.sol".to_string(),
+            source: "pragma solidity ^0.8.0;".to_string(),
+        }]);
+        ast.contracts.push(Contract {
+            id: 0,
+            name: "Vault".to_string(),
+            kind: ContractKind::Contract,
+            bases: Vec::new(),
+            functions: vec![0],
+            state_vars: Vec::new(),
+            modifiers: Vec::new(),
+            events: Vec::new(),
+            errors: Vec::new(),
+            span: Span {
+                file: 0,
+                start: 0,
+                end: 0,
+            },
+        });
+        ast.functions.push(Function {
+            id: 0,
+            contract: Some(0),
+            name: Some("deposit".to_string()),
+            kind: FunctionKind::Function,
+            visibility: Visibility::External,
+            mutability: if payable {
+                Mutability::Payable
+            } else {
+                Mutability::NonPayable
+            },
+            params: vec!["amount".to_string()],
+            returns: Vec::new(),
+            modifiers: Vec::new(),
+            body: None,
+            span: Span {
+                file: 0,
+                start: 0,
+                end: 0,
+            },
+        });
+        ast
+    }
+
+    #[test]
+    fn locked_ether_candidate_true_for_payable_no_send_path() {
+        let ast = make_contract_ast(true);
+        let ir_module = IrModule {
+            functions: vec![IrFunction {
+                id: 0,
+                name: Some("deposit".to_string()),
+                source: Some(0),
+                span: Span {
+                    file: 0,
+                    start: 0,
+                    end: 0,
+                },
+                blocks: vec![IrBlock {
+                    id: 0,
+                    instrs: vec![IrInstr::Nop {
+                        span: Span {
+                            file: 0,
+                            start: 0,
+                            end: 0,
+                        },
+                    }],
+                }],
+            }],
+        };
+        let candidates = build_locked_ether_candidates(&ast, &ir_module);
+        assert_eq!(candidates.get("Vault").copied(), Some(true));
+    }
+
+    #[test]
+    fn locked_ether_candidate_false_when_send_path_exists() {
+        let ast = make_contract_ast(true);
+        let ir_module = IrModule {
+            functions: vec![IrFunction {
+                id: 0,
+                name: Some("deposit".to_string()),
+                source: Some(0),
+                span: Span {
+                    file: 0,
+                    start: 0,
+                    end: 0,
+                },
+                blocks: vec![IrBlock {
+                    id: 0,
+                    instrs: vec![IrInstr::Call {
+                        dest: Vec::new(),
+                        callee: IrValue::Var(IrVar::Named("transfer".to_string())),
+                        args: Vec::new(),
+                        options: Vec::new(),
+                        span: Span {
+                            file: 0,
+                            start: 0,
+                            end: 0,
+                        },
+                    }],
+                }],
+            }],
+        };
+        let candidates = build_locked_ether_candidates(&ast, &ir_module);
+        assert_eq!(candidates.get("Vault").copied(), Some(false));
+    }
 }

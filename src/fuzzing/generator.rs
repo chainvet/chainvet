@@ -93,11 +93,7 @@ pub(crate) fn random_transaction_with_dict(
     let eligible: Vec<&crate::fuzzing::types::FunctionAbi> = abi
         .functions
         .iter()
-        .filter(|f| {
-            f.kind == crate::norm::FunctionKind::Function
-                && (f.visibility == crate::norm::Visibility::Public
-                    || f.visibility == crate::norm::Visibility::External)
-        })
+        .filter(|f| f.is_fuzz_callable())
         .collect();
 
     if eligible.is_empty() {
@@ -164,39 +160,43 @@ fn dependency_aware_sequence(
         if let Some((rid, _)) = matching.first() {
             // Generate the writer transaction
             if let Some(func) = abi.functions.iter().find(|f| f.id == *wid) {
-                let args: Vec<FuzzValue> = func
-                    .params
-                    .iter()
-                    .map(|_| random_value_with_dict(rng, dict))
-                    .collect();
-                txs.push(Transaction {
-                    function_id: func.id,
-                    args,
-                    sender: random_sender(rng, config.address_pool_size),
-                    value: if func.is_payable {
-                        random_value_amount(rng)
-                    } else {
-                        0
-                    },
-                });
+                if func.is_fuzz_callable() {
+                    let args: Vec<FuzzValue> = func
+                        .params
+                        .iter()
+                        .map(|_| random_value_with_dict(rng, dict))
+                        .collect();
+                    txs.push(Transaction {
+                        function_id: func.id,
+                        args,
+                        sender: random_sender(rng, config.address_pool_size),
+                        value: if func.is_payable {
+                            random_value_amount(rng)
+                        } else {
+                            0
+                        },
+                    });
+                }
             }
             // Generate the reader transaction
             if let Some(func) = abi.functions.iter().find(|f| f.id == *rid) {
-                let args: Vec<FuzzValue> = func
-                    .params
-                    .iter()
-                    .map(|_| random_value_with_dict(rng, dict))
-                    .collect();
-                txs.push(Transaction {
-                    function_id: func.id,
-                    args,
-                    sender: random_sender(rng, config.address_pool_size),
-                    value: if func.is_payable {
-                        random_value_amount(rng)
-                    } else {
-                        0
-                    },
-                });
+                if func.is_fuzz_callable() {
+                    let args: Vec<FuzzValue> = func
+                        .params
+                        .iter()
+                        .map(|_| random_value_with_dict(rng, dict))
+                        .collect();
+                    txs.push(Transaction {
+                        function_id: func.id,
+                        args,
+                        sender: random_sender(rng, config.address_pool_size),
+                        value: if func.is_payable {
+                            random_value_amount(rng)
+                        } else {
+                            0
+                        },
+                    });
+                }
             }
         }
     }
@@ -342,6 +342,31 @@ pub fn generate_initial_population_with_dict(
     population
 }
 
+/// Generate a single dependency-aware seed individual.
+/// Returns `None` when no eligible transactions can be constructed.
+pub fn generate_dependency_seed_with_dict(
+    abi: &ContractAbi,
+    deps: &DependencyMap,
+    config: &FuzzConfig,
+    rng: &mut impl Rng,
+    dict: Option<&Dictionary>,
+) -> Option<Individual> {
+    let seq_len = rng.gen_range(2..=config.max_sequence_length.max(2));
+    let txs = dependency_aware_sequence(abi, deps, rng, config, seq_len, dict);
+    if txs.is_empty() {
+        return None;
+    }
+    Some(Individual {
+        transactions: txs,
+        environment: Environment {
+            block_timestamp: rng.gen_range(1_000_000_000..2_000_000_000),
+            block_number: rng.gen_range(1..20_000_000),
+            address_pool_size: config.address_pool_size,
+        },
+        energy: 1.0,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -440,5 +465,37 @@ mod tests {
             found_dict_val,
             "expected dictionary value to be used at least once in 100 tries"
         );
+    }
+
+    #[test]
+    fn dependency_seed_prefers_writer_reader_prefix() {
+        let abi = sample_abi();
+        let mut deps = DependencyMap::default();
+        deps.functions.insert(
+            0,
+            crate::fuzzing::types::FunctionDeps {
+                reads: std::collections::HashSet::new(),
+                writes: std::collections::HashSet::from(["balance".to_string()]),
+            },
+        );
+        deps.functions.insert(
+            1,
+            crate::fuzzing::types::FunctionDeps {
+                reads: std::collections::HashSet::from(["balance".to_string()]),
+                writes: std::collections::HashSet::new(),
+            },
+        );
+        let config = FuzzConfig {
+            max_sequence_length: 4,
+            address_pool_size: 3,
+            seed: Some(7),
+            ..Default::default()
+        };
+        let mut rng = <rand::rngs::StdRng as rand::SeedableRng>::seed_from_u64(9);
+        let seed = generate_dependency_seed_with_dict(&abi, &deps, &config, &mut rng, None)
+            .expect("seed");
+        assert!(seed.transactions.len() >= 2);
+        assert_eq!(seed.transactions[0].function_id, 0);
+        assert_eq!(seed.transactions[1].function_id, 1);
     }
 }

@@ -249,6 +249,17 @@ fn is_mint_or_burn_name(name: &str) -> bool {
         || lower.contains("_burn")
 }
 
+/// Returns `true` if the function name looks like an initializer / setup hook.
+fn is_initializer_name(name: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    lower == "initialize"
+        || lower == "initialise"
+        || lower == "init"
+        || lower.starts_with("initialize")
+        || lower.starts_with("initialise")
+        || lower.starts_with("init")
+}
+
 // ── Generic AST walkers ──────────────────────────────────────────────────────
 
 /// Walk every expression reachable from a statement tree.
@@ -816,12 +827,12 @@ fn detect_default_visibility(ast: &NormalizedAst) -> Vec<Finding> {
 fn detect_uninit_permission_check(ast: &NormalizedAst) -> Vec<Finding> {
     let mut findings = Vec::new();
     for func in &ast.functions {
-        let name = func.name.as_deref().unwrap_or("").to_lowercase();
-        let is_initializer = name == "initialize"
-            || name == "init"
-            || name == "initialise"
-            || name.starts_with("initialize_")
-            || name.starts_with("init_");
+        if matches!(func.visibility, Visibility::Internal | Visibility::Private) {
+            continue;
+        }
+
+        let name = func.name.as_deref().unwrap_or("");
+        let is_initializer = is_initializer_name(name);
 
         if !is_initializer {
             continue;
@@ -1113,8 +1124,20 @@ fn detect_unsafe_delegatecall(call_graph: &CallGraph) -> Vec<Finding> {
 fn detect_unused_return_value(ast: &NormalizedAst) -> Vec<Finding> {
     let mut findings = Vec::new();
     for func in &ast.functions {
+        let baseline = findings.len();
         if let Some(body) = func.body {
             walk_for_unchecked(ast, body, func.id, &mut findings);
+        }
+        if findings.len() == baseline {
+            if let Some(method) = function_source_unchecked_call(ast, func) {
+                findings.push(Finding {
+                    kind: FindingKind::UnusedReturnValue,
+                    severity: Severity::Medium,
+                    message: format!("return value of low-level {method} is not checked"),
+                    span: func.span,
+                    function: Some(func.id),
+                });
+            }
         }
     }
     findings
@@ -1175,16 +1198,84 @@ fn walk_for_unchecked(
 
 fn low_level_call_name(ast: &NormalizedAst, expr_id: u32) -> Option<String> {
     let expr = ast.expressions.get(expr_id as usize)?;
-    let call = expr.meta.call.as_ref()?;
-    let name = match &call.target {
-        CallTarget::Member { name, .. } => name.as_str(),
-        CallTarget::Direct { name } => name.as_str(),
-        CallTarget::Unknown => return None,
-    };
-    match name {
-        "call" | "delegatecall" | "callcode" | "staticcall" | "send" => Some(name.to_string()),
-        _ => None,
+    if let Some(call) = &expr.meta.call {
+        let name = match &call.target {
+            CallTarget::Member { name, .. } => name.as_str(),
+            CallTarget::Direct { name } => name.as_str(),
+            CallTarget::Unknown => "",
+        };
+        match name {
+            "call" | "delegatecall" | "callcode" | "staticcall" | "send" => {
+                return Some(name.to_string());
+            }
+            _ => {}
+        }
     }
+
+    if let ExprKind::Call { callee, .. } = &expr.kind {
+        if let Some(callee_expr) = ast.expressions.get(*callee as usize) {
+            match &callee_expr.kind {
+                ExprKind::Member { field, .. } => match field.as_str() {
+                    "call" | "delegatecall" | "callcode" | "staticcall" | "send" => {
+                        return Some(field.clone());
+                    }
+                    _ => {}
+                },
+                ExprKind::Ident(name) => match name.as_str() {
+                    "call" | "delegatecall" | "callcode" | "staticcall" | "send" => {
+                        return Some(name.clone());
+                    }
+                    _ => {}
+                },
+                _ => {}
+            }
+        }
+    }
+
+    if let Some(source) = get_source_at_span(ast, &expr.span) {
+        let lower = source.to_ascii_lowercase();
+        for method in ["send", "call", "delegatecall", "callcode", "staticcall"] {
+            let member_pat = format!(".{method}(");
+            let direct_pat = format!("{method}(");
+            if lower.contains(&member_pat) || lower.contains(&direct_pat) {
+                return Some(method.to_string());
+            }
+        }
+    }
+
+    None
+}
+
+fn function_source_unchecked_call(
+    ast: &NormalizedAst,
+    func: &crate::norm::Function,
+) -> Option<&'static str> {
+    let source = get_source_at_span(ast, &func.span)?;
+    for raw_line in source.lines() {
+        let line = raw_line.trim().to_ascii_lowercase();
+        if line.is_empty() || line.starts_with("//") {
+            continue;
+        }
+        if line.contains("require(") || line.contains("assert(") || line.contains("if(") || line.contains("if (") {
+            continue;
+        }
+        if line.contains(".send(") {
+            return Some("send");
+        }
+        if line.contains(".delegatecall(") {
+            return Some("delegatecall");
+        }
+        if line.contains(".callcode(") {
+            return Some("callcode");
+        }
+        if line.contains(".staticcall(") {
+            return Some("staticcall");
+        }
+        if line.contains(".call(") {
+            return Some("call");
+        }
+    }
+    None
 }
 
 // ── AC-17  Usage of public mint or burn ──────────────────────────────────────

@@ -22,7 +22,7 @@
 
 use crate::norm::{
     CallOption, CallTarget, ChainSegment, ContractKind, ExprKind, FunctionKind, Mutability,
-    NormalizedAst, StmtKind,
+    NormalizedAst, Span, StmtKind,
 };
 
 use super::{Finding, FindingKind, Severity};
@@ -257,6 +257,45 @@ fn for_each_stmt(ast: &NormalizedAst, stmt_id: u32, cb: &mut impl FnMut(u32, &cr
 }
 
 // ── Detection helpers ────────────────────────────────────────────────────────
+
+fn get_source_at_span<'a>(ast: &'a NormalizedAst, span: &Span) -> Option<&'a str> {
+    let file = ast.files.get(span.file as usize)?;
+    let start = span.start as usize;
+    let end = span.end as usize;
+    if end <= file.source.len() && start <= end {
+        Some(&file.source[start..end])
+    } else {
+        None
+    }
+}
+
+fn function_source_lower(ast: &NormalizedAst, func: &crate::norm::Function) -> Option<String> {
+    get_source_at_span(ast, &func.span).map(|source| source.to_ascii_lowercase())
+}
+
+fn source_contains_loop(lower: &str) -> bool {
+    ["for(", "for (", "while(", "while (", "do {"]
+        .iter()
+        .any(|pattern| lower.contains(pattern))
+}
+
+fn source_contains_external_payout(lower: &str) -> bool {
+    [
+        ".transfer(",
+        ".send(",
+        ".call(",
+        ".call.value(",
+        ".delegatecall(",
+    ]
+    .iter()
+    .any(|pattern| lower.contains(pattern))
+}
+
+fn source_contains_failed_refund_guard(lower: &str) -> bool {
+    lower
+        .lines()
+        .any(|line| line.contains("require(") && source_contains_external_payout(line))
+}
 
 /// Returns `true` if the expression is a call to `.transfer()` or `.send()`.
 /// These two methods forward exactly 2300 gas, which may not be enough
@@ -827,6 +866,8 @@ fn detect_dos_block_gas_limit(ast: &NormalizedAst) -> Vec<Finding> {
 
     for func in &ast.functions {
         let Some(body) = func.body else { continue };
+        let source_lower = function_source_lower(ast, func);
+        let baseline = findings.len();
 
         // Walk all statements looking for loops.
         for_each_stmt(ast, body, &mut |_sid, stmt| {
@@ -907,6 +948,26 @@ fn detect_dos_block_gas_limit(ast: &NormalizedAst) -> Vec<Finding> {
                 _ => {}
             }
         });
+
+        if findings.len() == baseline {
+            if let Some(source_lower) = source_lower.as_deref() {
+                let dynamic_bound = source_lower.contains(".length")
+                    || source_lower.contains("msg.gas")
+                    || source_lower.contains("gasleft(");
+                if source_contains_loop(source_lower) && dynamic_bound {
+                    findings.push(Finding {
+                        kind: FindingKind::DosBlockGasLimit,
+                        severity: Severity::Medium,
+                        message: format!(
+                            "DS-03: loop in `{}` depends on dynamic bounds (`.length`/gas), which can make the function exceed the block gas limit",
+                            func.name.as_deref().unwrap_or("<anonymous>")
+                        ),
+                        span: func.span,
+                        function: Some(func.id),
+                    });
+                }
+            }
+        }
     }
 
     findings
@@ -933,6 +994,8 @@ fn detect_dos_with_failed_call(ast: &NormalizedAst) -> Vec<Finding> {
 
     for func in &ast.functions {
         let Some(body) = func.body else { continue };
+        let source_lower = function_source_lower(ast, func);
+        let baseline = findings.len();
 
         // Walk all statements looking for loops containing external calls.
         for_each_stmt(ast, body, &mut |_sid, stmt| {
@@ -998,6 +1061,39 @@ fn detect_dos_with_failed_call(ast: &NormalizedAst) -> Vec<Finding> {
                 _ => {}
             }
         });
+
+        if findings.len() == baseline {
+            if let Some(source_lower) = source_lower.as_deref() {
+                if source_contains_loop(source_lower) && source_contains_external_payout(source_lower)
+                {
+                    findings.push(Finding {
+                        kind: FindingKind::DosWithFailedCall,
+                        severity: Severity::High,
+                        message: format!(
+                            "DS-04: loop in `{}` performs external payouts; a single reverting recipient can block progress",
+                            func.name.as_deref().unwrap_or("<anonymous>")
+                        ),
+                        span: func.span,
+                        function: Some(func.id),
+                    });
+                }
+            }
+        }
+
+        if let Some(source_lower) = source_lower.as_deref() {
+            if source_contains_failed_refund_guard(source_lower) {
+                findings.push(Finding {
+                    kind: FindingKind::DosWithFailedCall,
+                    severity: Severity::High,
+                    message: format!(
+                        "DS-04: `{}` uses a required push payment (`require(...send/transfer/call...)`); a reverting recipient can DoS the function",
+                        func.name.as_deref().unwrap_or("<anonymous>")
+                    ),
+                    span: func.span,
+                    function: Some(func.id),
+                });
+            }
+        }
     }
 
     findings

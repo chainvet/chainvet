@@ -434,3 +434,51 @@ For fuzzing:
 For static:
 
 - Keep detectors span-based and conservative when IR/AST values are `Unknown`.
+
+## Approach Update Log (2026-03-09)
+
+This section records cross-engine reporting changes relevant to static/symbolic/fuzzing/hybrid consumers.
+
+- Static:
+  - No detector rename in this step; static labels remain the baseline/canonical reference.
+- Symbolic:
+  - Renamed arithmetic label from `underflow` to `integer-underflow` for taxonomy alignment with static.
+  - File: `src/symbolic/mod.rs`
+- Fuzzing:
+  - Added canonical label mapping used in reports:
+    - `tx-origin-auth` -> `tx-origin`
+    - `hardcoded-gas` -> `hardcoded-gas-transfer`
+    - `storage-memory-issue` -> `memory-manipulation`
+  - Files: `src/fuzzing/types.rs`, `src/fuzzing/runner.rs`
+- Hybrid:
+  - Fuzz findings ingested by hybrid now use canonical fuzz labels before triage/dedup.
+  - File: `src/core/engines/mod.rs`
+- Symbolic:
+  - Added `weak-prng` detection for `block.number`/`blockhash` use in branch conditions.
+  - Added `hardcoded-gas-transfer` detection for `send`/`transfer`, including member-call forms lowered through temporaries.
+  - Added `unsafe-send-in-require` detection.
+  - Added `unprotected-ether-withdrawal` detection.
+  - Added `dos-with-failed-call` detection (external call in loop context).
+  - Added `transaction-order-dependency` detection (order-sensitive storage read + value transfer).
+  - Added `signature-malleability` detection for direct `ecrecover` usage.
+  - Added static-backed gating for TOD/CR-02 findings to reduce false positives.
+  - Refined unchecked-call classification so `.transfer(...)` is not flagged as unchecked return.
+  - Text/JSON symbolic findings now carry confidence (`high`/`medium`).
+  - File: `src/symbolic/mod.rs`
+- Fuzzing:
+  - Expanded enabled default oracles in `check_all` to include:
+    - `exception-disorder`
+    - `access-control`
+    - `locked-ether`
+  - Added `unsafe-send-in-require` oracle.
+  - Added AST-level `public-mint-burn` pattern.
+  - Added `dos-with-failed-call` oracle (loop + external-call pattern).
+  - Added `transaction-order-dependency` oracle.
+  - Added `signature-malleability` parity oracle for `ecrecover`.
+  - Added static-backed gating for TOD/CR-02 findings to reduce false positives.
+  - Text report now prints confidence per finding (`high`/`medium`/`low`).
+  - Files: `src/fuzzing/oracle.rs`, `src/fuzzing/executor.rs`, `src/fuzzing/types.rs`, `src/fuzzing/runner.rs`
+- Hybrid:
+  - Fuzz findings now include confidence metadata in run artifacts.
+  - Hybrid fuzz adapter applies static-backed gating for TOD/CR-02 before persisting findings.
+  - File: `src/core/engines/mod.rs`

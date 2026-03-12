@@ -9,10 +9,10 @@ pub mod scheduler;
 pub mod types;
 
 use crate::fuzzing::types::FuzzConfig;
-use crate::norm::NormalizedAst;
+use crate::frontend::FrontendOutput;
 
 /// Main entry point: run the fuzzer against a parsed project.
-pub fn run_fuzzer(ast: &NormalizedAst, config: &FuzzConfig) {
-    let report = runner::run(ast, config);
+pub fn run_fuzzer(output: &FrontendOutput, config: &FuzzConfig) {
+    let report = runner::run(output, config);
     runner::print_report(&report);
 }

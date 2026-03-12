@@ -17,7 +17,11 @@ use crate::util::error::{Error, Result};
 use super::solc_manager::SolcManager;
 
 pub fn load_via_solc(path: &str) -> Result<NormalizedAst> {
-    let sources = crate::frontend::load_sources(path)?;
+    let sources = crate::frontend::collect_target_sources(path)?;
+    load_via_solc_sources(path, sources)
+}
+
+pub fn load_via_solc_sources(path: &str, sources: Vec<crate::norm::SourceFile>) -> Result<NormalizedAst> {
     if sources.is_empty() {
         return Err(Error::msg("no Solidity files found"));
     }

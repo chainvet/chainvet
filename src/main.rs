@@ -1,9 +1,11 @@
 mod analysis;
 mod cfg;
+mod core;
 
 mod frontend;
 mod fuzzing;
 mod ir;
+mod meta;
 mod norm;
 mod report;
 mod ssa;
@@ -29,15 +31,6 @@ impl AnalysisMode {
             "--fuzzing" => Some(Self::Fuzzing),
             "--hybrid" => Some(Self::Hybrid),
             _ => None,
-        }
-    }
-
-    fn as_str(self) -> &'static str {
-        match self {
-            Self::Static => "static",
-            Self::Symbolic => "symbolic",
-            Self::Fuzzing => "fuzzing",
-            Self::Hybrid => "hybrid",
         }
     }
 }
@@ -163,12 +156,35 @@ fn run() -> Result<()> {
         AnalysisMode::Fuzzing => {
             let output = frontend::load_project(&input)?;
             let config = fuzzing::types::FuzzConfig::default();
-            fuzzing::run_fuzzer(&output.ast, &config);
+            fuzzing::run_fuzzer(&output, &config);
         }
         AnalysisMode::Hybrid => {
-            return Err(Error::msg(
-                "hybrid mode placeholder: not implemented yet (planned static + symbolic + fuzzing pipeline)",
-            ));
+            let output = core::scheduler::run_p1(&input, core::budget::Budget::default())?;
+            match format {
+                report::OutputFormat::Text => {
+                    println!(
+                        "hybrid: run_id={}, run_dir={}, runtime_ms={}, epochs={}, findings_total={}, findings_unique={}, runtime_findings_total={}, runtime_findings_unique={}, meta_findings_total={}, meta_findings_unique={}, se_assists={}, se_seeds_injected={}",
+                        output.run_id,
+                        output.run_dir,
+                        output.report.runtime_ms,
+                        output.report.total_epochs,
+                        output.report.findings_total,
+                        output.report.findings_unique,
+                        output.report.runtime_findings_total,
+                        output.report.runtime_findings_unique,
+                        output.report.meta_findings_total,
+                        output.report.meta_findings_unique,
+                        output.report.se_assists,
+                        output.report.seeds_injected_by_se
+                    );
+                }
+                report::OutputFormat::Json => {
+                    let payload = serde_json::to_string_pretty(&output.report).map_err(|err| {
+                        Error::msg(format!("failed to encode hybrid JSON report: {err}"))
+                    })?;
+                    println!("{payload}");
+                }
+            }
         }
     }
 

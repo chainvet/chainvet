@@ -1,0 +1,14 @@
+{
+  "targets": [
+    {
+      "inputs": [
+        "Benchmarks/Not-so-smart/not-so-smart-contracts-master/incorrect_interface/Alice.sol",
+        "Benchmarks/Not-so-smart/not-so-smart-contracts-master/incorrect_interface/Bob.sol"
+      ],
+      "sources": [
+        "Benchmarks/Not-so-smart/not-so-smart-contracts-master/incorrect_interface/Alice.sol",
+        "Benchmarks/Not-so-smart/not-so-smart-contracts-master/incorrect_interface/Bob.sol"
+      ]
+    }
+  ]
+}

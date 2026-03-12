@@ -1,0 +1,383 @@
+{
+  "dataset": "Benchmarks/Not-so-smart/not-so-smart-contracts-master",
+  "counting_rule": {
+    "count_distinct_root_causes": true,
+    "count_helper_contracts_as_targets": false,
+    "count_honeypot_traps_as_real_issues": true,
+    "exclude_repeated_style_warnings": true
+  },
+  "contracts": [
+    {
+      "file": "Benchmarks/Not-so-smart/not-so-smart-contracts-master/bad_randomness/theRun_source_code/theRun.sol",
+      "target_kind": "vulnerable",
+      "reviewed_issues": [
+        {
+          "id": "theRun-bad-randomness",
+          "summary": "bad randomness in random()",
+          "match_any_of": [
+            "weak-prng",
+            "timestamp-dependency",
+            "dangerous-block-timestamp"
+          ]
+        },
+        {
+          "id": "theRun-unchecked-payout",
+          "summary": "unchecked-send payout/fee flow",
+          "match_any_of": [
+            "unchecked-call",
+            "unused-return-value",
+            "exception-disorder"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "Benchmarks/Not-so-smart/not-so-smart-contracts-master/denial_of_service/auction.sol",
+      "target_kind": "vulnerable",
+      "reviewed_issues": [
+        {
+          "id": "auction-push-refund-dos",
+          "summary": "push-refund DoS in DosAuction.bid()",
+          "match_any_of": [
+            "dos-with-failed-call"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "Benchmarks/Not-so-smart/not-so-smart-contracts-master/denial_of_service/list_dos.sol",
+      "target_kind": "vulnerable",
+      "reviewed_issues": [
+        {
+          "id": "list-dos-refundDos",
+          "summary": "revert-based bulk refund DoS in refundDos()",
+          "match_any_of": [
+            "dos-with-failed-call",
+            "dos-block-gas-limit"
+          ]
+        },
+        {
+          "id": "list-dos-refundSafe",
+          "summary": "still-griefable payout in refundSafe()",
+          "match_any_of": [
+            "dos-with-failed-call",
+            "dos-block-gas-limit"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "Benchmarks/Not-so-smart/not-so-smart-contracts-master/forced_ether_reception/coin.sol",
+      "target_kind": "vulnerable",
+      "reviewed_issues": [
+        {
+          "id": "coin-forced-ether-invariant-break",
+          "summary": "forced-Ether invariant break in migrate_and_destroy()",
+          "match_any_of": [
+            "locked-ether"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "Benchmarks/Not-so-smart/not-so-smart-contracts-master/honeypots/GiftBox/GiftBox.sol",
+      "target_kind": "vulnerable",
+      "reviewed_issues": [
+        {
+          "id": "giftbox-honeypot",
+          "summary": "honeypot trap",
+          "match_any_of": [
+            "honeypot"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "Benchmarks/Not-so-smart/not-so-smart-contracts-master/honeypots/KOTH/KOTH.sol",
+      "target_kind": "vulnerable",
+      "reviewed_issues": [
+        {
+          "id": "koth-honeypot-shadowing",
+          "summary": "honeypot via owner shadowing / broken authority",
+          "match_any_of": [
+            "honeypot",
+            "shadowing"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "Benchmarks/Not-so-smart/not-so-smart-contracts-master/honeypots/Lottery/Lottery.sol",
+      "target_kind": "vulnerable",
+      "reviewed_issues": [
+        {
+          "id": "lottery-honeypot-storage-pointer",
+          "summary": "honeypot via uninitialized storage-pointer style state corruption",
+          "match_any_of": [
+            "honeypot",
+            "memory-manipulation"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "Benchmarks/Not-so-smart/not-so-smart-contracts-master/honeypots/Multiplicator/Multiplicator.sol",
+      "target_kind": "vulnerable",
+      "reviewed_issues": [
+        {
+          "id": "multiplicator-impossible-balance-branch",
+          "summary": "honeypot via impossible this.balance branch",
+          "match_any_of": [
+            "honeypot",
+            "locked-ether"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "Benchmarks/Not-so-smart/not-so-smart-contracts-master/honeypots/PrivateBank/PrivateBank.sol",
+      "target_kind": "vulnerable",
+      "reviewed_issues": [
+        {
+          "id": "privatebank-honeypot",
+          "summary": "honeypot trap",
+          "match_any_of": [
+            "honeypot"
+          ]
+        },
+        {
+          "id": "privatebank-cashout-reentrancy",
+          "summary": "reentrancy in CashOut()",
+          "match_any_of": [
+            "reentrancy",
+            "reentrancy-eth-transfer",
+            "reentrancy-negative-events",
+            "reentrancy-no-eth-transfer",
+            "reentrancy-same-effect",
+            "reentrancy-transfer"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "Benchmarks/Not-so-smart/not-so-smart-contracts-master/honeypots/VarLoop/VarLoop.sol",
+      "target_kind": "vulnerable",
+      "reviewed_issues": [
+        {
+          "id": "varloop-narrow-int-honeypot",
+          "summary": "honeypot via var-inferred narrow integer loop/payout bug",
+          "match_any_of": [
+            "honeypot",
+            "integer-overflow",
+            "integer-underflow"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "Benchmarks/Not-so-smart/not-so-smart-contracts-master/incorrect_interface/Alice.sol",
+      "target_kind": "helper",
+      "reviewed_issues": []
+    },
+    {
+      "file": "Benchmarks/Not-so-smart/not-so-smart-contracts-master/incorrect_interface/Bob.sol",
+      "target_kind": "vulnerable",
+      "reviewed_issues": [
+        {
+          "id": "bob-incorrect-interface",
+          "summary": "incorrect interface signature mismatch with Alice.sol",
+          "match_any_of": [
+            "incorrect-interface"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "Benchmarks/Not-so-smart/not-so-smart-contracts-master/integer_overflow/integer_overflow_1.sol",
+      "target_kind": "vulnerable",
+      "reviewed_issues": [
+        {
+          "id": "integer-overflow-add",
+          "summary": "integer overflow in add()",
+          "match_any_of": [
+            "integer-overflow"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "Benchmarks/Not-so-smart/not-so-smart-contracts-master/race_condition/RaceCondition.sol",
+      "target_kind": "vulnerable",
+      "reviewed_issues": [
+        {
+          "id": "racecondition-buy-changeprice",
+          "summary": "transaction-order dependency in buy() / changePrice()",
+          "match_any_of": [
+            "transaction-order-dependency"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "Benchmarks/Not-so-smart/not-so-smart-contracts-master/reentrancy/DAO_source_code/DAO.sol",
+      "target_kind": "vulnerable",
+      "reviewed_issues": [
+        {
+          "id": "dao-splitdao-reentrancy",
+          "summary": "reentrancy in splitDAO()",
+          "match_any_of": [
+            "reentrancy",
+            "reentrancy-eth-transfer",
+            "reentrancy-negative-events",
+            "reentrancy-no-eth-transfer",
+            "reentrancy-same-effect",
+            "reentrancy-transfer"
+          ]
+        },
+        {
+          "id": "dao-reward-withdrawal-reentrancy",
+          "summary": "reentrancy in reward-withdrawal path",
+          "match_any_of": [
+            "reentrancy",
+            "reentrancy-eth-transfer",
+            "reentrancy-negative-events",
+            "reentrancy-no-eth-transfer",
+            "reentrancy-same-effect",
+            "reentrancy-transfer"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "Benchmarks/Not-so-smart/not-so-smart-contracts-master/reentrancy/Reentrancy.sol",
+      "target_kind": "vulnerable",
+      "reviewed_issues": [
+        {
+          "id": "reentrancy-withdrawbalance",
+          "summary": "reentrancy in withdrawBalance()",
+          "match_any_of": [
+            "reentrancy",
+            "reentrancy-eth-transfer",
+            "reentrancy-negative-events",
+            "reentrancy-no-eth-transfer",
+            "reentrancy-same-effect",
+            "reentrancy-transfer"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "Benchmarks/Not-so-smart/not-so-smart-contracts-master/reentrancy/ReentrancyExploit.sol",
+      "target_kind": "helper",
+      "reviewed_issues": []
+    },
+    {
+      "file": "Benchmarks/Not-so-smart/not-so-smart-contracts-master/reentrancy/SpankChain_source_code/SpankChain.sol",
+      "target_kind": "helper",
+      "reviewed_issues": []
+    },
+    {
+      "file": "Benchmarks/Not-so-smart/not-so-smart-contracts-master/reentrancy/SpankChain_source_code/SpankChain_Payment.sol",
+      "target_kind": "vulnerable",
+      "reviewed_issues": [
+        {
+          "id": "spankchain-payment-lcopentimeout-reentrancy",
+          "summary": "reentrancy in LCOpenTimeout()",
+          "match_any_of": [
+            "reentrancy",
+            "reentrancy-eth-transfer",
+            "reentrancy-negative-events",
+            "reentrancy-no-eth-transfer",
+            "reentrancy-same-effect",
+            "reentrancy-transfer"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "Benchmarks/Not-so-smart/not-so-smart-contracts-master/unchecked_external_call/KotET_source_code/KingOfTheEtherThrone.sol",
+      "target_kind": "vulnerable",
+      "reviewed_issues": [
+        {
+          "id": "kotet-unchecked-send",
+          "summary": "unchecked external-call/send family in throne claim/refund flow",
+          "match_any_of": [
+            "unchecked-call",
+            "unused-return-value",
+            "exception-disorder"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "Benchmarks/Not-so-smart/not-so-smart-contracts-master/unprotected_function/Unprotected.sol",
+      "target_kind": "vulnerable",
+      "reviewed_issues": [
+        {
+          "id": "unprotected-changeowner",
+          "summary": "unprotected changeOwner()",
+          "match_any_of": [
+            "access-control"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "Benchmarks/Not-so-smart/not-so-smart-contracts-master/unprotected_function/WalletLibrary_source_code/WalletLibrary.sol",
+      "target_kind": "vulnerable",
+      "reviewed_issues": [
+        {
+          "id": "walletlibrary-initwallet-takeover",
+          "summary": "public initWallet() reinitialization / ownership takeover",
+          "match_any_of": [
+            "access-control",
+            "uninit-permission-check"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "Benchmarks/Not-so-smart/not-so-smart-contracts-master/variable shadowing/inherited_state.sol",
+      "target_kind": "vulnerable",
+      "reviewed_issues": [
+        {
+          "id": "inherited-state-shadowing",
+          "summary": "inherited state shadowing breaks intended owner check",
+          "match_any_of": [
+            "shadowing"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "Benchmarks/Not-so-smart/not-so-smart-contracts-master/wrong_constructor_name/Rubixi_source_code/Rubixi.sol",
+      "target_kind": "vulnerable",
+      "reviewed_issues": [
+        {
+          "id": "rubixi-wrong-constructor-name",
+          "summary": "wrong constructor name DynamicPyramid()",
+          "match_any_of": [
+            "wrong-constructor-name",
+            "access-control",
+            "uninit-permission-check"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "Benchmarks/Not-so-smart/not-so-smart-contracts-master/wrong_constructor_name/incorrect_constructor.sol",
+      "target_kind": "vulnerable",
+      "reviewed_issues": [
+        {
+          "id": "incorrect-constructor-iammissing",
+          "summary": "wrong constructor name IamMissing()",
+          "match_any_of": [
+            "wrong-constructor-name",
+            "access-control",
+            "uninit-permission-check"
+          ]
+        }
+      ]
+    }
+  ]
+}

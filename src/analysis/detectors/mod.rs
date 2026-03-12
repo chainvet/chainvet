@@ -117,7 +117,61 @@ pub enum FindingKind {
     TaintedCall, // MI-02
 }
 
+pub const TAXONOMY_FINDING_KINDS: [FindingKind; 45] = [
+    FindingKind::ArbitraryTransferFrom,
+    FindingKind::ArbitraryCalldata,
+    FindingKind::CallerNotChecked,
+    FindingKind::ContractDestructable,
+    FindingKind::DangerousStateVarInit,
+    FindingKind::TxOrigin,
+    FindingKind::DefaultVisibility,
+    FindingKind::UninitializedPermissionCheck,
+    FindingKind::PermitArbitraryTransferFrom,
+    FindingKind::MissingSenderCheckTransferFrom,
+    FindingKind::MissingInputValidation,
+    FindingKind::ArbitraryEtherSend,
+    FindingKind::UnprotectedSelfdestruct,
+    FindingKind::UnprotectedEtherWithdrawal,
+    FindingKind::UnsafeDelegatecall,
+    FindingKind::UnusedReturnValue,
+    FindingKind::PublicMintBurn,
+    FindingKind::ArbitraryStorageWrite,
+    FindingKind::DivisionBeforeMultiplication,
+    FindingKind::IntegerOverflow,
+    FindingKind::IntegerUnderflow,
+    FindingKind::UnsafeArrayLengthAssignment,
+    FindingKind::DangerousBlockTimestamp,
+    FindingKind::TransactionOrderDependency,
+    FindingKind::WeakPrng,
+    FindingKind::LackOfSignatureVerification,
+    FindingKind::SignatureMalleability,
+    FindingKind::HardcodedGasTransfer,
+    FindingKind::LockedEther,
+    FindingKind::DosBlockGasLimit,
+    FindingKind::DosWithFailedCall,
+    FindingKind::ForceEtherBalanceCheck,
+    FindingKind::UnsafeSendInRequire,
+    FindingKind::ReentrancyNegativeEvents,
+    FindingKind::ReentrancyTransfer,
+    FindingKind::ReentrancySameEffect,
+    FindingKind::ReentrancyEthTransfer,
+    FindingKind::ReentrancyNoEthTransfer,
+    FindingKind::ArbitraryFunctionJump,
+    FindingKind::BytesVariablesRisk,
+    FindingKind::MsgValueInLoop,
+    FindingKind::ErrorProneAssembly,
+    FindingKind::MemoryManipulation,
+    FindingKind::StorageArrayByValue,
+    FindingKind::DelegatecallInLoop,
+];
+
+pub const TAXONOMY_ROW_COUNT: usize = TAXONOMY_FINDING_KINDS.len();
+
 impl FindingKind {
+    pub fn is_taxonomy_kind(&self) -> bool {
+        TAXONOMY_FINDING_KINDS.contains(self)
+    }
+
     pub fn as_str(&self) -> &'static str {
         match self {
             // Access Control
@@ -294,4 +348,92 @@ pub fn run_detectors(
     findings.extend(misc::detect_all(ast, taint_summaries));
 
     findings
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{FindingKind, run_detectors};
+    use crate::{analysis, cfg, frontend, ir};
+
+    fn benchmark_findings(path: &str) -> Vec<super::Finding> {
+        let output = frontend::load_project(path).expect("frontend load should succeed");
+        let ast = &output.ast;
+        let ir_module = ir::lower_module(ast);
+        let cfgs = cfg::build_from_ir(&ir_module);
+        let call_graph = analysis::build_call_graph(ast);
+        let taint = analysis::taint::analyze(ast, &cfgs);
+        run_detectors(ast, &call_graph, &taint)
+    }
+
+    #[test]
+    fn detects_auction_push_refund_dos() {
+        let findings = benchmark_findings(
+            "Benchmarks/Not-so-smart/not-so-smart-contracts-master/denial_of_service/auction.sol",
+        );
+        assert!(
+            findings
+                .iter()
+                .any(|finding| finding.kind == FindingKind::DosWithFailedCall),
+            "expected dos-with-failed-call finding for auction.sol"
+        );
+    }
+
+    #[test]
+    fn detects_list_dos_twice() {
+        let findings = benchmark_findings(
+            "Benchmarks/Not-so-smart/not-so-smart-contracts-master/denial_of_service/list_dos.sol",
+        );
+        let count = findings
+            .iter()
+            .filter(|finding| {
+                matches!(
+                    finding.kind,
+                    FindingKind::DosWithFailedCall | FindingKind::DosBlockGasLimit
+                )
+            })
+            .count();
+        assert!(count >= 2, "expected at least two DoS findings for list_dos.sol, got {count}");
+    }
+
+    #[test]
+    fn detects_race_condition_tod() {
+        let findings = benchmark_findings(
+            "Benchmarks/Not-so-smart/not-so-smart-contracts-master/race_condition/RaceCondition.sol",
+        );
+        assert!(
+            findings
+                .iter()
+                .any(|finding| finding.kind == FindingKind::TransactionOrderDependency),
+            "expected transaction-order-dependency finding for RaceCondition.sol"
+        );
+    }
+
+    #[test]
+    fn detects_walletlibrary_init_takeover() {
+        let findings = benchmark_findings(
+            "Benchmarks/Not-so-smart/not-so-smart-contracts-master/unprotected_function/WalletLibrary_source_code/WalletLibrary.sol",
+        );
+        assert!(
+            findings.iter().any(|finding| {
+                matches!(
+                    finding.kind,
+                    FindingKind::UninitializedPermissionCheck | FindingKind::CallerNotChecked
+                )
+            }),
+            "expected init takeover finding for WalletLibrary.sol"
+        );
+    }
+
+    #[test]
+    fn detects_kotet_unchecked_send() {
+        let findings = benchmark_findings(
+            "Benchmarks/Not-so-smart/not-so-smart-contracts-master/unchecked_external_call/KotET_source_code/KingOfTheEtherThrone.sol",
+        );
+        assert!(
+            findings
+                .iter()
+                .any(|finding| finding.kind == FindingKind::UnusedReturnValue),
+            "expected unused-return-value finding for KingOfTheEtherThrone.sol"
+        );
+    }
 }

@@ -7,6 +7,8 @@ use crate::fuzzing::types::{
 /// Run all oracle checks on an execution trace.
 pub fn check_all(trace: &ExecutionTrace, tx_sequence: &[Transaction]) -> Vec<FuzzFinding> {
     let mut findings = Vec::new();
+    // Taxonomy-aligned core checks (taxonomy.xlsx):
+    // Access Control, Arithmetic, Block Manipulation, Cryptographic, DoS, Reentrancy, Storage&Memory.
     findings.extend(check_reentrancy(trace, tx_sequence));
     findings.extend(check_timestamp_dependency(trace, tx_sequence));
     findings.extend(check_unchecked_call(trace, tx_sequence));
@@ -14,45 +16,61 @@ pub fn check_all(trace: &ExecutionTrace, tx_sequence: &[Transaction]) -> Vec<Fuz
     findings.extend(check_integer_overflow(trace, tx_sequence));
     findings.extend(check_integer_underflow(trace, tx_sequence));
     findings.extend(check_access_control(trace, tx_sequence));
+    findings.extend(check_arbitrary_write(trace, tx_sequence));
     findings.extend(check_tx_origin(trace, tx_sequence));
     findings.extend(check_selfdestruct(trace, tx_sequence));
     findings.extend(check_dos(trace, tx_sequence));
+    findings.extend(check_unsafe_send_in_require(trace, tx_sequence));
+    findings.extend(check_dos_with_failed_call(trace, tx_sequence));
     findings.extend(check_unsafe_delegatecall(trace, tx_sequence));
+    findings.extend(check_transaction_order_dependency(trace, tx_sequence));
     findings.extend(check_weak_prng(trace, tx_sequence));
     findings.extend(check_hardcoded_gas(trace, tx_sequence));
-    findings.extend(check_locked_ether(trace, tx_sequence));
     findings.extend(check_storage_memory(trace, tx_sequence));
     findings.extend(check_division_before_multiplication(trace, tx_sequence));
     findings.extend(check_cryptographic(trace, tx_sequence));
     findings.extend(check_unprotected_ether_withdrawal(trace, tx_sequence));
+    findings.extend(check_locked_ether(trace, tx_sequence));
     findings
 }
 
-/// Reentrancy: external call followed by a storage write in the same function.
+/// Reentrancy: callback-capable external call followed by a storage write in the same function.
 fn check_reentrancy(trace: &ExecutionTrace, tx_sequence: &[Transaction]) -> Vec<FuzzFinding> {
     let mut findings = Vec::new();
     let mut external_call_seen: std::collections::HashMap<u32, bool> =
         std::collections::HashMap::new();
+    let mut callback_seen: std::collections::HashMap<u32, bool> = std::collections::HashMap::new();
 
     for event in &trace.events {
         match &event.kind {
-            TraceEventKind::ExternalCall { has_value, .. } => {
-                if *has_value {
+            TraceEventKind::ExternalCall {
+                has_value,
+                reentrant_capable,
+                ..
+            } => {
+                if *has_value && *reentrant_capable {
                     external_call_seen.insert(event.function_id, true);
                 }
             }
-            TraceEventKind::StorageWrite { var_name } => {
+            TraceEventKind::ReentrantCallback { .. } => {
+                callback_seen.insert(event.function_id, true);
+            }
+            TraceEventKind::StorageWrite { var_name, .. } => {
                 if external_call_seen
                     .get(&event.function_id)
                     .copied()
                     .unwrap_or(false)
+                    && callback_seen
+                        .get(&event.function_id)
+                        .copied()
+                        .unwrap_or(false)
                 {
                     let hash = hash_finding("reentrancy", event.function_id, var_name);
                     findings.push(FuzzFinding {
                         kind: FuzzFindingKind::Reentrancy,
                         severity: FuzzSeverity::High,
                         message: format!(
-                            "Potential reentrancy: external call with value in function {} followed by storage write to '{}'",
+                            "Potential reentrancy: callback-capable external call with value in function {} followed by storage write to '{}'",
                             event.function_id, var_name
                         ),
                         tx_sequence: tx_sequence.to_vec(),
@@ -217,8 +235,13 @@ fn check_access_control(trace: &ExecutionTrace, tx_sequence: &[Transaction]) -> 
 
     for event in &trace.events {
         match &event.kind {
-            TraceEventKind::StorageWrite { var_name } => {
-                if var_name != "__no_sender_check" {
+            TraceEventKind::StorageWrite {
+                var_name,
+                authority_sensitive,
+                caller_keyed,
+                ..
+            } => {
+                if var_name != "__no_sender_check" && *authority_sensitive && !*caller_keyed {
                     functions_with_writes.insert(event.function_id);
                 }
             }
@@ -238,6 +261,97 @@ fn check_access_control(trace: &ExecutionTrace, tx_sequence: &[Transaction]) -> 
                 message: format!(
                     "Missing access control: function {} writes to storage without checking msg.sender",
                     func_id
+                ),
+                tx_sequence: tx_sequence.to_vec(),
+                trace_hash: hash,
+            });
+        }
+    }
+
+    findings
+}
+
+/// Arbitrary write: storage writes happen in a function without sender check and
+/// the same function is successfully exercised by multiple distinct senders.
+fn check_arbitrary_write(trace: &ExecutionTrace, tx_sequence: &[Transaction]) -> Vec<FuzzFinding> {
+    let mut findings = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+
+    let mut writes_by_fn: std::collections::HashMap<u32, std::collections::HashSet<String>> =
+        std::collections::HashMap::new();
+    let mut sender_checked: std::collections::HashSet<u32> = std::collections::HashSet::new();
+
+    for event in &trace.events {
+        match &event.kind {
+            TraceEventKind::StorageWrite {
+                var_name,
+                slot_key,
+                authority_sensitive,
+                caller_keyed,
+            } if var_name != "__no_sender_check" && *authority_sensitive && !*caller_keyed => {
+                writes_by_fn
+                    .entry(event.function_id)
+                    .or_default()
+                    .insert(slot_key.clone());
+            }
+            TraceEventKind::SenderChecked => {
+                sender_checked.insert(event.function_id);
+            }
+            _ => {}
+        }
+    }
+
+    let mut senders_by_fn: std::collections::HashMap<u32, std::collections::HashSet<usize>> =
+        std::collections::HashMap::new();
+    for tx in tx_sequence {
+        senders_by_fn
+            .entry(tx.function_id)
+            .or_default()
+            .insert(tx.sender);
+    }
+
+    for (function_id, writes) in writes_by_fn {
+        if sender_checked.contains(&function_id) {
+            continue;
+        }
+        let sender_count = senders_by_fn.get(&function_id).map(|s| s.len()).unwrap_or(0);
+        if sender_count < 2 {
+            continue;
+        }
+
+        let mut interesting_vars = writes
+            .iter()
+            .filter(|name| {
+                let lower = name.to_ascii_lowercase();
+                lower.contains("owner")
+                    || lower.contains("admin")
+                    || lower.contains("operator")
+                    || lower.contains("minter")
+                    || lower.contains("pauser")
+                    || lower.contains("implementation")
+                    || lower.contains("governance")
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        interesting_vars.sort_unstable();
+        let detail = if !interesting_vars.is_empty() {
+            interesting_vars.join(",")
+        } else {
+            let mut all = writes.into_iter().collect::<Vec<_>>();
+            all.sort_unstable();
+            all.join(",")
+        };
+
+        if seen.insert(function_id) {
+            let hash = hash_finding("arbitrary-write", function_id, detail.as_str());
+            findings.push(FuzzFinding {
+                kind: FuzzFindingKind::ArbitraryWrite,
+                severity: FuzzSeverity::High,
+                message: format!(
+                    "Arbitrary write risk: function {} writes storage without sender check and was exercised by {} distinct senders (vars: {})",
+                    function_id,
+                    sender_count,
+                    detail
                 ),
                 tx_sequence: tx_sequence.to_vec(),
                 trace_hash: hash,
@@ -347,6 +461,82 @@ fn check_dos(trace: &ExecutionTrace, tx_sequence: &[Transaction]) -> Vec<FuzzFin
                     trace_hash: hash,
                 });
             }
+        }
+    }
+
+    findings
+}
+
+/// Unsafe send() in require/assert condition can be griefed into revert-based DoS.
+fn check_unsafe_send_in_require(
+    trace: &ExecutionTrace,
+    tx_sequence: &[Transaction],
+) -> Vec<FuzzFinding> {
+    let mut findings = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+
+    for event in &trace.events {
+        if let TraceEventKind::UnsafeSendInRequire { callee } = &event.kind {
+            let key = (event.function_id, callee.clone());
+            if seen.insert(key) {
+                let hash = hash_finding("unsafe-send-in-require", event.function_id, callee);
+                findings.push(FuzzFinding {
+                    kind: FuzzFindingKind::UnsafeSendInRequire,
+                    severity: FuzzSeverity::High,
+                    message: format!(
+                        "Unsafe send in require/assert in function {} — recipient-controlled failure can cause DoS",
+                        event.function_id
+                    ),
+                    tx_sequence: tx_sequence.to_vec(),
+                    trace_hash: hash,
+                });
+            }
+        }
+    }
+
+    findings
+}
+
+/// DoS with failed call: external call inside loop may revert whole transaction.
+fn check_dos_with_failed_call(
+    trace: &ExecutionTrace,
+    tx_sequence: &[Transaction],
+) -> Vec<FuzzFinding> {
+    let mut findings = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+
+    let mut function_has_loop: std::collections::HashSet<u32> = std::collections::HashSet::new();
+    let mut function_has_external_call: std::collections::HashSet<u32> =
+        std::collections::HashSet::new();
+
+    for event in &trace.events {
+        match &event.kind {
+            TraceEventKind::LoopEncountered | TraceEventKind::UnboundedLoop { .. } => {
+                function_has_loop.insert(event.function_id);
+            }
+            TraceEventKind::ExternalCall { .. } | TraceEventKind::HardcodedGasCall { .. } => {
+                function_has_external_call.insert(event.function_id);
+            }
+            _ => {}
+        }
+    }
+
+    for function_id in function_has_loop {
+        if !function_has_external_call.contains(&function_id) {
+            continue;
+        }
+        if seen.insert(function_id) {
+            let hash = hash_finding("dos-with-failed-call", function_id, "loop-external-call");
+            findings.push(FuzzFinding {
+                kind: FuzzFindingKind::DosWithFailedCall,
+                severity: FuzzSeverity::High,
+                message: format!(
+                    "DoS with failed call: function {} executes external call in loop context",
+                    function_id
+                ),
+                tx_sequence: tx_sequence.to_vec(),
+                trace_hash: hash,
+            });
         }
     }
 
@@ -477,6 +667,93 @@ fn check_weak_prng(trace: &ExecutionTrace, tx_sequence: &[Transaction]) -> Vec<F
     findings
 }
 
+/// Transaction order dependency: reads order-sensitive storage and performs value transfer.
+fn check_transaction_order_dependency(
+    trace: &ExecutionTrace,
+    tx_sequence: &[Transaction],
+) -> Vec<FuzzFinding> {
+    let mut findings = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+
+    let mut sensitive_reads: std::collections::HashSet<u32> = std::collections::HashSet::new();
+    let mut value_transfer: std::collections::HashSet<u32> = std::collections::HashSet::new();
+
+    for event in &trace.events {
+        match &event.kind {
+            TraceEventKind::StorageRead {
+                var_name,
+                order_sensitive,
+                ..
+            } => {
+                if *order_sensitive || is_order_sensitive_storage_name(var_name) {
+                    sensitive_reads.insert(event.function_id);
+                }
+            }
+            TraceEventKind::EtherSent { .. }
+            | TraceEventKind::HardcodedGasCall { .. }
+            | TraceEventKind::ExternalCall {
+                has_value: true, ..
+            } => {
+                value_transfer.insert(event.function_id);
+            }
+            _ => {}
+        }
+    }
+
+    for function_id in sensitive_reads {
+        if !value_transfer.contains(&function_id) {
+            continue;
+        }
+        let sender_count = tx_sequence
+            .iter()
+            .filter(|tx| tx.function_id == function_id)
+            .map(|tx| tx.sender)
+            .collect::<std::collections::HashSet<_>>()
+            .len();
+        if sender_count < 2 {
+            continue;
+        }
+        if seen.insert(function_id) {
+            let hash = hash_finding("transaction-order-dependency", function_id, "sensitive+value");
+            findings.push(FuzzFinding {
+                kind: FuzzFindingKind::TransactionOrderDependency,
+                severity: FuzzSeverity::Medium,
+                message: format!(
+                    "Transaction order dependency: function {} reads order-sensitive storage and transfers value across {} distinct senders",
+                    function_id,
+                    sender_count
+                ),
+                tx_sequence: tx_sequence.to_vec(),
+                trace_hash: hash,
+            });
+        }
+    }
+
+    findings
+}
+
+fn is_order_sensitive_storage_name(name: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    lower
+        .split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+        .filter(|token| !token.is_empty())
+        .any(|token| {
+            matches!(
+                token,
+                "price"
+                    | "rate"
+                    | "reward"
+                    | "bid"
+                    | "bids"
+                    | "auction"
+                    | "winner"
+                    | "quote"
+            ) || token.ends_with("price")
+                || token.ends_with("rate")
+                || token.ends_with("reward")
+        })
+}
+
 /// Hardcoded gas: .transfer() or .send() with fixed 2300 gas stipend.
 fn check_hardcoded_gas(trace: &ExecutionTrace, tx_sequence: &[Transaction]) -> Vec<FuzzFinding> {
     let mut findings = Vec::new();
@@ -605,22 +882,60 @@ fn check_division_before_multiplication(
 fn check_cryptographic(trace: &ExecutionTrace, tx_sequence: &[Transaction]) -> Vec<FuzzFinding> {
     let mut findings = Vec::new();
     let mut seen = std::collections::HashSet::new();
+    let mut ecrecover_funcs = std::collections::HashSet::new();
+    let mut zero_checked_funcs = std::collections::HashSet::new();
 
     for event in &trace.events {
-        if let TraceEventKind::EcrecoverCalled { checked_zero } = &event.kind {
-            if !checked_zero && seen.insert(event.function_id) {
-                let hash = hash_finding("cryptographic", event.function_id, "ecrecover");
-                findings.push(FuzzFinding {
-                    kind: FuzzFindingKind::CryptographicIssue,
-                    severity: FuzzSeverity::High,
-                    message: format!(
-                        "ecrecover in function {} without zero-address check — signature may be forged",
-                        event.function_id
-                    ),
-                    tx_sequence: tx_sequence.to_vec(),
-                    trace_hash: hash,
-                });
+        match &event.kind {
+            TraceEventKind::EcrecoverCalled => {
+                ecrecover_funcs.insert(event.function_id);
             }
+            TraceEventKind::EcrecoverZeroChecked => {
+                zero_checked_funcs.insert(event.function_id);
+            }
+            _ => {}
+        }
+    }
+
+    for function_id in ecrecover_funcs {
+        if zero_checked_funcs.contains(&function_id) {
+            continue;
+        }
+        let sender_count = tx_sequence
+            .iter()
+            .filter(|tx| tx.function_id == function_id)
+            .map(|tx| tx.sender)
+            .collect::<std::collections::HashSet<_>>()
+            .len();
+        if sender_count < 2 {
+            continue;
+        }
+        if seen.insert((function_id, "cryptographic")) {
+            let hash = hash_finding("cryptographic", function_id, "ecrecover-no-zero-check");
+            findings.push(FuzzFinding {
+                kind: FuzzFindingKind::CryptographicIssue,
+                severity: FuzzSeverity::Medium,
+                message: format!(
+                    "ecrecover in function {} without observed zero-address check across {} distinct senders",
+                    function_id, sender_count
+                ),
+                tx_sequence: tx_sequence.to_vec(),
+                trace_hash: hash,
+            });
+        }
+        if seen.insert((function_id, "signature-malleability")) {
+        let hash = hash_finding("signature-malleability", function_id, "ecrecover");
+        findings.push(FuzzFinding {
+            kind: FuzzFindingKind::SignatureMalleability,
+            severity: FuzzSeverity::Medium,
+            message: format!(
+                    "Signature malleability risk: function {} uses ecrecover without observed zero-address guard across {} distinct senders",
+                    function_id,
+                    sender_count
+            ),
+            tx_sequence: tx_sequence.to_vec(),
+            trace_hash: hash,
+        });
         }
     }
 
@@ -699,6 +1014,29 @@ mod tests {
         }]
     }
 
+    fn storage_write(
+        var_name: &str,
+        slot_key: &str,
+        authority_sensitive: bool,
+        caller_keyed: bool,
+    ) -> TraceEventKind {
+        TraceEventKind::StorageWrite {
+            var_name: var_name.to_string(),
+            slot_key: slot_key.to_string(),
+            authority_sensitive,
+            caller_keyed,
+        }
+    }
+
+    fn storage_read(var_name: &str) -> TraceEventKind {
+        TraceEventKind::StorageRead {
+            var_name: var_name.to_string(),
+            slot_key: var_name.to_string(),
+            order_sensitive: is_order_sensitive_storage_name(var_name),
+            caller_keyed: false,
+        }
+    }
+
     #[test]
     fn detect_reentrancy() {
         let trace = ExecutionTrace {
@@ -708,16 +1046,22 @@ mod tests {
                     kind: TraceEventKind::ExternalCall {
                         callee: "target.call".to_string(),
                         has_value: true,
+                        reentrant_capable: true,
                     },
                 },
                 TraceEvent {
                     function_id: 0,
-                    kind: TraceEventKind::StorageWrite {
-                        var_name: "balance".to_string(),
+                    kind: TraceEventKind::ReentrantCallback {
+                        into_function_id: 0,
                     },
+                },
+                TraceEvent {
+                    function_id: 0,
+                    kind: storage_write("balance", "balance", false, false),
                 },
             ],
             coverage: Default::default(),
+            edge_coverage: Default::default(),
             reverted: false,
             final_state: Default::default(),
         };
@@ -734,6 +1078,7 @@ mod tests {
                 kind: TraceEventKind::BranchOnTimestamp,
             }],
             coverage: Default::default(),
+            edge_coverage: Default::default(),
             reverted: false,
             final_state: Default::default(),
         };
@@ -755,6 +1100,7 @@ mod tests {
                 },
             }],
             coverage: Default::default(),
+            edge_coverage: Default::default(),
             reverted: false,
             final_state: Default::default(),
         };
@@ -769,19 +1115,79 @@ mod tests {
             events: vec![
                 TraceEvent {
                     function_id: 0,
-                    kind: TraceEventKind::StorageWrite {
-                        var_name: "balance".to_string(),
-                    },
+                    kind: storage_write("owner", "owner", true, false),
                 },
                 // No SenderChecked event => access control issue
             ],
             coverage: Default::default(),
+            edge_coverage: Default::default(),
             reverted: false,
             final_state: Default::default(),
         };
         let findings = check_access_control(&trace, &make_tx());
         assert_eq!(findings.len(), 1);
         assert_eq!(findings[0].kind, FuzzFindingKind::AccessControl);
+    }
+
+    #[test]
+    fn detect_arbitrary_write_with_multi_sender_evidence() {
+        let trace = ExecutionTrace {
+            events: vec![TraceEvent {
+                function_id: 7,
+                kind: storage_write("owner", "owner", true, false),
+            }],
+            coverage: Default::default(),
+            edge_coverage: Default::default(),
+            reverted: false,
+            final_state: Default::default(),
+        };
+        let txs = vec![
+            Transaction {
+                function_id: 7,
+                args: vec![FuzzValue::Uint(1)],
+                sender: 0,
+                value: 0,
+            },
+            Transaction {
+                function_id: 7,
+                args: vec![FuzzValue::Uint(2)],
+                sender: 3,
+                value: 0,
+            },
+        ];
+        let findings = check_arbitrary_write(&trace, &txs);
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].kind, FuzzFindingKind::ArbitraryWrite);
+    }
+
+    #[test]
+    fn caller_keyed_balance_write_is_not_access_control_or_arbitrary_write() {
+        let trace = ExecutionTrace {
+            events: vec![TraceEvent {
+                function_id: 9,
+                kind: storage_write("balances", "balances[msg.sender]", false, true),
+            }],
+            coverage: Default::default(),
+            edge_coverage: Default::default(),
+            reverted: false,
+            final_state: Default::default(),
+        };
+        let txs = vec![
+            Transaction {
+                function_id: 9,
+                args: vec![FuzzValue::Uint(1)],
+                sender: 0,
+                value: 0,
+            },
+            Transaction {
+                function_id: 9,
+                args: vec![FuzzValue::Uint(2)],
+                sender: 2,
+                value: 0,
+            },
+        ];
+        assert!(check_access_control(&trace, &txs).is_empty());
+        assert!(check_arbitrary_write(&trace, &txs).is_empty());
     }
 
     #[test]
@@ -792,6 +1198,7 @@ mod tests {
                 kind: TraceEventKind::TxOriginUsed,
             }],
             coverage: Default::default(),
+            edge_coverage: Default::default(),
             reverted: false,
             final_state: Default::default(),
         };
@@ -808,6 +1215,7 @@ mod tests {
                 kind: TraceEventKind::SelfDestructCall,
             }],
             coverage: Default::default(),
+            edge_coverage: Default::default(),
             reverted: false,
             final_state: Default::default(),
         };
@@ -826,6 +1234,7 @@ mod tests {
                 },
             }],
             coverage: Default::default(),
+            edge_coverage: Default::default(),
             reverted: false,
             final_state: Default::default(),
         };
@@ -845,12 +1254,198 @@ mod tests {
                 },
             }],
             coverage: Default::default(),
+            edge_coverage: Default::default(),
             reverted: false,
             final_state: Default::default(),
         };
         let findings = check_exception_disorder(&trace, &make_tx());
         assert_eq!(findings.len(), 1);
         assert_eq!(findings[0].kind, FuzzFindingKind::ExceptionDisorder);
+    }
+
+    #[test]
+    fn detect_unsafe_send_in_require() {
+        let trace = ExecutionTrace {
+            events: vec![TraceEvent {
+                function_id: 0,
+                kind: TraceEventKind::UnsafeSendInRequire {
+                    callee: "send".to_string(),
+                },
+            }],
+            coverage: Default::default(),
+            edge_coverage: Default::default(),
+            reverted: false,
+            final_state: Default::default(),
+        };
+        let findings = check_unsafe_send_in_require(&trace, &make_tx());
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].kind, FuzzFindingKind::UnsafeSendInRequire);
+    }
+
+    #[test]
+    fn detect_dos_with_failed_call() {
+        let trace = ExecutionTrace {
+            events: vec![
+                TraceEvent {
+                    function_id: 1,
+                    kind: TraceEventKind::LoopEncountered,
+                },
+                TraceEvent {
+                    function_id: 1,
+                    kind: TraceEventKind::ExternalCall {
+                        callee: "target.call".to_string(),
+                        has_value: false,
+                        reentrant_capable: false,
+                    },
+                },
+            ],
+            coverage: Default::default(),
+            edge_coverage: Default::default(),
+            reverted: false,
+            final_state: Default::default(),
+        };
+        let findings = check_dos_with_failed_call(&trace, &make_tx());
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].kind, FuzzFindingKind::DosWithFailedCall);
+    }
+
+    #[test]
+    fn detect_transaction_order_dependency() {
+        let trace = ExecutionTrace {
+            events: vec![
+                TraceEvent {
+                    function_id: 2,
+                    kind: storage_read("price"),
+                },
+                TraceEvent {
+                    function_id: 2,
+                    kind: TraceEventKind::EtherSent {
+                        callee: "msg.sender".to_string(),
+                    },
+                },
+            ],
+            coverage: Default::default(),
+            edge_coverage: Default::default(),
+            reverted: false,
+            final_state: Default::default(),
+        };
+        let txs = vec![
+            Transaction {
+                function_id: 2,
+                args: vec![FuzzValue::Uint(10)],
+                sender: 0,
+                value: 0,
+            },
+            Transaction {
+                function_id: 2,
+                args: vec![FuzzValue::Uint(11)],
+                sender: 1,
+                value: 0,
+            },
+        ];
+        let findings = check_transaction_order_dependency(&trace, &txs);
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].kind, FuzzFindingKind::TransactionOrderDependency);
+    }
+
+    #[test]
+    fn tod_requires_multi_sender_evidence() {
+        let trace = ExecutionTrace {
+            events: vec![
+                TraceEvent {
+                    function_id: 2,
+                    kind: storage_read("price"),
+                },
+                TraceEvent {
+                    function_id: 2,
+                    kind: TraceEventKind::EtherSent {
+                        callee: "msg.sender".to_string(),
+                    },
+                },
+            ],
+            coverage: Default::default(),
+            edge_coverage: Default::default(),
+            reverted: false,
+            final_state: Default::default(),
+        };
+        let txs = vec![Transaction {
+            function_id: 2,
+            args: vec![FuzzValue::Uint(10)],
+            sender: 0,
+            value: 0,
+        }];
+        let findings = check_transaction_order_dependency(&trace, &txs);
+        assert!(findings.is_empty());
+    }
+
+    #[test]
+    fn detect_signature_malleability() {
+        let trace = ExecutionTrace {
+            events: vec![TraceEvent {
+                function_id: 3,
+                kind: TraceEventKind::EcrecoverCalled,
+            }],
+            coverage: Default::default(),
+            edge_coverage: Default::default(),
+            reverted: false,
+            final_state: Default::default(),
+        };
+        let txs = vec![
+            Transaction {
+                function_id: 3,
+                args: vec![FuzzValue::Uint(1)],
+                sender: 0,
+                value: 0,
+            },
+            Transaction {
+                function_id: 3,
+                args: vec![FuzzValue::Uint(2)],
+                sender: 1,
+                value: 0,
+            },
+        ];
+        let findings = check_cryptographic(&trace, &txs);
+        assert!(
+            findings
+                .iter()
+                .any(|f| f.kind == FuzzFindingKind::SignatureMalleability)
+        );
+    }
+
+    #[test]
+    fn cryptographic_zero_check_suppresses_malleability_finding() {
+        let trace = ExecutionTrace {
+            events: vec![
+                TraceEvent {
+                    function_id: 3,
+                    kind: TraceEventKind::EcrecoverCalled,
+                },
+                TraceEvent {
+                    function_id: 3,
+                    kind: TraceEventKind::EcrecoverZeroChecked,
+                },
+            ],
+            coverage: Default::default(),
+            edge_coverage: Default::default(),
+            reverted: false,
+            final_state: Default::default(),
+        };
+        let txs = vec![
+            Transaction {
+                function_id: 3,
+                args: vec![FuzzValue::Uint(1)],
+                sender: 0,
+                value: 0,
+            },
+            Transaction {
+                function_id: 3,
+                args: vec![FuzzValue::Uint(2)],
+                sender: 1,
+                value: 0,
+            },
+        ];
+        let findings = check_cryptographic(&trace, &txs);
+        assert!(findings.is_empty());
     }
 
     #[test]

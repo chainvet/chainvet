@@ -3,30 +3,89 @@
 
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
+use std::env;
 use std::hash::{Hash, Hasher};
+use std::time::Instant;
 use z3::{
-    SatResult, Solver,
-    ast::{Bool, Int},
+    SatResult, Solver, set_global_param,
+    ast::{BV, Bool, Int},
 };
 
+use crate::analysis;
 use crate::cfg;
 use crate::frontend::FrontendOutput;
+use crate::fuzzing::types::DependencyMap;
 use crate::ir::{ControlKind, IrInstr, IrPlace, IrValue, IrVar, PlaceClass};
-use crate::norm::Span;
+use crate::norm::{FunctionKind, Mutability, NormalizedAst, Span};
 use crate::report::OutputFormat;
 use crate::util::error::{Error, Result};
 
 #[derive(Clone)]
 struct State {
+    function_id: u32,
     block_id: u32,
+    instr_offset: usize,
     env: HashMap<String, Int>,
     storage: HashMap<String, Int>,
+    origins: HashMap<String, HashSet<ValueOrigin>>,
     path_constraints: Vec<Bool>,
     fresh_id: u64,
     external_call_pc: Option<usize>,
+    pending_low_level_calls: HashMap<String, PendingCall>,
     trace: Vec<usize>,
     expr_env: HashMap<String, String>,
     branch_triggers: Vec<String>,
+    sender_checked: bool,
+    inside_loop: bool,
+    saw_order_sensitive_storage_read: bool,
+    block_visits: HashMap<u32, u16>,
+    callback_depth: u8,
+    callback_observed: bool,
+    callback_frame: Option<CallbackFrame>,
+}
+
+#[derive(Clone)]
+struct CallbackFrame {
+    function_id: u32,
+    block_id: u32,
+    instr_offset: usize,
+    env: HashMap<String, Int>,
+    storage: HashMap<String, Int>,
+    origins: HashMap<String, HashSet<ValueOrigin>>,
+    pending_low_level_calls: HashMap<String, PendingCall>,
+    expr_env: HashMap<String, String>,
+    sender_checked: bool,
+    inside_loop: bool,
+    saw_order_sensitive_storage_read: bool,
+    block_visits: HashMap<u32, u16>,
+    callback_depth: u8,
+    external_call_pc: Option<usize>,
+}
+
+#[derive(Clone, Copy)]
+struct EngineCallbackData<'a> {
+    ast: &'a NormalizedAst,
+    compiler: &'a crate::frontend::CompilerInfo,
+    deps: &'a DependencyMap,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+enum ValueOrigin {
+    Timestamp,
+    BlockNumber,
+    TxOrigin,
+    DelegatecallRef,
+    LowLevelCallRef,
+    ValueCallRef,
+    SendRef,
+    TransferRef,
+}
+
+#[derive(Clone)]
+struct PendingCall {
+    call_pc: usize,
+    callee: String,
+    span: Option<Span>,
 }
 
 #[derive(Clone)]
@@ -74,9 +133,11 @@ struct SymbolicReport {
     dead_ends: usize,
     max_worklist: usize,
     vulnerability_count: usize,
+    meta_finding_count: usize,
     truncated_functions: usize,
     by_function: Vec<FunctionSymbolicReport>,
     vulnerabilities: Vec<VulnerabilityFinding>,
+    meta_findings: Vec<crate::core::artifacts::Finding>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -94,6 +155,72 @@ struct EngineStats {
     truncated: bool,
 }
 
+#[derive(Default)]
+struct SolverCache {
+    sat_by_constraints: HashMap<String, bool>,
+    underflow_by_constraints: HashMap<String, Option<String>>,
+}
+
+impl SolverCache {
+    fn constraints_key(path_constraints: &[Bool]) -> String {
+        let mut clauses = path_constraints
+            .iter()
+            .map(|constraint| constraint.to_string())
+            .collect::<Vec<_>>();
+        clauses.sort_unstable();
+        clauses.join(" && ")
+    }
+
+    fn underflow_key(path_constraints: &[Bool], lhs: &Int, rhs: &Int) -> String {
+        format!(
+            "{}|lhs={}|rhs={}",
+            Self::constraints_key(path_constraints),
+            lhs,
+            rhs
+        )
+    }
+
+    fn is_feasible(&mut self, path_constraints: &[Bool]) -> bool {
+        let key = Self::constraints_key(path_constraints);
+        if let Some(cached) = self.sat_by_constraints.get(&key) {
+            return *cached;
+        }
+        let solver = Solver::new();
+        for constraint in path_constraints {
+            solver.assert(constraint);
+        }
+        let feasible = matches!(solver.check(), SatResult::Sat);
+        self.sat_by_constraints.insert(key, feasible);
+        feasible
+    }
+
+    fn check_underflow(
+        &mut self,
+        path_constraints: &[Bool],
+        lhs: &Int,
+        rhs: &Int,
+    ) -> Option<String> {
+        let key = Self::underflow_key(path_constraints, lhs, rhs);
+        if let Some(cached) = self.underflow_by_constraints.get(&key) {
+            return cached.clone();
+        }
+        let solver = Solver::new();
+        for constraint in path_constraints {
+            solver.assert(constraint);
+        }
+        let lhs_bv = int_to_evm_bv(lhs);
+        let rhs_bv = int_to_evm_bv(rhs);
+        solver.assert(rhs_bv.bvugt(&lhs_bv));
+        let model = if matches!(solver.check(), SatResult::Sat) {
+            solver.get_model().map(|m| m.to_string())
+        } else {
+            None
+        };
+        self.underflow_by_constraints.insert(key, model.clone());
+        model
+    }
+}
+
 #[derive(Debug, Clone)]
 struct LocalVulnerability {
     kind: VulnerabilityKind,
@@ -108,17 +235,91 @@ struct LocalVulnerability {
     model: Option<String>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 enum VulnerabilityKind {
     Underflow,
     Reentrancy,
+    TxOrigin,
+    Delegatecall,
+    UncheckedCall,
+    Selfdestruct,
+    ArbitraryWrite,
+    PublicMintBurn,
+    TimestampDependency,
+    WeakPrng,
+    HardcodedGasTransfer,
+    LockedEther,
+    MemoryManipulation,
+    DosWithFailedCall,
+    TransactionOrderDependency,
+    SignatureMalleability,
+    UnsafeSendInRequire,
+    UnprotectedEtherWithdrawal,
+    Shadowing,
 }
 
 impl VulnerabilityKind {
     fn as_str(&self) -> &'static str {
         match self {
-            Self::Underflow => "underflow",
+            Self::Underflow => "integer-underflow",
             Self::Reentrancy => "reentrancy",
+            Self::TxOrigin => "tx-origin",
+            Self::Delegatecall => "unsafe-delegatecall",
+            Self::UncheckedCall => "unchecked-call",
+            Self::Selfdestruct => "unprotected-selfdestruct",
+            Self::ArbitraryWrite => "arbitrary-write",
+            Self::PublicMintBurn => "public-mint-burn",
+            Self::TimestampDependency => "timestamp-dependency",
+            Self::WeakPrng => "weak-prng",
+            Self::HardcodedGasTransfer => "hardcoded-gas-transfer",
+            Self::LockedEther => "locked-ether",
+            Self::MemoryManipulation => "memory-manipulation",
+            Self::DosWithFailedCall => "dos-with-failed-call",
+            Self::TransactionOrderDependency => "transaction-order-dependency",
+            Self::SignatureMalleability => "signature-malleability",
+            Self::UnsafeSendInRequire => "unsafe-send-in-require",
+            Self::UnprotectedEtherWithdrawal => "unprotected-ether-withdrawal",
+            Self::Shadowing => "shadowing",
+        }
+    }
+
+    fn confidence(self) -> VulnerabilityConfidence {
+        match self {
+            Self::Reentrancy
+            | Self::TxOrigin
+            | Self::Delegatecall
+            | Self::UncheckedCall
+            | Self::Selfdestruct => VulnerabilityConfidence::High,
+            Self::Underflow
+            | Self::ArbitraryWrite
+            | Self::PublicMintBurn
+            | Self::TimestampDependency
+            | Self::WeakPrng
+            | Self::HardcodedGasTransfer
+            | Self::MemoryManipulation
+            | Self::DosWithFailedCall
+            | Self::TransactionOrderDependency
+            | Self::UnsafeSendInRequire
+            | Self::UnprotectedEtherWithdrawal
+            | Self::Shadowing => VulnerabilityConfidence::Medium,
+            Self::SignatureMalleability | Self::LockedEther => VulnerabilityConfidence::Low,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+enum VulnerabilityConfidence {
+    Low,
+    Medium,
+    High,
+}
+
+impl VulnerabilityConfidence {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Low => "low",
+            Self::Medium => "medium",
+            Self::High => "high",
         }
     }
 }
@@ -126,6 +327,7 @@ impl VulnerabilityKind {
 #[derive(Debug, Clone, Serialize)]
 struct VulnerabilityFinding {
     kind: String,
+    confidence: String,
     function_id: u32,
     function_name: Option<String>,
     pc: usize,
@@ -150,15 +352,26 @@ struct FindingLocation {
 impl State {
     fn new() -> Self {
         Self {
+            function_id: 0,
             block_id: 0,
+            instr_offset: 0,
             env: HashMap::new(),
             storage: HashMap::new(),
+            origins: HashMap::new(),
             path_constraints: Vec::new(),
             fresh_id: 0,
             external_call_pc: None,
+            pending_low_level_calls: HashMap::new(),
             trace: Vec::new(),
             expr_env: HashMap::new(),
             branch_triggers: Vec::new(),
+            sender_checked: false,
+            inside_loop: false,
+            saw_order_sensitive_storage_read: false,
+            block_visits: HashMap::new(),
+            callback_depth: 0,
+            callback_observed: false,
+            callback_frame: None,
         }
     }
 
@@ -207,6 +420,18 @@ impl State {
 
     fn read_place(&mut self, place: &IrPlace) -> Int {
         match place {
+            IrPlace::Var {
+                class: PlaceClass::Storage,
+                ..
+            } => {
+                let key = place_key(place);
+                if let Some(value) = self.storage.get(&key) {
+                    return value.clone();
+                }
+                let sym = self.fresh_symbol("storage");
+                self.storage.insert(key, sym.clone());
+                sym
+            }
             IrPlace::Var { var, .. } => self.lookup_var(var),
             _ => {
                 let key = place_key(place);
@@ -222,6 +447,12 @@ impl State {
 
     fn write_place(&mut self, place: &IrPlace, value: Int) {
         match place {
+            IrPlace::Var {
+                class: PlaceClass::Storage,
+                ..
+            } => {
+                self.storage.insert(place_key(place), value);
+            }
             IrPlace::Var { var, .. } => self.set_var(var, value),
             _ => {
                 self.storage.insert(place_key(place), value);
@@ -232,10 +463,123 @@ impl State {
 
 const MAX_ENGINE_STEPS: usize = 200_000;
 const MAX_TRACE_LEN: usize = 128;
+const MAX_BLOCK_VISITS_PER_PATH: u16 = 4;
+const MAX_STATE_SHAPE_REVISITS: u8 = 2;
+const MAX_PATH_CONSTRAINTS: usize = 128;
+const MAX_WORKLIST_SIZE: usize = 1_024;
+const MAX_FUNCTION_TIME_MS: u64 = 7_500;
+
+const SYMBOLIC_MAX_STEPS_ENV: &str = "STATIC_SYMBOLIC_MAX_STEPS";
+const SYMBOLIC_MAX_TRACE_LEN_ENV: &str = "STATIC_SYMBOLIC_MAX_TRACE_LEN";
+const SYMBOLIC_MAX_BLOCK_VISITS_ENV: &str = "STATIC_SYMBOLIC_MAX_BLOCK_VISITS";
+const SYMBOLIC_MAX_SHAPE_REVISITS_ENV: &str = "STATIC_SYMBOLIC_MAX_STATE_SHAPE_REVISITS";
+const SYMBOLIC_MAX_PATH_CONSTRAINTS_ENV: &str = "STATIC_SYMBOLIC_MAX_PATH_CONSTRAINTS";
+const SYMBOLIC_MAX_WORKLIST_ENV: &str = "STATIC_SYMBOLIC_MAX_WORKLIST";
+const SYMBOLIC_MAX_FUNCTION_MS_ENV: &str = "STATIC_SYMBOLIC_MAX_FUNCTION_MS";
+const SYMBOLIC_SOLVER_TIMEOUT_MS_ENV: &str = "STATIC_SYMBOLIC_SOLVER_TIMEOUT_MS";
+const DEFAULT_SYMBOLIC_SOLVER_TIMEOUT_MS: u64 = 500;
+const EVM_WORD_BITS: u32 = 256;
+
+#[derive(Clone, Copy)]
+struct EngineLimits {
+    max_engine_steps: usize,
+    max_trace_len: usize,
+    max_block_visits_per_path: u16,
+    max_state_shape_revisits: u8,
+    max_path_constraints: usize,
+    max_worklist_size: usize,
+    max_function_ms: u64,
+}
+
+impl EngineLimits {
+    fn from_env() -> Self {
+        Self {
+            max_engine_steps: env_usize(SYMBOLIC_MAX_STEPS_ENV, MAX_ENGINE_STEPS),
+            max_trace_len: env_usize(SYMBOLIC_MAX_TRACE_LEN_ENV, MAX_TRACE_LEN),
+            max_block_visits_per_path: env_u16(
+                SYMBOLIC_MAX_BLOCK_VISITS_ENV,
+                MAX_BLOCK_VISITS_PER_PATH,
+            ),
+            max_state_shape_revisits: env_u8(
+                SYMBOLIC_MAX_SHAPE_REVISITS_ENV,
+                MAX_STATE_SHAPE_REVISITS,
+            ),
+            max_path_constraints: env_usize(
+                SYMBOLIC_MAX_PATH_CONSTRAINTS_ENV,
+                MAX_PATH_CONSTRAINTS,
+            ),
+            max_worklist_size: env_usize(SYMBOLIC_MAX_WORKLIST_ENV, MAX_WORKLIST_SIZE),
+            max_function_ms: env_u64(SYMBOLIC_MAX_FUNCTION_MS_ENV, MAX_FUNCTION_TIME_MS),
+        }
+    }
+}
+
+fn env_usize(name: &str, default: usize) -> usize {
+    env::var(name)
+        .ok()
+        .and_then(|raw| raw.trim().parse::<usize>().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(default)
+}
+
+fn env_u64(name: &str, default: u64) -> u64 {
+    env::var(name)
+        .ok()
+        .and_then(|raw| raw.trim().parse::<u64>().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(default)
+}
+
+fn env_u16(name: &str, default: u16) -> u16 {
+    env::var(name)
+        .ok()
+        .and_then(|raw| raw.trim().parse::<u16>().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(default)
+}
+
+fn env_u8(name: &str, default: u8) -> u8 {
+    env::var(name)
+        .ok()
+        .and_then(|raw| raw.trim().parse::<u8>().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(default)
+}
 
 pub fn run(output: &FrontendOutput, format: OutputFormat) -> Result<()> {
+    configure_solver_limits();
     let ir_module = crate::ir::lower_module(&output.ast);
+    let dependency_map = crate::fuzzing::types::build_dependency_map(&ir_module, &output.ast);
     let cfgs = cfg::build_from_ir(&ir_module);
+    let call_graph = analysis::build_call_graph(&output.ast);
+    let taint = analysis::taint::analyze(&output.ast, &cfgs);
+    let static_findings = analysis::detectors::run_detectors(&output.ast, &call_graph, &taint);
+    let mut tod_allowed: HashSet<u32> = HashSet::new();
+    let mut sig_mall_allowed: HashSet<u32> = HashSet::new();
+    for finding in &static_findings {
+        let Some(function_id) = finding.function else {
+            continue;
+        };
+        match finding.kind {
+            analysis::detectors::FindingKind::TransactionOrderDependency => {
+                tod_allowed.insert(function_id);
+            }
+            analysis::detectors::FindingKind::SignatureMalleability => {
+                sig_mall_allowed.insert(function_id);
+            }
+            _ => {}
+        }
+    }
+    let meta_findings = crate::meta::analyze_for_engine(
+        output,
+        crate::meta::ConsumerEngine::Symbolic,
+        &static_findings,
+    );
+    let checked_arithmetic = has_checked_arithmetic(&output.ast);
+    let shadowed_params = collect_shadowed_params(&output.ast);
+    let contracts_with_payable = collect_payable_contracts(&output.ast);
+    let contracts_with_ether_send = collect_contracts_with_ether_send(&output.ast, &ir_module);
+    let mut locked_ether_emitted_contracts: HashSet<u32> = HashSet::new();
     let mut by_function = Vec::new();
 
     let mut instructions = 0usize;
@@ -248,6 +592,7 @@ pub fn run(output: &FrontendOutput, format: OutputFormat) -> Result<()> {
     let mut dead_ends = 0usize;
     let mut max_worklist = 0usize;
     let mut vulnerabilities: Vec<VulnerabilityFinding> = Vec::new();
+    let mut seen_output_vulns: HashSet<(u32, String, usize)> = HashSet::new();
     let mut truncated_functions = 0usize;
 
     for function in &ir_module.functions {
@@ -255,7 +600,18 @@ pub fn run(output: &FrontendOutput, format: OutputFormat) -> Result<()> {
             continue;
         };
 
-        let stats = engine(cfg_fn);
+        let stats = engine(
+            cfg_fn,
+            &cfgs,
+            Some(EngineCallbackData {
+                ast: &output.ast,
+                compiler: &output.compiler,
+                deps: &dependency_map,
+            }),
+            checked_arithmetic,
+            tod_allowed.contains(&function.id),
+            sig_mall_allowed.contains(&function.id),
+        );
         instructions += stats.instructions;
         explored_states += stats.explored_states;
         reachable_returns += stats.reachable_returns;
@@ -268,10 +624,16 @@ pub fn run(output: &FrontendOutput, format: OutputFormat) -> Result<()> {
         if stats.truncated {
             truncated_functions += 1;
         }
-        let function_vulnerability_count = stats.vulnerabilities.len();
+        let mut function_vulnerability_count = stats.vulnerabilities.len();
         for vuln in stats.vulnerabilities {
+            let kind = vuln.kind.as_str().to_string();
+            let dedup_key = (function.id, kind.clone(), vuln.pc);
+            if !seen_output_vulns.insert(dedup_key) {
+                continue;
+            }
             vulnerabilities.push(VulnerabilityFinding {
-                kind: vuln.kind.as_str().to_string(),
+                kind,
+                confidence: vuln.kind.confidence().as_str().to_string(),
                 function_id: function.id,
                 function_name: function.name.clone(),
                 pc: vuln.pc,
@@ -287,6 +649,108 @@ pub fn run(output: &FrontendOutput, format: OutputFormat) -> Result<()> {
                 message: vuln.message,
                 model: vuln.model,
             });
+        }
+
+        if let Some(params) = shadowed_params.get(&function.id) {
+            for param in params {
+                vulnerabilities.push(VulnerabilityFinding {
+                    kind: VulnerabilityKind::Shadowing.as_str().to_string(),
+                    confidence: VulnerabilityKind::Shadowing
+                        .confidence()
+                        .as_str()
+                        .to_string(),
+                    function_id: function.id,
+                    function_name: function.name.clone(),
+                    pc: 0,
+                    instruction: format!("parameter {param}"),
+                    trace: Vec::new(),
+                    trigger: None,
+                    branch_triggers: Vec::new(),
+                    location: build_location(&function.span, output),
+                    path_constraints: Vec::new(),
+                    message: format!(
+                        "parameter '{}' shadows a state variable with the same name",
+                        param
+                    ),
+                    model: None,
+                });
+                function_vulnerability_count = function_vulnerability_count.saturating_add(1);
+            }
+        }
+
+        if let Some(ast_fn) = output.ast.functions.get(function.id as usize) {
+            if is_public_mint_burn_function(ast_fn, &output.compiler) {
+                let kind = VulnerabilityKind::PublicMintBurn.as_str().to_string();
+                let dedup_key = (function.id, kind.clone(), 0usize);
+                if seen_output_vulns.insert(dedup_key) {
+                    vulnerabilities.push(VulnerabilityFinding {
+                        kind,
+                        confidence: VulnerabilityKind::PublicMintBurn
+                            .confidence()
+                            .as_str()
+                            .to_string(),
+                        function_id: function.id,
+                        function_name: function.name.clone(),
+                        pc: 0,
+                        instruction: function
+                            .name
+                            .clone()
+                            .unwrap_or_else(|| "<anonymous>".to_string()),
+                        trace: Vec::new(),
+                        trigger: None,
+                        branch_triggers: Vec::new(),
+                        location: build_location(&function.span, output),
+                        path_constraints: Vec::new(),
+                        message: format!(
+                            "public {} function may allow unauthorized supply manipulation",
+                            function
+                                .name
+                                .as_deref()
+                                .unwrap_or("<anonymous>")
+                        ),
+                        model: None,
+                    });
+                    function_vulnerability_count = function_vulnerability_count.saturating_add(1);
+                }
+            }
+
+            if let Some(contract_id) = ast_fn.contract {
+                let should_emit_locked_ether = ast_fn.mutability == Mutability::Payable
+                    && contracts_with_payable.contains(&contract_id)
+                    && !contracts_with_ether_send.contains(&contract_id)
+                    && locked_ether_emitted_contracts.insert(contract_id);
+                if should_emit_locked_ether {
+                    let kind = VulnerabilityKind::LockedEther.as_str().to_string();
+                    let dedup_key = (function.id, kind.clone(), 0usize);
+                    if seen_output_vulns.insert(dedup_key) {
+                        vulnerabilities.push(VulnerabilityFinding {
+                            kind,
+                            confidence: VulnerabilityKind::LockedEther
+                                .confidence()
+                                .as_str()
+                                .to_string(),
+                            function_id: function.id,
+                            function_name: function.name.clone(),
+                            pc: 0,
+                            instruction: function
+                                .name
+                                .clone()
+                                .unwrap_or_else(|| "<anonymous>".to_string()),
+                            trace: Vec::new(),
+                            trigger: None,
+                            branch_triggers: Vec::new(),
+                            location: build_location(&function.span, output),
+                            path_constraints: Vec::new(),
+                            message:
+                                "contract accepts Ether but no Ether-sending path was detected"
+                                    .to_string(),
+                            model: None,
+                        });
+                        function_vulnerability_count =
+                            function_vulnerability_count.saturating_add(1);
+                    }
+                }
+            }
         }
 
         by_function.push(FunctionSymbolicReport {
@@ -319,9 +783,11 @@ pub fn run(output: &FrontendOutput, format: OutputFormat) -> Result<()> {
         dead_ends,
         max_worklist,
         vulnerability_count: vulnerabilities.len(),
+        meta_finding_count: meta_findings.len(),
         truncated_functions,
         by_function,
         vulnerabilities,
+        meta_findings,
     };
 
     match format {
@@ -342,6 +808,7 @@ pub fn run(output: &FrontendOutput, format: OutputFormat) -> Result<()> {
                 report.vulnerability_count,
                 report.truncated_functions
             );
+            println!("meta findings: {}", report.meta_finding_count);
             for entry in &report.by_function {
                 println!(
                     "  fn {} ({}) -> instructions={}, states={}, terminals={}, returns={}, reverts={}, fallthroughs={}, pruned={}, dead_ends={}, max_worklist={}, vulns={}, truncated={}",
@@ -366,9 +833,10 @@ pub fn run(output: &FrontendOutput, format: OutputFormat) -> Result<()> {
                 println!("vulnerabilities found (detailed):");
                 for (idx, vuln) in report.vulnerabilities.iter().enumerate() {
                     println!(
-                        "  {}. kind={}, fn {} ({}), pc={}",
+                        "  {}. kind={}, confidence={}, fn {} ({}), pc={}",
                         idx + 1,
                         vuln.kind,
+                        vuln.confidence,
                         vuln.function_id,
                         vuln.function_name.as_deref().unwrap_or("<anonymous>"),
                         vuln.pc
@@ -410,6 +878,29 @@ pub fn run(output: &FrontendOutput, format: OutputFormat) -> Result<()> {
                     }
                 }
             }
+            if !report.meta_findings.is_empty() {
+                println!("meta findings (separate):");
+                for (idx, finding) in report.meta_findings.iter().enumerate() {
+                    println!(
+                        "  {}. kind={} severity={} evidence={}",
+                        idx + 1,
+                        finding.finding_type,
+                        finding.severity,
+                        finding.evidence_kind
+                    );
+                    println!("     message: {}", finding.message);
+                    if let Some(location) = &finding.location {
+                        if let Some(file) = &location.file {
+                            println!(
+                                "     location: {}:{}-{}",
+                                file,
+                                location.start.unwrap_or(0),
+                                location.end.unwrap_or(0)
+                            );
+                        }
+                    }
+                }
+            }
         }
         OutputFormat::Json => {
             let payload = serde_json::to_string_pretty(&report).map_err(|err| {
@@ -422,7 +913,215 @@ pub fn run(output: &FrontendOutput, format: OutputFormat) -> Result<()> {
     Ok(())
 }
 
-fn engine(cfg_fn: &cfg::CfgFunction) -> EngineStats {
+fn configure_solver_limits() {
+    let timeout_ms = env_u64(
+        SYMBOLIC_SOLVER_TIMEOUT_MS_ENV,
+        DEFAULT_SYMBOLIC_SOLVER_TIMEOUT_MS,
+    );
+    set_global_param("timeout", &timeout_ms.to_string());
+}
+
+fn sink_score_key(function_id: u32, block_id: u32) -> u32 {
+    (function_id << 16) ^ block_id
+}
+
+fn build_sink_scores(cfgs: &[cfg::CfgFunction]) -> HashMap<u32, i32> {
+    let mut scores = HashMap::new();
+    for cfg_fn in cfgs {
+        for block in &cfg_fn.blocks {
+            let mut score = 0i32;
+            for instr in &block.instrs {
+                match instr {
+                    IrInstr::Store { dest, .. } if is_storage_place(dest) => {
+                        score += 4;
+                    }
+                    IrInstr::Call { callee, .. } => {
+                        let callee_name = value_name_raw(callee).to_ascii_lowercase();
+                        if is_low_level_call_name(&callee_name) {
+                            score += 5;
+                        }
+                        if callee_name.contains("delegatecall") {
+                            score += 3;
+                        }
+                        if is_selfdestruct_name(&callee_name) {
+                            score += 4;
+                        }
+                        if callee_name.contains("ecrecover") {
+                            score += 2;
+                        }
+                    }
+                    IrInstr::Control {
+                        kind: ControlKind::If { .. } | ControlKind::Loop { .. },
+                        ..
+                    } => {
+                        score += 1;
+                    }
+                    _ => {}
+                }
+            }
+            if score > 0 {
+                scores.insert(sink_score_key(cfg_fn.id, block.id), score);
+            }
+        }
+    }
+    scores
+}
+
+fn state_priority_score(state: &State, sink_scores: &HashMap<u32, i32>) -> i32 {
+    let sink_key = sink_score_key(state.function_id, state.block_id);
+    let mut score = *sink_scores.get(&sink_key).unwrap_or(&0);
+    if state.external_call_pc.is_some() {
+        score += 3;
+    }
+    if state.callback_observed {
+        score += 5;
+    }
+    if !state.pending_low_level_calls.is_empty() {
+        score += 2;
+    }
+    if state.saw_order_sensitive_storage_read {
+        score += 2;
+    }
+    if state.inside_loop {
+        score += 1;
+    }
+    if !state.sender_checked {
+        score += 1;
+    }
+    score
+}
+
+fn pop_next_state(worklist: &mut Vec<State>, sink_scores: &HashMap<u32, i32>) -> Option<State> {
+    if worklist.is_empty() {
+        return None;
+    }
+    let (best_idx, _) = worklist
+        .iter()
+        .enumerate()
+        .map(|(idx, state)| (idx, state_priority_score(state, sink_scores)))
+        .max_by_key(|(_, score)| *score)?;
+    Some(worklist.swap_remove(best_idx))
+}
+
+fn state_shape_key(state: &State) -> String {
+    let mut call_pcs = state
+        .pending_low_level_calls
+        .values()
+        .map(|pending| pending.call_pc)
+        .collect::<Vec<_>>();
+    call_pcs.sort_unstable();
+    let constraints_len = state.path_constraints.len();
+    let constraints_fingerprint = path_constraints_fingerprint(&state.path_constraints);
+    format!(
+        "fn={}::b={}::i={}::cb_depth={}::cb_obs={}::loop={}::auth={}::ord={}::ext={:?}::pending={:?}::clen={}::cfp={:x}",
+        state.function_id,
+        state.block_id,
+        state.instr_offset,
+        state.callback_depth,
+        state.callback_observed,
+        state.inside_loop,
+        state.sender_checked,
+        state.saw_order_sensitive_storage_read,
+        state.external_call_pc,
+        call_pcs,
+        constraints_len,
+        constraints_fingerprint
+    )
+}
+
+fn path_constraints_fingerprint(path_constraints: &[Bool]) -> u64 {
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    path_constraints.len().hash(&mut hasher);
+    for c in path_constraints.iter().take(4) {
+        c.to_string().hash(&mut hasher);
+    }
+    for c in path_constraints.iter().rev().take(4) {
+        c.to_string().hash(&mut hasher);
+    }
+    hasher.finish()
+}
+
+fn try_enqueue_state(
+    worklist: &mut Vec<State>,
+    mut next_state: State,
+    next_block: u32,
+    sink_scores: &HashMap<u32, i32>,
+    state_shape_visits: &mut HashMap<String, u8>,
+    max_worklist: &mut usize,
+    limits: EngineLimits,
+) -> bool {
+    if next_state.path_constraints.len() > limits.max_path_constraints {
+        return false;
+    }
+
+    let next_visits = next_state
+        .block_visits
+        .get(&next_block)
+        .copied()
+        .unwrap_or(0)
+        .saturating_add(1);
+    if next_visits > limits.max_block_visits_per_path {
+        return false;
+    }
+    next_state.block_visits.insert(next_block, next_visits);
+    next_state.block_id = next_block;
+    next_state.instr_offset = 0;
+
+    enqueue_state(
+        worklist,
+        next_state,
+        sink_scores,
+        state_shape_visits,
+        max_worklist,
+        limits,
+    )
+}
+
+fn enqueue_state(
+    worklist: &mut Vec<State>,
+    next_state: State,
+    sink_scores: &HashMap<u32, i32>,
+    state_shape_visits: &mut HashMap<String, u8>,
+    max_worklist: &mut usize,
+    limits: EngineLimits,
+) -> bool {
+    let shape_key = state_shape_key(&next_state);
+    let visits = state_shape_visits.get(&shape_key).copied().unwrap_or(0);
+    if visits >= limits.max_state_shape_revisits {
+        return false;
+    }
+
+    if worklist.len() >= limits.max_worklist_size {
+        let candidate_score = state_priority_score(&next_state, sink_scores);
+        let Some((worst_idx, worst_score)) = worklist
+            .iter()
+            .enumerate()
+            .map(|(idx, state)| (idx, state_priority_score(state, sink_scores)))
+            .min_by_key(|(_, score)| *score)
+        else {
+            return false;
+        };
+        if candidate_score <= worst_score {
+            return false;
+        }
+        worklist.swap_remove(worst_idx);
+    }
+
+    state_shape_visits.insert(shape_key, visits + 1);
+    worklist.push(next_state);
+    *max_worklist = (*max_worklist).max(worklist.len());
+    true
+}
+
+fn engine(
+    cfg_fn: &cfg::CfgFunction,
+    all_cfgs: &[cfg::CfgFunction],
+    callback_data: Option<EngineCallbackData<'_>>,
+    checked_arithmetic: bool,
+    allow_tod: bool,
+    allow_signature_malleability: bool,
+) -> EngineStats {
+    let limits = EngineLimits::from_env();
     let instructions = cfg_fn.blocks.iter().map(|b| b.instrs.len()).sum::<usize>();
     if instructions == 0 {
         return EngineStats {
@@ -431,29 +1130,41 @@ fn engine(cfg_fn: &cfg::CfgFunction) -> EngineStats {
         };
     }
 
-    let block_map = cfg_fn
-        .blocks
+    let cfg_map = all_cfgs
         .iter()
-        .map(|b| (b.id, b))
+        .map(|cfg_fn| (cfg_fn.id, cfg_fn))
         .collect::<HashMap<_, _>>();
-    let mut succs: HashMap<u32, Vec<u32>> = HashMap::new();
-    for edge in &cfg_fn.edges {
-        succs.entry(edge.from).or_default().push(edge.to);
+    let mut succs: HashMap<u32, HashMap<u32, Vec<u32>>> = HashMap::new();
+    for cfg_fn in all_cfgs {
+        let mut fn_succs: HashMap<u32, Vec<u32>> = HashMap::new();
+        for edge in &cfg_fn.edges {
+            fn_succs.entry(edge.from).or_default().push(edge.to);
+        }
+        succs.insert(cfg_fn.id, fn_succs);
     }
-    let mut instr_positions: HashMap<(u32, usize), usize> = HashMap::new();
+    let mut instr_positions: HashMap<(u32, u32, usize), usize> = HashMap::new();
     let mut flat_pc = 0usize;
-    for block in &cfg_fn.blocks {
-        for idx in 0..block.instrs.len() {
-            instr_positions.insert((block.id, idx), flat_pc);
-            flat_pc += 1;
+    for cfg_fn in all_cfgs {
+        for block in &cfg_fn.blocks {
+            for idx in 0..block.instrs.len() {
+                instr_positions.insert((cfg_fn.id, block.id, idx), flat_pc);
+                flat_pc += 1;
+            }
         }
     }
+    let sink_scores = build_sink_scores(all_cfgs);
 
     let entry_block = cfg_fn.blocks.first().map(|b| b.id).unwrap_or(0);
-    let mut worklist = vec![State {
-        block_id: entry_block,
-        ..State::new()
-    }];
+    let mut entry_state = State::new();
+    entry_state.function_id = cfg_fn.id;
+    entry_state.block_id = entry_block;
+    entry_state.instr_offset = 0;
+    entry_state.block_visits.insert(entry_block, 1);
+    let mut worklist = vec![entry_state];
+    let mut state_shape_visits: HashMap<String, u8> = HashMap::new();
+    if let Some(initial) = worklist.first() {
+        state_shape_visits.insert(state_shape_key(initial), 1);
+    }
     let mut max_worklist = 1usize;
     let mut terminal_states: Vec<TerminalState> = Vec::new();
     let mut explored_states = 0usize;
@@ -461,36 +1172,66 @@ fn engine(cfg_fn: &cfg::CfgFunction) -> EngineStats {
     let mut dead_ends = 0usize;
     let mut vulnerabilities = Vec::new();
     let mut seen_reentrancy_edges: HashSet<(usize, usize)> = HashSet::new();
+    let mut seen_vulns: HashSet<(VulnerabilityKind, usize)> = HashSet::new();
+    let mut solver_cache = SolverCache::default();
     let mut truncated = false;
+    let function_started = Instant::now();
 
-    while let Some(mut state) = worklist.pop() {
+    while let Some(mut state) = pop_next_state(&mut worklist, &sink_scores) {
+        if function_started.elapsed().as_millis() as u64 >= limits.max_function_ms {
+            truncated = true;
+            break;
+        }
         explored_states += 1;
-        if explored_states >= MAX_ENGINE_STEPS {
+        if explored_states >= limits.max_engine_steps {
             truncated = true;
             break;
         }
 
-        let Some(block) = block_map.get(&state.block_id) else {
+        let Some(current_cfg) = cfg_map.get(&state.function_id).copied() else {
+            dead_ends += 1;
+            continue;
+        };
+        let Some(block) = current_cfg.blocks.iter().find(|block| block.id == state.block_id) else {
             dead_ends += 1;
             continue;
         };
         let mut block_terminated = false;
 
-        for (instr_index, instr) in block.instrs.iter().enumerate() {
+        for (instr_index, instr) in block.instrs.iter().enumerate().skip(state.instr_offset) {
             let current_pc = *instr_positions
-                .get(&(state.block_id, instr_index))
+                .get(&(state.function_id, state.block_id, instr_index))
                 .unwrap_or(&usize::MAX);
-            if state.trace.len() < MAX_TRACE_LEN {
+            if state.trace.len() < limits.max_trace_len {
                 state.trace.push(current_pc);
             }
 
             match instr {
-                IrInstr::Nop { .. } | IrInstr::InlineAsm { .. } => {}
+                IrInstr::Nop { .. } => {}
+                IrInstr::InlineAsm { .. } => {
+                    if seen_vulns.insert((VulnerabilityKind::MemoryManipulation, current_pc)) {
+                        vulnerabilities.push(LocalVulnerability {
+                            kind: VulnerabilityKind::MemoryManipulation,
+                            pc: current_pc,
+                            instruction: format!("{instr:?}"),
+                            trace: state.trace.clone(),
+                            trigger: state.branch_triggers.last().cloned(),
+                            branch_triggers: state.branch_triggers.clone(),
+                            span: Some(instr_span(instr)),
+                            path_constraints: constraints_to_strings(&state.path_constraints),
+                            message:
+                                "inline assembly usage detected; memory/storage manipulation risk"
+                                    .to_string(),
+                            model: None,
+                        });
+                    }
+                }
                 IrInstr::Eval { expr, .. } | IrInstr::Emit { expr, .. } => {
                     let _ = state.eval_value(expr);
                 }
                 IrInstr::Declare { names, init, .. } => {
                     let value = init.as_ref().map(|v| state.eval_value(v));
+                    let init_key = init.as_ref().and_then(value_var_key);
                     for name in names {
                         let assigned = value.clone().unwrap_or_else(|| state.fresh_symbol(name));
                         state.env.insert(name.clone(), assigned);
@@ -499,17 +1240,38 @@ fn engine(cfg_fn: &cfg::CfgFunction) -> EngineStats {
                             .map(|v| state.value_expr(v))
                             .unwrap_or_else(|| name.clone());
                         state.expr_env.insert(name.clone(), expr);
+                        if let Some(src_key) = &init_key {
+                            if let Some(pending) =
+                                state.pending_low_level_calls.get(src_key).cloned()
+                            {
+                                state.pending_low_level_calls.insert(name.clone(), pending);
+                            }
+                        }
                     }
                 }
                 IrInstr::Assign { dest, src, .. } => {
                     let value = state.eval_value(src);
                     state.set_var(dest, value);
-                    state.expr_env.insert(var_key(dest), state.value_expr(src));
+                    let dest_key = var_key(dest);
+                    state
+                        .expr_env
+                        .insert(dest_key.clone(), state.value_expr(src));
+                    if let Some(src_key) = value_var_key(src) {
+                        if let Some(origins) = state.origins.get(&src_key).cloned() {
+                            state.origins.entry(dest_key).or_default().extend(origins);
+                        }
+                        if let Some(pending) = state.pending_low_level_calls.get(&src_key).cloned()
+                        {
+                            state.pending_low_level_calls.insert(var_key(dest), pending);
+                        }
+                    }
                 }
                 IrInstr::Store { dest, src, .. } => {
                     let value = state.eval_value(src);
                     if is_storage_place(dest) {
-                        if let Some(call_pc) = state.external_call_pc {
+                        if let Some(call_pc) = state.external_call_pc
+                            && state.callback_observed
+                        {
                             if seen_reentrancy_edges.insert((call_pc, current_pc)) {
                                 vulnerabilities.push(LocalVulnerability {
                                     kind: VulnerabilityKind::Reentrancy,
@@ -521,11 +1283,31 @@ fn engine(cfg_fn: &cfg::CfgFunction) -> EngineStats {
                                     span: Some(instr_span(instr)),
                                     path_constraints: constraints_to_strings(&state.path_constraints),
                                     message: format!(
-                                        "storage write after external call (call_pc={call_pc}, store_pc={current_pc})"
+                                        "storage write after feasible callback return from external value call (call_pc={call_pc}, store_pc={current_pc})"
                                     ),
                                     model: None,
                                 });
                             }
+                        }
+                        if !state.sender_checked
+                            && place_is_authority_sensitive(dest)
+                            && seen_vulns.insert((VulnerabilityKind::ArbitraryWrite, current_pc))
+                        {
+                            vulnerabilities.push(LocalVulnerability {
+                                kind: VulnerabilityKind::ArbitraryWrite,
+                                pc: current_pc,
+                                instruction: format!("{instr:?}"),
+                                trace: state.trace.clone(),
+                                trigger: state.branch_triggers.last().cloned(),
+                                branch_triggers: state.branch_triggers.clone(),
+                                span: Some(instr_span(instr)),
+                                path_constraints: constraints_to_strings(&state.path_constraints),
+                                message: format!(
+                                    "storage write to authority-sensitive slot '{}' without sender authorization check",
+                                    place_key(dest)
+                                ),
+                                model: None,
+                            });
                         }
                     }
                     state.write_place(dest, value);
@@ -533,9 +1315,110 @@ fn engine(cfg_fn: &cfg::CfgFunction) -> EngineStats {
                 IrInstr::Load { dest, src, .. } => {
                     let value = state.read_place(src);
                     state.set_var(dest, value);
+                    if is_storage_place(src) && place_is_order_sensitive(src) {
+                        state.saw_order_sensitive_storage_read = true;
+                    }
+                    let dest_key = var_key(dest);
                     state
                         .expr_env
-                        .insert(var_key(dest), format!("load({})", place_key(src)));
+                        .insert(dest_key.clone(), format!("load({})", place_key(src)));
+
+                    if let Some((base_name, field_name)) = place_member_base_field(src) {
+                        let base_l = base_name.to_ascii_lowercase();
+                        let field_l = field_name.to_ascii_lowercase();
+
+                        if base_l == "tx" && field_l == "origin" {
+                            state
+                                .origins
+                                .entry(dest_key.clone())
+                                .or_default()
+                                .insert(ValueOrigin::TxOrigin);
+                            if seen_vulns.insert((VulnerabilityKind::TxOrigin, current_pc)) {
+                                vulnerabilities.push(LocalVulnerability {
+                                    kind: VulnerabilityKind::TxOrigin,
+                                    pc: current_pc,
+                                    instruction: format!("{instr:?}"),
+                                    trace: state.trace.clone(),
+                                    trigger: state.branch_triggers.last().cloned(),
+                                    branch_triggers: state.branch_triggers.clone(),
+                                    span: Some(instr_span(instr)),
+                                    path_constraints: constraints_to_strings(
+                                        &state.path_constraints,
+                                    ),
+                                    message:
+                                        "dangerous usage of tx.origin for authorization/input flow"
+                                            .to_string(),
+                                    model: None,
+                                });
+                            }
+                        }
+
+                        if base_l == "block" && field_l == "timestamp" {
+                            state
+                                .origins
+                                .entry(dest_key.clone())
+                                .or_default()
+                                .insert(ValueOrigin::Timestamp);
+                        }
+                        if base_l == "block" && (field_l == "number" || field_l == "blockhash") {
+                            state
+                                .origins
+                                .entry(dest_key.clone())
+                                .or_default()
+                                .insert(ValueOrigin::BlockNumber);
+                        }
+
+                        if field_l == "delegatecall" {
+                            let origins = state.origins.entry(dest_key.clone()).or_default();
+                            origins.insert(ValueOrigin::DelegatecallRef);
+                            origins.insert(ValueOrigin::LowLevelCallRef);
+                        } else if matches!(
+                            field_l.as_str(),
+                            "call" | "send" | "transfer" | "staticcall"
+                        ) {
+                            let origins = state.origins.entry(dest_key.clone()).or_default();
+                            origins.insert(ValueOrigin::LowLevelCallRef);
+                            if field_l == "send" {
+                                origins.insert(ValueOrigin::SendRef);
+                            } else if field_l == "transfer" {
+                                origins.insert(ValueOrigin::TransferRef);
+                            }
+                        } else if field_l == "value" {
+                            if let IrPlace::Member { base, .. } = src {
+                                let base_key = value_key(base);
+                                let base_is_call_ref = state
+                                    .origins
+                                    .get(&base_key)
+                                    .map(|o| o.contains(&ValueOrigin::LowLevelCallRef))
+                                    .unwrap_or(false);
+                                if base_is_call_ref {
+                                    let origins =
+                                        state.origins.entry(dest_key.clone()).or_default();
+                                    origins.insert(ValueOrigin::LowLevelCallRef);
+                                    origins.insert(ValueOrigin::ValueCallRef);
+                                }
+                            }
+                        }
+                    }
+
+                    if let Some(src_key) = place_var_key(src) {
+                        if let Some(origins) = state.origins.get(&src_key).cloned() {
+                            state
+                                .origins
+                                .entry(dest_key.clone())
+                                .or_default()
+                                .extend(origins);
+                        }
+                    }
+                    match src {
+                        IrPlace::Member { base, .. } | IrPlace::Index { base, .. } => {
+                            let base_key = value_key(base);
+                            if let Some(origins) = state.origins.get(&base_key).cloned() {
+                                state.origins.entry(dest_key).or_default().extend(origins);
+                            }
+                        }
+                        IrPlace::Var { .. } => {}
+                    }
                 }
                 IrInstr::Binary {
                     dest, op, lhs, rhs, ..
@@ -546,12 +1429,445 @@ fn engine(cfg_fn: &cfg::CfgFunction) -> EngineStats {
                     }
                     let lhs_v = state.eval_value(lhs);
                     let rhs_v = state.eval_value(rhs);
-                    if op == "-" {
+                    if !checked_arithmetic && op == "-" {
                         if let Some(model) =
-                            check_underflow(&state.path_constraints, &lhs_v, &rhs_v)
+                            solver_cache.check_underflow(&state.path_constraints, &lhs_v, &rhs_v)
                         {
+                            if seen_vulns.insert((VulnerabilityKind::Underflow, current_pc)) {
+                                vulnerabilities.push(LocalVulnerability {
+                                    kind: VulnerabilityKind::Underflow,
+                                    pc: current_pc,
+                                    instruction: format!("{instr:?}"),
+                                    trace: state.trace.clone(),
+                                    trigger: state.branch_triggers.last().cloned(),
+                                    branch_triggers: state.branch_triggers.clone(),
+                                    span: Some(instr_span(instr)),
+                                    path_constraints: constraints_to_strings(
+                                        &state.path_constraints,
+                                    ),
+                                    message:
+                                        "potential arithmetic underflow: rhs > lhs is satisfiable"
+                                            .to_string(),
+                                    model: Some(model),
+                                });
+                            }
+                        }
+                    }
+                    let out = eval_binary(op, lhs_v, rhs_v);
+                    state.set_var(dest, out);
+                    let dest_key = var_key(dest);
+                    let expr = format!(
+                        "({} {} {})",
+                        state.value_expr(lhs),
+                        op,
+                        state.value_expr(rhs)
+                    );
+                    state.expr_env.insert(dest_key.clone(), expr);
+                    let lhs_has_timestamp =
+                        value_has_origin(&state.origins, lhs, ValueOrigin::Timestamp);
+                    let rhs_has_timestamp =
+                        value_has_origin(&state.origins, rhs, ValueOrigin::Timestamp);
+                    if lhs_has_timestamp || rhs_has_timestamp {
+                        state
+                            .origins
+                            .entry(dest_key)
+                            .or_default()
+                            .insert(ValueOrigin::Timestamp);
+                    }
+                    let lhs_has_blocknum =
+                        value_has_origin(&state.origins, lhs, ValueOrigin::BlockNumber);
+                    let rhs_has_blocknum =
+                        value_has_origin(&state.origins, rhs, ValueOrigin::BlockNumber);
+                    if lhs_has_blocknum || rhs_has_blocknum {
+                        state
+                            .origins
+                            .entry(var_key(dest))
+                            .or_default()
+                            .insert(ValueOrigin::BlockNumber);
+                    }
+                }
+                IrInstr::Unary { dest, op, expr, .. } => {
+                    let in_v = state.eval_value(expr);
+                    let out = eval_unary(op, in_v);
+                    state.set_var(dest, out);
+                    let dest_key = var_key(dest);
+                    state.expr_env.insert(
+                        dest_key.clone(),
+                        format!("({}{})", op, state.value_expr(expr)),
+                    );
+                    if value_has_origin(&state.origins, expr, ValueOrigin::Timestamp) {
+                        state
+                            .origins
+                            .entry(dest_key)
+                            .or_default()
+                            .insert(ValueOrigin::Timestamp);
+                    }
+                    if value_has_origin(&state.origins, expr, ValueOrigin::BlockNumber) {
+                        state
+                            .origins
+                            .entry(var_key(dest))
+                            .or_default()
+                            .insert(ValueOrigin::BlockNumber);
+                    }
+                }
+                IrInstr::Call {
+                    dest,
+                    callee,
+                    args,
+                    options,
+                    ..
+                } => {
+                    let callee_expr = state.value_expr(callee);
+                    let callee_lower = callee_expr.to_ascii_lowercase();
+                    let callee_key = value_var_key(callee);
+                    let callee_origins = callee_key
+                        .as_ref()
+                        .and_then(|key| state.origins.get(key))
+                        .cloned()
+                        .unwrap_or_default();
+                    let is_delegatecall = callee_lower.contains("delegatecall")
+                        || callee_origins.contains(&ValueOrigin::DelegatecallRef);
+                    let is_low_level_call = is_low_level_call_name(&callee_lower)
+                        || callee_origins.contains(&ValueOrigin::LowLevelCallRef);
+                    let is_send_ref = is_send_name(&callee_lower)
+                        || callee_origins.contains(&ValueOrigin::SendRef);
+                    let is_transfer_ref = is_transfer_name(&callee_lower)
+                        || callee_origins.contains(&ValueOrigin::TransferRef);
+                    let is_assert_like = callee_lower == "require" || callee_lower == "assert";
+                    let is_revert_like = callee_lower == "revert";
+                    let is_static_call =
+                        callee_lower == "staticcall" || callee_lower.ends_with(".staticcall");
+                    let has_value = options
+                        .iter()
+                        .any(|o| matches!(o, crate::ir::IrCallOption::Value(_)))
+                        || callee_origins.contains(&ValueOrigin::ValueCallRef);
+                    let is_callback_external_call = is_low_level_call
+                        && !is_static_call
+                        && !is_send_ref
+                        && !is_transfer_ref
+                        && has_value;
+                    let callback_candidates = if state.callback_depth == 0 {
+                        callback_data
+                            .map(|data| {
+                                reentrant_callback_candidates(
+                                    state.function_id,
+                                    data.ast,
+                                    data.compiler,
+                                    data.deps,
+                                    4,
+                                )
+                            })
+                            .unwrap_or_default()
+                    } else {
+                        Vec::new()
+                    };
+                    let can_fork_callback = is_callback_external_call
+                        && !callback_candidates.is_empty()
+                        && !is_delegatecall;
+                    let should_havoc_storage =
+                        is_delegatecall || (is_callback_external_call && !can_fork_callback);
+
+                    if is_revert_like {
+                        state.pending_low_level_calls.clear();
+                        if solver_cache.is_feasible(&state.path_constraints) {
+                            let revert_values = args
+                                .iter()
+                                .take(1)
+                                .map(|value| state.eval_value(value))
+                                .collect::<Vec<_>>();
+                            finalize_state(
+                                state.clone(),
+                                TerminationKind::Revert,
+                                revert_values,
+                                &mut terminal_states,
+                                &mut worklist,
+                                &sink_scores,
+                                &mut state_shape_visits,
+                                &mut max_worklist,
+                                limits,
+                            );
+                        }
+                        block_terminated = true;
+                        break;
+                    }
+
+                    if should_havoc_storage {
+                        havoc_storage(&mut state);
+                    }
+
+                    if is_delegatecall
+                        && seen_vulns.insert((VulnerabilityKind::Delegatecall, current_pc))
+                    {
+                        vulnerabilities.push(LocalVulnerability {
+                            kind: VulnerabilityKind::Delegatecall,
+                            pc: current_pc,
+                            instruction: format!("{instr:?}"),
+                            trace: state.trace.clone(),
+                            trigger: state.branch_triggers.last().cloned(),
+                            branch_triggers: state.branch_triggers.clone(),
+                            span: Some(instr_span(instr)),
+                            path_constraints: constraints_to_strings(&state.path_constraints),
+                            message: "unsafe delegatecall usage detected".to_string(),
+                            model: None,
+                        });
+                    }
+                    if is_delegatecall
+                        && state.inside_loop
+                        && seen_vulns.insert((VulnerabilityKind::MemoryManipulation, current_pc))
+                    {
+                        vulnerabilities.push(LocalVulnerability {
+                            kind: VulnerabilityKind::MemoryManipulation,
+                            pc: current_pc,
+                            instruction: format!("{instr:?}"),
+                            trace: state.trace.clone(),
+                            trigger: state.branch_triggers.last().cloned(),
+                            branch_triggers: state.branch_triggers.clone(),
+                            span: Some(instr_span(instr)),
+                            path_constraints: constraints_to_strings(&state.path_constraints),
+                            message:
+                                "delegatecall inside loop context; storage/memory corruption risk"
+                                    .to_string(),
+                            model: None,
+                        });
+                    }
+
+                    if is_selfdestruct_name(&callee_lower)
+                        && seen_vulns.insert((VulnerabilityKind::Selfdestruct, current_pc))
+                    {
+                        vulnerabilities.push(LocalVulnerability {
+                            kind: VulnerabilityKind::Selfdestruct,
+                            pc: current_pc,
+                            instruction: format!("{instr:?}"),
+                            trace: state.trace.clone(),
+                            trigger: state.branch_triggers.last().cloned(),
+                            branch_triggers: state.branch_triggers.clone(),
+                            span: Some(instr_span(instr)),
+                            path_constraints: constraints_to_strings(&state.path_constraints),
+                            message: "contract can be destructed (selfdestruct/suicide call)"
+                                .to_string(),
+                            model: None,
+                        });
+                    }
+                    let is_hardcoded_gas_transfer = is_send_ref || is_transfer_ref;
+                    if is_hardcoded_gas_transfer
+                        && seen_vulns
+                            .insert((VulnerabilityKind::HardcodedGasTransfer, current_pc))
+                    {
+                        vulnerabilities.push(LocalVulnerability {
+                            kind: VulnerabilityKind::HardcodedGasTransfer,
+                            pc: current_pc,
+                            instruction: format!("{instr:?}"),
+                            trace: state.trace.clone(),
+                            trigger: state.branch_triggers.last().cloned(),
+                            branch_triggers: state.branch_triggers.clone(),
+                            span: Some(instr_span(instr)),
+                            path_constraints: constraints_to_strings(&state.path_constraints),
+                            message: "hardcoded gas transfer via send/transfer detected"
+                                .to_string(),
+                            model: None,
+                        });
+                    }
+                    if allow_signature_malleability
+                        && callee_lower.contains("ecrecover")
+                        && seen_vulns
+                            .insert((VulnerabilityKind::SignatureMalleability, current_pc))
+                    {
+                        vulnerabilities.push(LocalVulnerability {
+                            kind: VulnerabilityKind::SignatureMalleability,
+                            pc: current_pc,
+                            instruction: format!("{instr:?}"),
+                            trace: state.trace.clone(),
+                            trigger: state.branch_triggers.last().cloned(),
+                            branch_triggers: state.branch_triggers.clone(),
+                            span: Some(instr_span(instr)),
+                            path_constraints: constraints_to_strings(&state.path_constraints),
+                            message:
+                                "direct ecrecover usage detected; lower-half s-value check not modeled"
+                                    .to_string(),
+                            model: None,
+                        });
+                    }
+                    if state.inside_loop
+                        && is_low_level_call
+                        && seen_vulns.insert((VulnerabilityKind::DosWithFailedCall, current_pc))
+                    {
+                        vulnerabilities.push(LocalVulnerability {
+                            kind: VulnerabilityKind::DosWithFailedCall,
+                            pc: current_pc,
+                            instruction: format!("{instr:?}"),
+                            trace: state.trace.clone(),
+                            trigger: state.branch_triggers.last().cloned(),
+                            branch_triggers: state.branch_triggers.clone(),
+                            span: Some(instr_span(instr)),
+                            path_constraints: constraints_to_strings(&state.path_constraints),
+                            message:
+                                "external call executed in loop context; failed callee can cause DoS"
+                                    .to_string(),
+                            model: None,
+                        });
+                    }
+                    if has_value
+                        && is_low_level_call
+                        && !state.sender_checked
+                        && seen_vulns.insert((
+                            VulnerabilityKind::UnprotectedEtherWithdrawal,
+                            current_pc,
+                        ))
+                    {
+                        vulnerabilities.push(LocalVulnerability {
+                            kind: VulnerabilityKind::UnprotectedEtherWithdrawal,
+                            pc: current_pc,
+                            instruction: format!("{instr:?}"),
+                            trace: state.trace.clone(),
+                            trigger: state.branch_triggers.last().cloned(),
+                            branch_triggers: state.branch_triggers.clone(),
+                            span: Some(instr_span(instr)),
+                            path_constraints: constraints_to_strings(&state.path_constraints),
+                            message:
+                                "ether transfer call without preceding sender authorization check"
+                                    .to_string(),
+                            model: None,
+                        });
+                    }
+                    if allow_tod
+                        && state.saw_order_sensitive_storage_read
+                        && (has_value || is_hardcoded_gas_transfer)
+                        && seen_vulns.insert((
+                            VulnerabilityKind::TransactionOrderDependency,
+                            current_pc,
+                        ))
+                    {
+                        vulnerabilities.push(LocalVulnerability {
+                            kind: VulnerabilityKind::TransactionOrderDependency,
+                            pc: current_pc,
+                            instruction: format!("{instr:?}"),
+                            trace: state.trace.clone(),
+                            trigger: state.branch_triggers.last().cloned(),
+                            branch_triggers: state.branch_triggers.clone(),
+                            span: Some(instr_span(instr)),
+                            path_constraints: constraints_to_strings(&state.path_constraints),
+                            message:
+                                "order-sensitive storage read combined with value transfer; front-running/TOD risk"
+                                    .to_string(),
+                            model: None,
+                        });
+                    }
+
+                    if is_assert_like {
+                        if let Some(first_arg) = args.first() {
+                            let cond_expr = state.eval_bool(first_arg);
+                            let cond_text = state.value_expr(first_arg);
+                            if let Some(arg_key) = value_var_key(first_arg) {
+                                if let Some(item) = state.pending_low_level_calls.get(&arg_key) {
+                                    let pending_callee = item.callee.to_ascii_lowercase();
+                                    if (is_send_name(&pending_callee)
+                                        || pending_callee.contains(".send")
+                                        || pending_callee.contains("send"))
+                                        && seen_vulns.insert((
+                                            VulnerabilityKind::UnsafeSendInRequire,
+                                            current_pc,
+                                        ))
+                                    {
+                                        vulnerabilities.push(LocalVulnerability {
+                                            kind: VulnerabilityKind::UnsafeSendInRequire,
+                                            pc: current_pc,
+                                            instruction: format!("{instr:?}"),
+                                            trace: state.trace.clone(),
+                                            trigger: state.branch_triggers.last().cloned(),
+                                            branch_triggers: state.branch_triggers.clone(),
+                                            span: Some(instr_span(instr)),
+                                            path_constraints: constraints_to_strings(
+                                                &state.path_constraints,
+                                            ),
+                                            message:
+                                                "unsafe send() used inside require/assert condition"
+                                                    .to_string(),
+                                            model: None,
+                                        });
+                                    }
+                                }
+                                mark_pending_call_checked(
+                                    &mut state.pending_low_level_calls,
+                                    &arg_key,
+                                );
+                            }
+                            if cond_text.to_ascii_lowercase().contains("sender")
+                                || value_name_raw(first_arg)
+                                    .to_ascii_lowercase()
+                                    .contains("sender")
+                            {
+                                state.sender_checked = true;
+                            }
+
+                            let mut fail_constraints = state.path_constraints.clone();
+                            fail_constraints.push(cond_expr.clone().not());
+                            if solver_cache.is_feasible(&fail_constraints) {
+                                let revert_values = args
+                                    .iter()
+                                    .skip(1)
+                                    .take(1)
+                                    .map(|value| state.eval_value(value))
+                                    .collect::<Vec<_>>();
+                                let mut revert_state = state.clone();
+                                revert_state.path_constraints = fail_constraints;
+                                finalize_state(
+                                    revert_state,
+                                    TerminationKind::Revert,
+                                    revert_values,
+                                    &mut terminal_states,
+                                    &mut worklist,
+                                    &sink_scores,
+                                    &mut state_shape_visits,
+                                    &mut max_worklist,
+                                    limits,
+                                );
+                            }
+
+                            state.path_constraints.push(cond_expr);
+                            state
+                                .branch_triggers
+                                .push(format!("{callee_lower}({cond_text}) == true"));
+                            if !solver_cache.is_feasible(&state.path_constraints) {
+                                block_terminated = true;
+                                break;
+                            }
+                        }
+                    }
+
+                    for (idx, var) in dest.iter().enumerate() {
+                        let value = state.fresh_symbol("call_ret");
+                        state.set_var(var, value.clone());
+                        let dest_key = var_key(var);
+                        state
+                            .expr_env
+                            .insert(dest_key.clone(), "call_ret".to_string());
+                        if is_low_level_call && idx == 0 {
+                            constrain_boolean_int(&mut state, &value);
+                            state.pending_low_level_calls.insert(
+                                dest_key,
+                                PendingCall {
+                                    call_pc: current_pc,
+                                    callee: callee_expr.clone(),
+                                    span: Some(instr_span(instr)),
+                                },
+                            );
+                        }
+                        if callee_lower == "blockhash" {
+                            state
+                                .origins
+                                .entry(var_key(var))
+                                .or_default()
+                                .insert(ValueOrigin::BlockNumber);
+                        }
+                    }
+
+                    // `transfer` has no boolean return value in Solidity and should not be
+                    // flagged as unchecked-call when no destination is present.
+                    let is_unchecked_call_candidate = is_low_level_call && !is_transfer_ref;
+                    if is_unchecked_call_candidate && dest.is_empty() {
+                        if seen_vulns.insert((VulnerabilityKind::UncheckedCall, current_pc)) {
                             vulnerabilities.push(LocalVulnerability {
-                                kind: VulnerabilityKind::Underflow,
+                                kind: VulnerabilityKind::UncheckedCall,
                                 pc: current_pc,
                                 instruction: format!("{instr:?}"),
                                 trace: state.trace.clone(),
@@ -559,39 +1875,51 @@ fn engine(cfg_fn: &cfg::CfgFunction) -> EngineStats {
                                 branch_triggers: state.branch_triggers.clone(),
                                 span: Some(instr_span(instr)),
                                 path_constraints: constraints_to_strings(&state.path_constraints),
-                                message: "potential arithmetic underflow: rhs > lhs is satisfiable"
-                                    .to_string(),
-                                model: Some(model),
+                                message:
+                                    "low-level external call return value is ignored (unchecked)"
+                                        .to_string(),
+                                model: None,
                             });
                         }
                     }
-                    let out = eval_binary(op, lhs_v, rhs_v);
-                    state.set_var(dest, out);
-                    let expr = format!(
-                        "({} {} {})",
-                        state.value_expr(lhs),
-                        op,
-                        state.value_expr(rhs)
-                    );
-                    state.expr_env.insert(var_key(dest), expr);
-                }
-                IrInstr::Unary { dest, op, expr, .. } => {
-                    let in_v = state.eval_value(expr);
-                    let out = eval_unary(op, in_v);
-                    state.set_var(dest, out);
-                    state
-                        .expr_env
-                        .insert(var_key(dest), format!("({}{})", op, state.value_expr(expr)));
-                }
-                IrInstr::Call { dest, .. } => {
-                    for var in dest {
-                        let value = state.fresh_symbol("call_ret");
-                        state.set_var(var, value);
-                        state.expr_env.insert(var_key(var), "call_ret".to_string());
+
+                    if can_fork_callback {
+                        let mut caller_resume = state.clone();
+                        caller_resume.external_call_pc = Some(current_pc);
+                        caller_resume.instr_offset = instr_index.saturating_add(1);
+                        let frame = callback_frame_from_state(&caller_resume);
+                        let mut enqueued_callback = false;
+                        for callback_function_id in callback_candidates {
+                            let Some(callback_cfg) = cfg_map.get(&callback_function_id).copied() else {
+                                continue;
+                            };
+                            let Some(entry_block) = callback_cfg.blocks.first().map(|block| block.id) else {
+                                continue;
+                            };
+                            let mut callback_state =
+                                callback_state_from_frame(&state, frame.clone(), callback_function_id, entry_block);
+                            callback_state.branch_triggers.push(format!(
+                                "callback(fn={callback_function_id}) from pc {current_pc}"
+                            ));
+                            if enqueue_state(
+                                &mut worklist,
+                                callback_state,
+                                &sink_scores,
+                                &mut state_shape_visits,
+                                &mut max_worklist,
+                                limits,
+                            ) {
+                                enqueued_callback = true;
+                            } else {
+                                pruned_branches += 1;
+                            }
+                        }
+                        if enqueued_callback {
+                            block_terminated = true;
+                            break;
+                        }
                     }
-                    if state.external_call_pc.is_none() {
-                        state.external_call_pc = Some(current_pc);
-                    }
+
                 }
                 IrInstr::Select {
                     dest,
@@ -614,28 +1942,132 @@ fn engine(cfg_fn: &cfg::CfgFunction) -> EngineStats {
                             state.value_expr(else_val)
                         ),
                     );
+                    let dest_key = var_key(dest);
+                    let has_timestamp =
+                        value_has_origin(&state.origins, cond, ValueOrigin::Timestamp)
+                            || value_has_origin(&state.origins, then_val, ValueOrigin::Timestamp)
+                            || value_has_origin(&state.origins, else_val, ValueOrigin::Timestamp);
+                    if has_timestamp {
+                        state
+                            .origins
+                            .entry(dest_key)
+                            .or_default()
+                            .insert(ValueOrigin::Timestamp);
+                    }
+                    let has_blocknum =
+                        value_has_origin(&state.origins, cond, ValueOrigin::BlockNumber)
+                            || value_has_origin(
+                                &state.origins,
+                                then_val,
+                                ValueOrigin::BlockNumber,
+                            )
+                            || value_has_origin(
+                                &state.origins,
+                                else_val,
+                                ValueOrigin::BlockNumber,
+                            );
+                    if has_blocknum {
+                        state
+                            .origins
+                            .entry(var_key(dest))
+                            .or_default()
+                            .insert(ValueOrigin::BlockNumber);
+                    }
                 }
                 IrInstr::Return { values, .. } => {
-                    if is_feasible(&state.path_constraints) {
+                    flush_pending_unchecked_calls(
+                        &mut state,
+                        Some(instr_span(instr)),
+                        &mut vulnerabilities,
+                        &mut seen_vulns,
+                    );
+                    if solver_cache.is_feasible(&state.path_constraints) {
                         let ret_values = values
                             .iter()
                             .map(|value| state.eval_value(value))
                             .collect::<Vec<_>>();
-                        terminal_states.push(TerminalState {
-                            kind: TerminationKind::Return,
-                            values: ret_values,
-                            path_constraints: state.path_constraints.clone(),
-                        });
+                        finalize_state(
+                            state.clone(),
+                            TerminationKind::Return,
+                            ret_values,
+                            &mut terminal_states,
+                            &mut worklist,
+                            &sink_scores,
+                            &mut state_shape_visits,
+                            &mut max_worklist,
+                            limits,
+                        );
                     }
                     block_terminated = true;
                     break;
                 }
                 IrInstr::Control { kind, .. } => {
-                    let outgoing = succs.get(&state.block_id).cloned().unwrap_or_default();
+                    let outgoing = succs
+                        .get(&state.function_id)
+                        .and_then(|fn_succs| fn_succs.get(&state.block_id))
+                        .cloned()
+                        .unwrap_or_default();
                     match kind {
                         ControlKind::If { cond } => {
                             let cond_expr = state.eval_bool(cond);
                             let cond_text = state.value_expr(cond);
+                            if cond_text.to_ascii_lowercase().contains("sender") {
+                                state.sender_checked = true;
+                            }
+                            if let Some(cond_key) = value_var_key(cond) {
+                                mark_pending_call_checked(
+                                    &mut state.pending_low_level_calls,
+                                    &cond_key,
+                                );
+                            }
+                            let timestamp_in_cond =
+                                value_has_origin(&state.origins, cond, ValueOrigin::Timestamp)
+                                    || cond_text.to_ascii_lowercase().contains("timestamp");
+                            if timestamp_in_cond
+                                && seen_vulns
+                                    .insert((VulnerabilityKind::TimestampDependency, current_pc))
+                            {
+                                vulnerabilities.push(LocalVulnerability {
+                                    kind: VulnerabilityKind::TimestampDependency,
+                                    pc: current_pc,
+                                    instruction: format!("{instr:?}"),
+                                    trace: state.trace.clone(),
+                                    trigger: Some(cond_text.clone()),
+                                    branch_triggers: state.branch_triggers.clone(),
+                                    span: Some(instr_span(instr)),
+                                    path_constraints: constraints_to_strings(
+                                        &state.path_constraints,
+                                    ),
+                                    message:
+                                        "dangerous usage of block.timestamp in branch condition"
+                                            .to_string(),
+                                    model: None,
+                                });
+                            }
+                            let weak_prng_in_cond =
+                                value_has_origin(&state.origins, cond, ValueOrigin::BlockNumber)
+                                    || cond_text.to_ascii_lowercase().contains("block.number")
+                                    || cond_text.to_ascii_lowercase().contains("blockhash");
+                            if weak_prng_in_cond
+                                && seen_vulns.insert((VulnerabilityKind::WeakPrng, current_pc))
+                            {
+                                vulnerabilities.push(LocalVulnerability {
+                                    kind: VulnerabilityKind::WeakPrng,
+                                    pc: current_pc,
+                                    instruction: format!("{instr:?}"),
+                                    trace: state.trace.clone(),
+                                    trigger: Some(cond_text.clone()),
+                                    branch_triggers: state.branch_triggers.clone(),
+                                    span: Some(instr_span(instr)),
+                                    path_constraints: constraints_to_strings(
+                                        &state.path_constraints,
+                                    ),
+                                    message:
+                                        "weak PRNG: block.number/blockhash used in branch condition"
+                                            .to_string(),
+                                    model: None,
+                                });
+                            }
 
                             if let Some(true_block) = outgoing.first().copied() {
                                 let mut true_state = state.clone();
@@ -643,10 +2075,18 @@ fn engine(cfg_fn: &cfg::CfgFunction) -> EngineStats {
                                 true_state
                                     .branch_triggers
                                     .push(format!("{cond_text} == true"));
-                                true_state.block_id = true_block;
-                                if is_feasible(&true_state.path_constraints) {
-                                    worklist.push(true_state);
-                                    max_worklist = max_worklist.max(worklist.len());
+                                if solver_cache.is_feasible(&true_state.path_constraints) {
+                                    if !try_enqueue_state(
+                                        &mut worklist,
+                                        true_state,
+                                        true_block,
+                                        &sink_scores,
+                                        &mut state_shape_visits,
+                                        &mut max_worklist,
+                                        limits,
+                                    ) {
+                                        pruned_branches += 1;
+                                    }
                                 } else {
                                     pruned_branches += 1;
                                 }
@@ -660,10 +2100,18 @@ fn engine(cfg_fn: &cfg::CfgFunction) -> EngineStats {
                                 false_state
                                     .branch_triggers
                                     .push(format!("{cond_text} == false"));
-                                false_state.block_id = false_block;
-                                if is_feasible(&false_state.path_constraints) {
-                                    worklist.push(false_state);
-                                    max_worklist = max_worklist.max(worklist.len());
+                                if solver_cache.is_feasible(&false_state.path_constraints) {
+                                    if !try_enqueue_state(
+                                        &mut worklist,
+                                        false_state,
+                                        false_block,
+                                        &sink_scores,
+                                        &mut state_shape_visits,
+                                        &mut max_worklist,
+                                        limits,
+                                    ) {
+                                        pruned_branches += 1;
+                                    }
                                 } else {
                                     pruned_branches += 1;
                                 }
@@ -678,13 +2126,22 @@ fn engine(cfg_fn: &cfg::CfgFunction) -> EngineStats {
                                 if let Some(body_block) = outgoing.first().copied() {
                                     let mut body_state = state.clone();
                                     body_state.path_constraints.push(cond_expr.clone());
+                                    body_state.inside_loop = true;
                                     body_state
                                         .branch_triggers
                                         .push(format!("loop({cond_text}) == true"));
-                                    body_state.block_id = body_block;
-                                    if is_feasible(&body_state.path_constraints) {
-                                        worklist.push(body_state);
-                                        max_worklist = max_worklist.max(worklist.len());
+                                    if solver_cache.is_feasible(&body_state.path_constraints) {
+                                        if !try_enqueue_state(
+                                            &mut worklist,
+                                            body_state,
+                                            body_block,
+                                            &sink_scores,
+                                            &mut state_shape_visits,
+                                            &mut max_worklist,
+                                            limits,
+                                        ) {
+                                            pruned_branches += 1;
+                                        }
                                     } else {
                                         pruned_branches += 1;
                                     }
@@ -694,13 +2151,22 @@ fn engine(cfg_fn: &cfg::CfgFunction) -> EngineStats {
                                 if let Some(exit_block) = outgoing.get(1).copied() {
                                     let mut exit_state = state.clone();
                                     exit_state.path_constraints.push(cond_expr.not());
+                                    exit_state.inside_loop = false;
                                     exit_state
                                         .branch_triggers
                                         .push(format!("loop({cond_text}) == false"));
-                                    exit_state.block_id = exit_block;
-                                    if is_feasible(&exit_state.path_constraints) {
-                                        worklist.push(exit_state);
-                                        max_worklist = max_worklist.max(worklist.len());
+                                    if solver_cache.is_feasible(&exit_state.path_constraints) {
+                                        if !try_enqueue_state(
+                                            &mut worklist,
+                                            exit_state,
+                                            exit_block,
+                                            &sink_scores,
+                                            &mut state_shape_visits,
+                                            &mut max_worklist,
+                                            limits,
+                                        ) {
+                                            pruned_branches += 1;
+                                        }
                                     } else {
                                         pruned_branches += 1;
                                     }
@@ -709,24 +2175,66 @@ fn engine(cfg_fn: &cfg::CfgFunction) -> EngineStats {
                                 }
                             } else if let Some(next_block) = outgoing.first().copied() {
                                 let mut next_state = state.clone();
-                                next_state.block_id = next_block;
-                                worklist.push(next_state);
-                                max_worklist = max_worklist.max(worklist.len());
+                                next_state.inside_loop = true;
+                                if !try_enqueue_state(
+                                    &mut worklist,
+                                    next_state,
+                                    next_block,
+                                    &sink_scores,
+                                    &mut state_shape_visits,
+                                    &mut max_worklist,
+                                    limits,
+                                ) {
+                                    pruned_branches += 1;
+                                }
                             } else {
                                 dead_ends += 1;
                             }
                         }
+                        ControlKind::EndLoop => {
+                            if outgoing.is_empty() {
+                                dead_ends += 1;
+                            } else {
+                                for next_block in outgoing {
+                                    let mut next_state = state.clone();
+                                    next_state.inside_loop = false;
+                                    if !try_enqueue_state(
+                                        &mut worklist,
+                                        next_state,
+                                        next_block,
+                                        &sink_scores,
+                                        &mut state_shape_visits,
+                                        &mut max_worklist,
+                                        limits,
+                                    ) {
+                                        pruned_branches += 1;
+                                    }
+                                }
+                            }
+                        }
                         ControlKind::Revert { value } => {
-                            if is_feasible(&state.path_constraints) {
+                            flush_pending_unchecked_calls(
+                                &mut state,
+                                Some(instr_span(instr)),
+                                &mut vulnerabilities,
+                                &mut seen_vulns,
+                            );
+                            if solver_cache.is_feasible(&state.path_constraints) {
                                 let revert_values = value
                                     .as_ref()
                                     .map(|v| vec![state.eval_value(v)])
                                     .unwrap_or_default();
-                                terminal_states.push(TerminalState {
-                                    kind: TerminationKind::Revert,
-                                    values: revert_values,
-                                    path_constraints: state.path_constraints.clone(),
-                                });
+                                finalize_state(
+                                    state.clone(),
+                                    TerminationKind::Revert,
+                                    revert_values,
+                                    &mut terminal_states,
+                                    &mut worklist,
+                                    &sink_scores,
+                                    &mut state_shape_visits,
+                                    &mut max_worklist,
+                                    limits,
+                                );
                             }
                         }
                         _ => {
@@ -734,10 +2242,17 @@ fn engine(cfg_fn: &cfg::CfgFunction) -> EngineStats {
                                 dead_ends += 1;
                             } else {
                                 for next_block in outgoing {
-                                    let mut next_state = state.clone();
-                                    next_state.block_id = next_block;
-                                    worklist.push(next_state);
-                                    max_worklist = max_worklist.max(worklist.len());
+                                    if !try_enqueue_state(
+                                        &mut worklist,
+                                        state.clone(),
+                                        next_block,
+                                        &sink_scores,
+                                        &mut state_shape_visits,
+                                        &mut max_worklist,
+                                        limits,
+                                    ) {
+                                        pruned_branches += 1;
+                                    }
                                 }
                             }
                         }
@@ -752,19 +2267,37 @@ fn engine(cfg_fn: &cfg::CfgFunction) -> EngineStats {
             continue;
         }
 
-        let outgoing = succs.get(&state.block_id).cloned().unwrap_or_default();
+        let outgoing = succs
+            .get(&state.function_id)
+            .and_then(|fn_succs| fn_succs.get(&state.block_id))
+            .cloned()
+            .unwrap_or_default();
         if outgoing.is_empty() {
-            terminal_states.push(TerminalState {
-                kind: TerminationKind::Fallthrough,
-                values: Vec::new(),
-                path_constraints: state.path_constraints.clone(),
-            });
+            flush_pending_unchecked_calls(&mut state, None, &mut vulnerabilities, &mut seen_vulns);
+            finalize_state(
+                state.clone(),
+                TerminationKind::Fallthrough,
+                Vec::new(),
+                &mut terminal_states,
+                &mut worklist,
+                &sink_scores,
+                &mut state_shape_visits,
+                &mut max_worklist,
+                limits,
+            );
         } else {
             for next_block in outgoing {
-                let mut next_state = state.clone();
-                next_state.block_id = next_block;
-                worklist.push(next_state);
-                max_worklist = max_worklist.max(worklist.len());
+                if !try_enqueue_state(
+                    &mut worklist,
+                    state.clone(),
+                    next_block,
+                    &sink_scores,
+                    &mut state_shape_visits,
+                    &mut max_worklist,
+                    limits,
+                ) {
+                    pruned_branches += 1;
+                }
             }
         }
     }
@@ -796,6 +2329,403 @@ fn engine(cfg_fn: &cfg::CfgFunction) -> EngineStats {
         vulnerabilities,
         truncated,
     }
+}
+
+fn flush_pending_unchecked_calls(
+    state: &mut State,
+    fallback_span: Option<Span>,
+    vulnerabilities: &mut Vec<LocalVulnerability>,
+    seen_vulns: &mut HashSet<(VulnerabilityKind, usize)>,
+) {
+    let pending = state
+        .pending_low_level_calls
+        .values()
+        .cloned()
+        .collect::<Vec<_>>();
+    for item in pending {
+        if seen_vulns.insert((VulnerabilityKind::UncheckedCall, item.call_pc)) {
+            vulnerabilities.push(LocalVulnerability {
+                kind: VulnerabilityKind::UncheckedCall,
+                pc: item.call_pc,
+                instruction: format!("call {}", item.callee),
+                trace: state.trace.clone(),
+                trigger: state.branch_triggers.last().cloned(),
+                branch_triggers: state.branch_triggers.clone(),
+                span: item.span.or(fallback_span),
+                path_constraints: constraints_to_strings(&state.path_constraints),
+                message: format!(
+                    "low-level external call '{}' return value is not checked",
+                    item.callee
+                ),
+                model: None,
+            });
+        }
+    }
+    state.pending_low_level_calls.clear();
+}
+
+fn callback_frame_from_state(state: &State) -> CallbackFrame {
+    CallbackFrame {
+        function_id: state.function_id,
+        block_id: state.block_id,
+        instr_offset: state.instr_offset,
+        env: state.env.clone(),
+        storage: state.storage.clone(),
+        origins: state.origins.clone(),
+        pending_low_level_calls: state.pending_low_level_calls.clone(),
+        expr_env: state.expr_env.clone(),
+        sender_checked: state.sender_checked,
+        inside_loop: state.inside_loop,
+        saw_order_sensitive_storage_read: state.saw_order_sensitive_storage_read,
+        block_visits: state.block_visits.clone(),
+        callback_depth: state.callback_depth,
+        external_call_pc: state.external_call_pc,
+    }
+}
+
+fn callback_state_from_frame(
+    current_state: &State,
+    frame: CallbackFrame,
+    callback_function_id: u32,
+    entry_block: u32,
+) -> State {
+    let mut callback_state = current_state.clone();
+    callback_state.function_id = callback_function_id;
+    callback_state.block_id = entry_block;
+    callback_state.instr_offset = 0;
+    callback_state.env = HashMap::new();
+    callback_state.origins = HashMap::new();
+    callback_state.pending_low_level_calls = HashMap::new();
+    callback_state.expr_env = HashMap::new();
+    callback_state.sender_checked = false;
+    callback_state.inside_loop = false;
+    callback_state.saw_order_sensitive_storage_read = false;
+    callback_state.block_visits = HashMap::from([(entry_block, 1)]);
+    callback_state.callback_depth = frame.callback_depth.saturating_add(1);
+    callback_state.callback_observed = false;
+    callback_state.callback_frame = Some(frame);
+    callback_state
+}
+
+fn resume_from_callback(
+    callback_state: &State,
+    frame: CallbackFrame,
+    kind: &TerminationKind,
+) -> State {
+    let mut resumed = State::new();
+    resumed.function_id = frame.function_id;
+    resumed.block_id = frame.block_id;
+    resumed.instr_offset = frame.instr_offset;
+    resumed.env = frame.env;
+    resumed.storage = match kind {
+        TerminationKind::Revert => frame.storage,
+        TerminationKind::Return | TerminationKind::Fallthrough => callback_state.storage.clone(),
+    };
+    resumed.origins = frame.origins;
+    resumed.path_constraints = callback_state.path_constraints.clone();
+    resumed.fresh_id = callback_state.fresh_id;
+    resumed.external_call_pc = frame.external_call_pc;
+    resumed.pending_low_level_calls = frame.pending_low_level_calls;
+    resumed.trace = callback_state.trace.clone();
+    resumed.expr_env = frame.expr_env;
+    resumed.branch_triggers = callback_state.branch_triggers.clone();
+    resumed.sender_checked = frame.sender_checked;
+    resumed.inside_loop = frame.inside_loop;
+    resumed.saw_order_sensitive_storage_read = frame.saw_order_sensitive_storage_read;
+    resumed.block_visits = frame.block_visits;
+    resumed.callback_depth = frame.callback_depth;
+    resumed.callback_observed = !matches!(kind, TerminationKind::Revert);
+    resumed.callback_frame = None;
+    resumed.branch_triggers.push(format!(
+        "callback(fn={}) {}",
+        callback_state.function_id,
+        match kind {
+            TerminationKind::Return => "returned",
+            TerminationKind::Revert => "reverted",
+            TerminationKind::Fallthrough => "fell through",
+        }
+    ));
+    resumed
+}
+
+fn finalize_state(
+    state: State,
+    kind: TerminationKind,
+    values: Vec<Int>,
+    terminal_states: &mut Vec<TerminalState>,
+    worklist: &mut Vec<State>,
+    sink_scores: &HashMap<u32, i32>,
+    state_shape_visits: &mut HashMap<String, u8>,
+    max_worklist: &mut usize,
+    limits: EngineLimits,
+) {
+    if let Some(frame) = state.callback_frame.clone() {
+        let resumed = resume_from_callback(&state, frame, &kind);
+        let _ = enqueue_state(
+            worklist,
+            resumed,
+            sink_scores,
+            state_shape_visits,
+            max_worklist,
+            limits,
+        );
+        return;
+    }
+
+    terminal_states.push(TerminalState {
+        kind,
+        values,
+        path_constraints: state.path_constraints.clone(),
+    });
+}
+
+fn havoc_storage(state: &mut State) {
+    if state.storage.is_empty() {
+        return;
+    }
+    let keys = state.storage.keys().cloned().collect::<Vec<_>>();
+    for key in keys {
+        let symbol = state.fresh_symbol("storage_havoc");
+        state.storage.insert(key, symbol);
+    }
+}
+
+fn mark_pending_call_checked(pending: &mut HashMap<String, PendingCall>, key: &str) {
+    let Some(call_pc) = pending.get(key).map(|item| item.call_pc) else {
+        return;
+    };
+    pending.retain(|_, item| item.call_pc != call_pc);
+}
+
+fn value_var_key(value: &IrValue) -> Option<String> {
+    match value {
+        IrValue::Var(var) => Some(var_key(var)),
+        _ => None,
+    }
+}
+
+fn value_key(value: &IrValue) -> String {
+    match value {
+        IrValue::Var(var) => var_key(var),
+        IrValue::Literal(lit) => format!("lit:{}", lit.value),
+        IrValue::Unknown => "<unknown>".to_string(),
+    }
+}
+
+fn place_var_key(place: &IrPlace) -> Option<String> {
+    match place {
+        IrPlace::Var { var, .. } => Some(var_key(var)),
+        _ => None,
+    }
+}
+
+fn value_name_raw(value: &IrValue) -> String {
+    match value {
+        IrValue::Var(IrVar::Named(name)) => name.clone(),
+        IrValue::Var(IrVar::Temp(id)) => format!("tmp_{id}"),
+        IrValue::Literal(lit) => lit.value.clone(),
+        IrValue::Unknown => "unknown".to_string(),
+    }
+}
+
+fn place_member_base_field(place: &IrPlace) -> Option<(String, String)> {
+    let IrPlace::Member { base, field, .. } = place else {
+        return None;
+    };
+    Some((value_name_raw(base), field.clone()))
+}
+
+fn reentrant_callback_candidates(
+    function_id: u32,
+    ast: &NormalizedAst,
+    compiler: &crate::frontend::CompilerInfo,
+    deps: &DependencyMap,
+    limit: usize,
+) -> Vec<u32> {
+    let Some(function) = ast.functions.get(function_id as usize) else {
+        return Vec::new();
+    };
+    let Some(contract_id) = function.contract else {
+        return Vec::new();
+    };
+    let Some(contract) = ast.contracts.get(contract_id as usize) else {
+        return Vec::new();
+    };
+    let Some(current_deps) = deps.functions.get(&function_id) else {
+        return Vec::new();
+    };
+
+    let mut candidates = contract
+        .functions
+        .iter()
+        .filter_map(|candidate_id| {
+        let Some(candidate) = ast.functions.get(*candidate_id as usize) else {
+            return None;
+        };
+        if !crate::frontend::is_mutating_entrypoint(candidate, compiler)
+            || candidate.kind != FunctionKind::Function
+        {
+            return None;
+        }
+        if *candidate_id == function_id {
+            return Some((0u8, *candidate_id));
+        }
+        let Some(candidate_deps) = deps.functions.get(candidate_id) else {
+            return None;
+        };
+        let overlaps = current_deps
+            .writes
+            .iter()
+            .any(|slot| candidate_deps.reads.contains(slot) || candidate_deps.writes.contains(slot))
+            || current_deps
+                .reads
+                .iter()
+                .any(|slot| candidate_deps.writes.contains(slot));
+        overlaps.then_some((1u8, *candidate_id))
+    })
+        .collect::<Vec<_>>();
+    candidates.sort_unstable();
+    candidates
+        .into_iter()
+        .take(limit)
+        .map(|(_, function_id)| function_id)
+        .collect()
+}
+
+fn value_has_origin(
+    origins: &HashMap<String, HashSet<ValueOrigin>>,
+    value: &IrValue,
+    origin: ValueOrigin,
+) -> bool {
+    let Some(key) = value_var_key(value) else {
+        return false;
+    };
+    origins
+        .get(&key)
+        .map(|origins| origins.contains(&origin))
+        .unwrap_or(false)
+}
+
+fn is_low_level_call_name(callee_lower: &str) -> bool {
+    matches!(
+        callee_lower,
+        "call" | "send" | "transfer" | "delegatecall" | "staticcall"
+    ) || callee_lower.ends_with(".call")
+        || callee_lower.ends_with(".send")
+        || callee_lower.ends_with(".transfer")
+        || callee_lower.ends_with(".delegatecall")
+        || callee_lower.ends_with(".staticcall")
+}
+
+fn is_send_name(callee_lower: &str) -> bool {
+    callee_lower == "send" || callee_lower.ends_with(".send")
+}
+
+fn is_transfer_name(callee_lower: &str) -> bool {
+    callee_lower == "transfer" || callee_lower.ends_with(".transfer")
+}
+
+fn is_selfdestruct_name(callee_lower: &str) -> bool {
+    callee_lower == "selfdestruct" || callee_lower == "suicide"
+}
+
+fn has_checked_arithmetic(ast: &NormalizedAst) -> bool {
+    for file in &ast.files {
+        let src = file.source.to_ascii_lowercase();
+        if src.contains("pragma solidity") && src.contains("0.8") {
+            return true;
+        }
+    }
+    false
+}
+
+fn collect_payable_contracts(ast: &NormalizedAst) -> HashSet<u32> {
+    let mut out = HashSet::new();
+    for function in &ast.functions {
+        if let Some(contract_id) = function.contract
+            && function.mutability == Mutability::Payable
+            && function.kind == FunctionKind::Function
+        {
+            out.insert(contract_id);
+        }
+    }
+    out
+}
+
+fn collect_contracts_with_ether_send(
+    ast: &NormalizedAst,
+    ir_module: &crate::ir::IrModule,
+) -> HashSet<u32> {
+    let mut out = HashSet::new();
+    for function in &ir_module.functions {
+        let Some(ast_fn) = ast.functions.get(function.id as usize) else {
+            continue;
+        };
+        let Some(contract_id) = ast_fn.contract else {
+            continue;
+        };
+        if function_has_ether_send(function) {
+            out.insert(contract_id);
+        }
+    }
+    out
+}
+
+fn function_has_ether_send(function: &crate::ir::IrFunction) -> bool {
+    function.blocks.iter().any(|block| {
+        block.instrs.iter().any(|instr| {
+            let IrInstr::Call { callee, options, .. } = instr else {
+                return false;
+            };
+            let callee_name = value_name_raw(callee).to_ascii_lowercase();
+            let has_value = options
+                .iter()
+                .any(|opt| matches!(opt, crate::ir::IrCallOption::Value(_)));
+            has_value || is_send_name(&callee_name) || is_transfer_name(&callee_name)
+        })
+    })
+}
+
+fn is_public_mint_burn_function(
+    function: &crate::norm::Function,
+    compiler: &crate::frontend::CompilerInfo,
+) -> bool {
+    let Some(name) = function.name.as_ref() else {
+        return false;
+    };
+    let lower = name.to_ascii_lowercase();
+    (lower == "mint" || lower == "burn")
+        && crate::frontend::is_public_entrypoint(function, compiler)
+        && function.kind == FunctionKind::Function
+}
+
+fn collect_shadowed_params(ast: &NormalizedAst) -> HashMap<u32, Vec<String>> {
+    let mut by_contract: HashMap<u32, HashSet<String>> = HashMap::new();
+    for state_var in &ast.state_vars {
+        by_contract
+            .entry(state_var.contract)
+            .or_default()
+            .insert(state_var.name.clone());
+    }
+
+    let mut by_function: HashMap<u32, Vec<String>> = HashMap::new();
+    for function in &ast.functions {
+        let Some(contract_id) = function.contract else {
+            continue;
+        };
+        let Some(state_vars) = by_contract.get(&contract_id) else {
+            continue;
+        };
+        for param in &function.params {
+            if state_vars.contains(param) {
+                by_function
+                    .entry(function.id)
+                    .or_default()
+                    .push(param.clone());
+            }
+        }
+    }
+    by_function
 }
 
 fn var_key(var: &IrVar) -> String {
@@ -890,19 +2820,47 @@ fn bool_to_int(condition: Bool) -> Int {
     condition.ite(&Int::from_i64(1), &Int::from_i64(0))
 }
 
+fn constrain_boolean_int(state: &mut State, value: &Int) {
+    let is_zero = value.eq(Int::from_i64(0));
+    let is_one = value.eq(Int::from_i64(1));
+    state.path_constraints.push(Bool::or(&[&is_zero, &is_one]));
+}
+
+fn int_to_evm_bv(value: &Int) -> BV {
+    BV::from_int(value, EVM_WORD_BITS)
+}
+
+fn evm_bv_to_int(value: &BV) -> Int {
+    value.to_int(false)
+}
+
+fn evm_zero_bv() -> BV {
+    BV::from_u64(0, EVM_WORD_BITS)
+}
+
 fn eval_binary(op: &str, lhs: Int, rhs: Int) -> Int {
+    let lhs_bv = int_to_evm_bv(&lhs);
+    let rhs_bv = int_to_evm_bv(&rhs);
     match op {
-        "+" => Int::add(&[lhs, rhs]),
-        "-" => Int::sub(&[lhs, rhs]),
-        "*" => Int::mul(&[lhs, rhs]),
-        "/" => lhs.div(rhs),
-        "%" => lhs.modulo(rhs),
-        "==" => bool_to_int(lhs.eq(rhs)),
-        "!=" => bool_to_int(lhs.eq(rhs).not()),
-        ">" => bool_to_int(lhs.gt(rhs)),
-        ">=" => bool_to_int(lhs.ge(rhs)),
-        "<" => bool_to_int(lhs.lt(rhs)),
-        "<=" => bool_to_int(lhs.le(rhs)),
+        "+" => evm_bv_to_int(&lhs_bv.bvadd(&rhs_bv)),
+        "-" => evm_bv_to_int(&lhs_bv.bvsub(&rhs_bv)),
+        "*" => evm_bv_to_int(&lhs_bv.bvmul(&rhs_bv)),
+        "/" => {
+            let zero = evm_zero_bv();
+            let safe = rhs_bv.eq(&zero).ite(&zero, &lhs_bv.bvudiv(&rhs_bv));
+            evm_bv_to_int(&safe)
+        }
+        "%" => {
+            let zero = evm_zero_bv();
+            let safe = rhs_bv.eq(&zero).ite(&zero, &lhs_bv.bvurem(&rhs_bv));
+            evm_bv_to_int(&safe)
+        }
+        "==" => bool_to_int(lhs_bv.eq(&rhs_bv)),
+        "!=" => bool_to_int(lhs_bv.eq(&rhs_bv).not()),
+        ">" => bool_to_int(lhs_bv.bvugt(&rhs_bv)),
+        ">=" => bool_to_int(lhs_bv.bvuge(&rhs_bv)),
+        "<" => bool_to_int(lhs_bv.bvult(&rhs_bv)),
+        "<=" => bool_to_int(lhs_bv.bvule(&rhs_bv)),
         "&&" => {
             let lhs_truth = lhs.eq(Int::from_i64(0)).not();
             let rhs_truth = rhs.eq(Int::from_i64(0)).not();
@@ -920,30 +2878,10 @@ fn eval_binary(op: &str, lhs: Int, rhs: Int) -> Int {
 fn eval_unary(op: &str, expr: Int) -> Int {
     match op {
         "+" => expr,
-        "-" => expr.unary_minus(),
+        "-" => evm_bv_to_int(&int_to_evm_bv(&expr).bvneg()),
         "!" => bool_to_int(expr.eq(Int::from_i64(0))),
         _ => Int::new_const(format!("un_{op}")),
     }
-}
-
-fn is_feasible(path_constraints: &[Bool]) -> bool {
-    let solver = Solver::new();
-    for constraint in path_constraints {
-        solver.assert(constraint);
-    }
-    matches!(solver.check(), SatResult::Sat)
-}
-
-fn check_underflow(path_constraints: &[Bool], lhs: &Int, rhs: &Int) -> Option<String> {
-    let solver = Solver::new();
-    for constraint in path_constraints {
-        solver.assert(constraint);
-    }
-    solver.assert(rhs.gt(lhs.clone()));
-    if matches!(solver.check(), SatResult::Sat) {
-        return solver.get_model().map(|model| model.to_string());
-    }
-    None
 }
 
 fn constraints_to_strings(path_constraints: &[Bool]) -> Vec<String> {
@@ -1015,5 +2953,780 @@ fn is_storage_place(place: &IrPlace) -> bool {
         IrPlace::Var { class, .. } => matches!(class, PlaceClass::Storage),
         IrPlace::Member { class, .. } => matches!(class, PlaceClass::Storage),
         IrPlace::Index { class, .. } => matches!(class, PlaceClass::Storage),
+    }
+}
+
+fn place_is_order_sensitive(place: &IrPlace) -> bool {
+    let key = place_key(place).to_ascii_lowercase();
+    key.split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+        .filter(|token| !token.is_empty())
+        .any(|token| {
+            matches!(
+                token,
+                "price"
+                    | "rate"
+                    | "reward"
+                    | "bid"
+                    | "bids"
+                    | "auction"
+                    | "winner"
+                    | "quote"
+            ) || token.ends_with("price")
+                || token.ends_with("rate")
+                || token.ends_with("reward")
+        })
+}
+
+fn place_is_authority_sensitive(place: &IrPlace) -> bool {
+    let key = place_key(place).to_ascii_lowercase();
+    key.split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+        .filter(|token| !token.is_empty())
+        .any(|token| {
+            matches!(
+                token,
+                "owner"
+                    | "admin"
+                    | "operator"
+                    | "minter"
+                    | "pauser"
+                    | "implementation"
+                    | "governance"
+                    | "role"
+                    | "roles"
+                    | "whitelist"
+                    | "blacklist"
+                    | "auth"
+                    | "authority"
+            ) || token.ends_with("owner")
+                || token.ends_with("admin")
+                || token.ends_with("governance")
+        })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        build_sink_scores, constrain_boolean_int, engine, eval_binary, function_has_ether_send,
+        havoc_storage, is_public_mint_burn_function, place_is_authority_sensitive,
+        place_is_order_sensitive, pop_next_state, state_priority_score, EngineCallbackData,
+        EngineStats, SolverCache, State, VulnerabilityKind, MAX_BLOCK_VISITS_PER_PATH,
+    };
+    use crate::cfg::{Block, CfgFunction};
+    use crate::fuzzing::types::{DependencyMap, FunctionDeps};
+    use crate::ir::{
+        ControlKind, IrCallOption, IrFunction, IrInstr, IrPlace, IrValue, IrVar, PlaceClass,
+    };
+    use crate::norm::{
+        Contract, ContractKind, Function, FunctionKind, Literal, Mutability, NormalizedAst,
+        SourceFile, Span, Visibility,
+    };
+    use z3::ast::Int;
+    use z3::{SatResult, Solver};
+
+    fn span() -> Span {
+        Span {
+            file: 0,
+            start: 0,
+            end: 1,
+        }
+    }
+
+    fn number_lit(n: &str) -> IrValue {
+        IrValue::Literal(Literal {
+            kind: "number".to_string(),
+            value: n.to_string(),
+        })
+    }
+
+    fn cfg_with_instrs(instrs: Vec<IrInstr>) -> CfgFunction {
+        CfgFunction {
+            id: 0,
+            blocks: vec![Block { id: 0, instrs }],
+            edges: Vec::new(),
+        }
+    }
+
+    fn run_engine(
+        cfg: &CfgFunction,
+        checked_arithmetic: bool,
+        allow_tod: bool,
+        allow_signature_malleability: bool,
+    ) -> EngineStats {
+        engine(
+            cfg,
+            std::slice::from_ref(cfg),
+            None,
+            checked_arithmetic,
+            allow_tod,
+            allow_signature_malleability,
+        )
+    }
+
+    fn callback_test_ast() -> NormalizedAst {
+        let mut ast = NormalizedAst::from_sources(vec![SourceFile {
+            id: 0,
+            path: "callback.sol".to_string(),
+            source: "pragma solidity ^0.8.0;".to_string(),
+        }]);
+        ast.contracts.push(Contract {
+            id: 0,
+            name: "Vault".to_string(),
+            kind: ContractKind::Contract,
+            bases: Vec::new(),
+            functions: vec![0, 1],
+            state_vars: Vec::new(),
+            modifiers: Vec::new(),
+            events: Vec::new(),
+            errors: Vec::new(),
+            span: span(),
+        });
+        ast.functions.push(Function {
+            id: 0,
+            contract: Some(0),
+            name: Some("withdraw".to_string()),
+            kind: FunctionKind::Function,
+            visibility: Visibility::Public,
+            mutability: Mutability::NonPayable,
+            params: Vec::new(),
+            returns: Vec::new(),
+            modifiers: Vec::new(),
+            body: None,
+            span: span(),
+        });
+        ast.functions.push(Function {
+            id: 1,
+            contract: Some(0),
+            name: Some("poke".to_string()),
+            kind: FunctionKind::Function,
+            visibility: Visibility::Public,
+            mutability: Mutability::NonPayable,
+            params: Vec::new(),
+            returns: Vec::new(),
+            modifiers: Vec::new(),
+            body: None,
+            span: span(),
+        });
+        ast
+    }
+
+    fn callback_test_deps() -> DependencyMap {
+        let mut deps = DependencyMap::default();
+        deps.functions.insert(
+            0,
+            FunctionDeps {
+                reads: ["balances".to_string()].into_iter().collect(),
+                writes: ["balances".to_string()].into_iter().collect(),
+            },
+        );
+        deps.functions.insert(
+            1,
+            FunctionDeps {
+                reads: ["balances".to_string()].into_iter().collect(),
+                writes: ["balances".to_string()].into_iter().collect(),
+            },
+        );
+        deps
+    }
+
+    fn test_function(name: Option<&str>, visibility: Visibility, mutability: Mutability) -> Function {
+        Function {
+            id: 0,
+            contract: Some(0),
+            name: name.map(|n| n.to_string()),
+            kind: FunctionKind::Function,
+            visibility,
+            mutability,
+            params: Vec::new(),
+            returns: Vec::new(),
+            modifiers: Vec::new(),
+            body: None,
+            span: span(),
+        }
+    }
+
+    #[test]
+    fn engine_signature_malleability_respects_static_gate() {
+        let cfg = cfg_with_instrs(vec![
+            IrInstr::Call {
+                dest: vec![IrVar::Temp(0)],
+                callee: IrValue::Var(IrVar::Named("ecrecover".to_string())),
+                args: Vec::new(),
+                options: Vec::new(),
+                span: span(),
+            },
+            IrInstr::Return {
+                values: Vec::new(),
+                span: span(),
+            },
+        ]);
+
+        let gated_off = run_engine(&cfg, true, false, false);
+        assert!(
+            !gated_off
+                .vulnerabilities
+                .iter()
+                .any(|v| matches!(v.kind, VulnerabilityKind::SignatureMalleability))
+        );
+
+        let gated_on = run_engine(&cfg, true, false, true);
+        assert!(
+            gated_on
+                .vulnerabilities
+                .iter()
+                .any(|v| matches!(v.kind, VulnerabilityKind::SignatureMalleability))
+        );
+    }
+
+    #[test]
+    fn engine_tod_respects_static_gate() {
+        let cfg = cfg_with_instrs(vec![
+            IrInstr::Load {
+                dest: IrVar::Temp(0),
+                src: IrPlace::Var {
+                    var: IrVar::Named("price".to_string()),
+                    class: PlaceClass::Storage,
+                },
+                span: span(),
+            },
+            IrInstr::Call {
+                dest: Vec::new(),
+                callee: IrValue::Var(IrVar::Named("call".to_string())),
+                args: Vec::new(),
+                options: vec![IrCallOption::Value(number_lit("1"))],
+                span: span(),
+            },
+            IrInstr::Return {
+                values: Vec::new(),
+                span: span(),
+            },
+        ]);
+
+        let gated_off = run_engine(&cfg, true, false, true);
+        assert!(
+            !gated_off
+                .vulnerabilities
+                .iter()
+                .any(|v| matches!(v.kind, VulnerabilityKind::TransactionOrderDependency))
+        );
+
+        let gated_on = run_engine(&cfg, true, true, true);
+        assert!(
+            gated_on
+                .vulnerabilities
+                .iter()
+                .any(|v| matches!(v.kind, VulnerabilityKind::TransactionOrderDependency))
+        );
+    }
+
+    #[test]
+    fn order_sensitive_matcher_is_token_aware() {
+        let sensitive = IrPlace::Var {
+            var: IrVar::Named("pool_price".to_string()),
+            class: PlaceClass::Storage,
+        };
+        let non_sensitive = IrPlace::Var {
+            var: IrVar::Named("surrogate".to_string()),
+            class: PlaceClass::Storage,
+        };
+        assert!(place_is_order_sensitive(&sensitive));
+        assert!(!place_is_order_sensitive(&non_sensitive));
+    }
+
+    #[test]
+    fn engine_underflow_is_deduped_on_same_pc() {
+        let cond_var = IrValue::Var(IrVar::Named("cond".to_string()));
+        let cfg = CfgFunction {
+            id: 0,
+            blocks: vec![
+                Block {
+                    id: 0,
+                    instrs: vec![IrInstr::Control {
+                        kind: ControlKind::If { cond: cond_var },
+                        span: span(),
+                    }],
+                },
+                Block {
+                    id: 1,
+                    instrs: vec![
+                        IrInstr::Binary {
+                            dest: IrVar::Temp(0),
+                            op: "-".to_string(),
+                            lhs: number_lit("1"),
+                            rhs: number_lit("2"),
+                            span: span(),
+                        },
+                        IrInstr::Return {
+                            values: Vec::new(),
+                            span: span(),
+                        },
+                    ],
+                },
+            ],
+            // Both true/false paths converge to the same block/instruction PC.
+            edges: vec![
+                crate::cfg::Edge { from: 0, to: 1 },
+                crate::cfg::Edge { from: 0, to: 1 },
+            ],
+        };
+
+        let stats = run_engine(&cfg, false, false, false);
+        let count = stats
+            .vulnerabilities
+            .iter()
+            .filter(|v| matches!(v.kind, VulnerabilityKind::Underflow))
+            .count();
+        assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn solver_cache_reuses_equivalent_constraint_sets() {
+        let x = Int::new_const("x");
+        let c1 = x.gt(Int::from_i64(1));
+        let c2 = x.lt(Int::from_i64(10));
+        let mut cache = SolverCache::default();
+
+        assert!(cache.is_feasible(&[c1.clone(), c2.clone()]));
+        assert!(cache.is_feasible(&[c2, c1]));
+        assert_eq!(cache.sat_by_constraints.len(), 1);
+    }
+
+    #[test]
+    fn eval_binary_uint256_wraps_addition() {
+        let wrapped = eval_binary("+", Int::from_i64(-1), Int::from_i64(1));
+        let solver = Solver::new();
+        assert_eq!(solver.check(), SatResult::Sat);
+        let model = solver.get_model().expect("model");
+        let value = model.eval(&wrapped, true).and_then(|v| v.as_i64());
+        assert_eq!(value, Some(0));
+    }
+
+    #[test]
+    fn eval_binary_uses_unsigned_uint256_comparison() {
+        let gt = eval_binary(">", Int::from_i64(-1), Int::from_i64(1));
+        let solver = Solver::new();
+        assert_eq!(solver.check(), SatResult::Sat);
+        let model = solver.get_model().expect("model");
+        let value = model.eval(&gt, true).and_then(|v| v.as_i64());
+        assert_eq!(value, Some(1));
+    }
+
+    #[test]
+    fn underflow_check_uses_unsigned_uint256_ordering() {
+        let mut cache = SolverCache::default();
+        let no_underflow = cache.check_underflow(&[], &Int::from_i64(-1), &Int::from_i64(1));
+        assert!(no_underflow.is_none());
+
+        let underflow = cache.check_underflow(&[], &Int::from_i64(1), &Int::from_i64(2));
+        assert!(underflow.is_some());
+    }
+
+    #[test]
+    fn require_call_splits_success_and_revert_paths() {
+        let cfg = cfg_with_instrs(vec![
+            IrInstr::Call {
+                dest: Vec::new(),
+                callee: IrValue::Var(IrVar::Named("require".to_string())),
+                args: vec![IrValue::Var(IrVar::Named("ok".to_string()))],
+                options: Vec::new(),
+                span: span(),
+            },
+            IrInstr::Return {
+                values: Vec::new(),
+                span: span(),
+            },
+        ]);
+
+        let stats = run_engine(&cfg, true, false, false);
+        assert_eq!(stats.reachable_returns, 1);
+        assert_eq!(stats.reachable_reverts, 1);
+        assert_eq!(stats.terminal_paths, 2);
+    }
+
+    #[test]
+    fn revert_call_terminates_current_path() {
+        let cfg = cfg_with_instrs(vec![
+            IrInstr::Call {
+                dest: Vec::new(),
+                callee: IrValue::Var(IrVar::Named("revert".to_string())),
+                args: vec![number_lit("1")],
+                options: Vec::new(),
+                span: span(),
+            },
+            IrInstr::Return {
+                values: Vec::new(),
+                span: span(),
+            },
+        ]);
+
+        let stats = run_engine(&cfg, true, false, false);
+        assert_eq!(stats.reachable_returns, 0);
+        assert_eq!(stats.reachable_reverts, 1);
+        assert_eq!(stats.terminal_paths, 1);
+    }
+
+    #[test]
+    fn havoc_storage_rewrites_existing_slots() {
+        let mut state = State::new();
+        state
+            .storage
+            .insert("slot_owner".to_string(), Int::from_i64(7));
+        havoc_storage(&mut state);
+        let value = state
+            .storage
+            .get("slot_owner")
+            .map(|v| v.to_string())
+            .unwrap_or_default();
+        assert!(value.contains("storage_havoc"));
+    }
+
+    #[test]
+    fn boolean_domain_constraint_rejects_non_boolean_value() {
+        let mut state = State::new();
+        let v = Int::new_const("ret");
+        constrain_boolean_int(&mut state, &v);
+        state.path_constraints.push(v.eq(Int::from_i64(2)));
+        let mut cache = SolverCache::default();
+        assert!(!cache.is_feasible(&state.path_constraints));
+    }
+
+    #[test]
+    fn low_level_call_return_is_modeled_as_boolean() {
+        let cfg = CfgFunction {
+            id: 0,
+            blocks: vec![
+                Block {
+                    id: 0,
+                    instrs: vec![
+                        IrInstr::Call {
+                            dest: vec![IrVar::Temp(0)],
+                            callee: IrValue::Var(IrVar::Named("call".to_string())),
+                            args: Vec::new(),
+                            options: Vec::new(),
+                            span: span(),
+                        },
+                        IrInstr::Binary {
+                            dest: IrVar::Temp(1),
+                            op: ">".to_string(),
+                            lhs: IrValue::Var(IrVar::Temp(0)),
+                            rhs: number_lit("1"),
+                            span: span(),
+                        },
+                        IrInstr::Control {
+                            kind: ControlKind::If {
+                                cond: IrValue::Var(IrVar::Temp(1)),
+                            },
+                            span: span(),
+                        },
+                    ],
+                },
+                Block {
+                    id: 1,
+                    instrs: vec![IrInstr::Return {
+                        values: Vec::new(),
+                        span: span(),
+                    }],
+                },
+                Block {
+                    id: 2,
+                    instrs: vec![IrInstr::Return {
+                        values: Vec::new(),
+                        span: span(),
+                    }],
+                },
+            ],
+            edges: vec![
+                crate::cfg::Edge { from: 0, to: 1 },
+                crate::cfg::Edge { from: 0, to: 2 },
+            ],
+        };
+
+        let stats = run_engine(&cfg, true, false, false);
+        assert_eq!(stats.reachable_returns, 1);
+        assert!(stats.pruned_branches >= 1);
+    }
+
+    #[test]
+    fn staticcall_does_not_mark_reentrancy_edge() {
+        let cfg = cfg_with_instrs(vec![
+            IrInstr::Call {
+                dest: vec![IrVar::Temp(0)],
+                callee: IrValue::Var(IrVar::Named("staticcall".to_string())),
+                args: Vec::new(),
+                options: Vec::new(),
+                span: span(),
+            },
+            IrInstr::Store {
+                dest: IrPlace::Var {
+                    var: IrVar::Named("balances".to_string()),
+                    class: PlaceClass::Storage,
+                },
+                src: number_lit("1"),
+                span: span(),
+            },
+            IrInstr::Return {
+                values: Vec::new(),
+                span: span(),
+            },
+        ]);
+        let stats = run_engine(&cfg, true, false, false);
+        assert!(
+            !stats
+                .vulnerabilities
+                .iter()
+                .any(|v| matches!(v.kind, VulnerabilityKind::Reentrancy))
+        );
+    }
+
+    #[test]
+    fn callback_execution_enables_reentrancy_detection() {
+        let cfgs = vec![
+            CfgFunction {
+                id: 0,
+                blocks: vec![Block {
+                    id: 0,
+                    instrs: vec![
+                        IrInstr::Call {
+                            dest: vec![IrVar::Temp(0)],
+                            callee: IrValue::Var(IrVar::Named("call".to_string())),
+                            args: Vec::new(),
+                            options: vec![IrCallOption::Value(number_lit("1"))],
+                            span: span(),
+                        },
+                        IrInstr::Store {
+                            dest: IrPlace::Var {
+                                var: IrVar::Named("balances".to_string()),
+                                class: PlaceClass::Storage,
+                            },
+                            src: number_lit("1"),
+                            span: span(),
+                        },
+                        IrInstr::Return {
+                            values: Vec::new(),
+                            span: span(),
+                        },
+                    ],
+                }],
+                edges: Vec::new(),
+            },
+            CfgFunction {
+                id: 1,
+                blocks: vec![Block {
+                    id: 0,
+                    instrs: vec![IrInstr::Return {
+                        values: Vec::new(),
+                        span: span(),
+                    }],
+                }],
+                edges: Vec::new(),
+            },
+        ];
+        let ast = callback_test_ast();
+        let deps = callback_test_deps();
+        let compiler = crate::frontend::CompilerInfo {
+            compiler_name: "test".to_string(),
+            compiler_version: Some("0.8.0".to_string()),
+            legacy_omitted_visibility_is_public: false,
+        };
+
+        let stats = engine(
+            &cfgs[0],
+            &cfgs,
+            Some(EngineCallbackData {
+                ast: &ast,
+                compiler: &compiler,
+                deps: &deps,
+            }),
+            true,
+            false,
+            false,
+        );
+
+        assert!(
+            stats
+                .vulnerabilities
+                .iter()
+                .any(|v| matches!(v.kind, VulnerabilityKind::Reentrancy))
+        );
+    }
+
+    #[test]
+    fn engine_bounds_unconditional_loop_revisits() {
+        let cfg = CfgFunction {
+            id: 0,
+            blocks: vec![Block {
+                id: 0,
+                instrs: vec![IrInstr::Control {
+                    kind: ControlKind::Loop { cond: None },
+                    span: span(),
+                }],
+            }],
+            edges: vec![crate::cfg::Edge { from: 0, to: 0 }],
+        };
+
+        let stats = run_engine(&cfg, true, false, false);
+        assert!(!stats.truncated);
+        assert!(stats.pruned_branches >= 1);
+        assert!(stats.explored_states <= (MAX_BLOCK_VISITS_PER_PATH as usize + 1));
+    }
+
+    #[test]
+    fn sink_priority_scheduler_picks_hotter_state_first() {
+        let cfg = CfgFunction {
+            id: 0,
+            blocks: vec![
+                Block {
+                    id: 1,
+                    instrs: vec![IrInstr::Nop { span: span() }],
+                },
+                Block {
+                    id: 2,
+                    instrs: vec![IrInstr::Call {
+                        dest: Vec::new(),
+                        callee: IrValue::Var(IrVar::Named("call".to_string())),
+                        args: Vec::new(),
+                        options: Vec::new(),
+                        span: span(),
+                    }],
+                },
+            ],
+            edges: Vec::new(),
+        };
+        let sink_scores = build_sink_scores(std::slice::from_ref(&cfg));
+        let mut low = State::new();
+        low.block_id = 1;
+        let mut high = State::new();
+        high.block_id = 2;
+        high.external_call_pc = Some(9);
+        assert!(state_priority_score(&high, &sink_scores) > state_priority_score(&low, &sink_scores));
+
+        let mut worklist = vec![low, high];
+        let picked = pop_next_state(&mut worklist, &sink_scores).expect("state");
+        assert_eq!(picked.block_id, 2);
+    }
+
+    #[test]
+    fn authority_sensitive_matcher_is_token_aware() {
+        let sensitive = IrPlace::Var {
+            var: IrVar::Named("owner".to_string()),
+            class: PlaceClass::Storage,
+        };
+        let non_sensitive = IrPlace::Var {
+            var: IrVar::Named("surrogate".to_string()),
+            class: PlaceClass::Storage,
+        };
+        assert!(place_is_authority_sensitive(&sensitive));
+        assert!(!place_is_authority_sensitive(&non_sensitive));
+    }
+
+    #[test]
+    fn public_mint_burn_requires_public_entrypoint() {
+        let public_mint = test_function(Some("mint"), Visibility::Public, Mutability::NonPayable);
+        let external_burn =
+            test_function(Some("burn"), Visibility::External, Mutability::NonPayable);
+        let internal_mint =
+            test_function(Some("mint"), Visibility::Internal, Mutability::NonPayable);
+        let other = test_function(Some("transfer"), Visibility::Public, Mutability::NonPayable);
+        let compiler = crate::frontend::CompilerInfo {
+            compiler_name: "test".to_string(),
+            compiler_version: Some("0.8.0".to_string()),
+            legacy_omitted_visibility_is_public: false,
+        };
+
+        assert!(is_public_mint_burn_function(&public_mint, &compiler));
+        assert!(is_public_mint_burn_function(&external_burn, &compiler));
+        assert!(!is_public_mint_burn_function(&internal_mint, &compiler));
+        assert!(!is_public_mint_burn_function(&other, &compiler));
+    }
+
+    #[test]
+    fn function_has_ether_send_detects_value_and_transfer() {
+        let with_value = IrFunction {
+            id: 0,
+            name: Some("withdraw".to_string()),
+            source: Some(0),
+            span: span(),
+            blocks: vec![crate::ir::IrBlock {
+                id: 0,
+                instrs: vec![IrInstr::Call {
+                    dest: Vec::new(),
+                    callee: IrValue::Var(IrVar::Named("call".to_string())),
+                    args: Vec::new(),
+                    options: vec![IrCallOption::Value(number_lit("1"))],
+                    span: span(),
+                }],
+            }],
+        };
+        let with_transfer = IrFunction {
+            id: 0,
+            name: Some("pay".to_string()),
+            source: Some(0),
+            span: span(),
+            blocks: vec![crate::ir::IrBlock {
+                id: 0,
+                instrs: vec![IrInstr::Call {
+                    dest: Vec::new(),
+                    callee: IrValue::Var(IrVar::Named("transfer".to_string())),
+                    args: Vec::new(),
+                    options: Vec::new(),
+                    span: span(),
+                }],
+            }],
+        };
+        let without_send = IrFunction {
+            id: 0,
+            name: Some("deposit".to_string()),
+            source: Some(0),
+            span: span(),
+            blocks: vec![crate::ir::IrBlock {
+                id: 0,
+                instrs: vec![IrInstr::Store {
+                    dest: IrPlace::Var {
+                        var: IrVar::Named("balances".to_string()),
+                        class: PlaceClass::Storage,
+                    },
+                    src: number_lit("1"),
+                    span: span(),
+                }],
+            }],
+        };
+
+        assert!(function_has_ether_send(&with_value));
+        assert!(function_has_ether_send(&with_transfer));
+        assert!(!function_has_ether_send(&without_send));
+    }
+
+    #[test]
+    fn engine_detects_arbitrary_write_and_memory_manipulation() {
+        let cfg = cfg_with_instrs(vec![
+            IrInstr::Store {
+                dest: IrPlace::Var {
+                    var: IrVar::Named("owner".to_string()),
+                    class: PlaceClass::Storage,
+                },
+                src: number_lit("1"),
+                span: span(),
+            },
+            IrInstr::InlineAsm {
+                language: Some("yul".to_string()),
+                span: span(),
+            },
+            IrInstr::Return {
+                values: Vec::new(),
+                span: span(),
+            },
+        ]);
+        let stats = run_engine(&cfg, true, false, false);
+        assert!(
+            stats
+                .vulnerabilities
+                .iter()
+                .any(|v| matches!(v.kind, VulnerabilityKind::ArbitraryWrite))
+        );
+        assert!(
+            stats
+                .vulnerabilities
+                .iter()
+                .any(|v| matches!(v.kind, VulnerabilityKind::MemoryManipulation))
+        );
     }
 }

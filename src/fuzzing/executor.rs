@@ -1,14 +1,15 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::cfg::CfgFunction;
+use crate::frontend::FrontendOutput;
 use crate::ir::{
     ControlKind, IrCallOption, IrInstr, IrModule, IrPlace, IrValue, IrVar, PlaceClass,
 };
 use crate::norm::NormalizedAst;
 
 use crate::fuzzing::types::{
-    ContractAbi, Environment, ExecutionTrace, FuzzValue, Individual, TraceEvent, TraceEventKind,
-    Transaction,
+    ContractAbi, DependencyMap, Environment, ExecutionTrace, FuzzValue, Individual, TraceEvent,
+    TraceEventKind, Transaction,
 };
 
 /// Simulated state: variable_name → FuzzValue.
@@ -17,19 +18,33 @@ type SimState = HashMap<String, FuzzValue>;
 /// Execute a full individual (sequence of transactions) against the IR.
 pub fn execute_individual(
     ind: &Individual,
-    ast: &NormalizedAst,
+    output: &FrontendOutput,
     ir_module: &IrModule,
     cfgs: &[CfgFunction],
     abi: &ContractAbi,
+    deps: &DependencyMap,
 ) -> ExecutionTrace {
+    let ast = &output.ast;
     let mut state = init_state(ast);
     let mut trace = ExecutionTrace::default();
+    let checked_arithmetic = has_checked_arithmetic(ast);
 
     for tx in &ind.transactions {
-        let result =
-            execute_transaction(tx, &ind.environment, &mut state, ast, ir_module, cfgs, abi);
+        let result = execute_transaction(
+            tx,
+            &ind.environment,
+            &mut state,
+            output,
+            ir_module,
+            cfgs,
+            abi,
+            deps,
+            checked_arithmetic,
+            0,
+        );
         trace.events.extend(result.events);
         trace.coverage.extend(&result.coverage);
+        trace.edge_coverage.extend(&result.edge_coverage);
         if result.reverted {
             trace.reverted = true;
         }
@@ -55,12 +70,26 @@ fn init_state(ast: &NormalizedAst) -> SimState {
 enum TempOrigin {
     /// Loaded from block.timestamp
     Timestamp,
+    /// Loaded from msg.sender or derived directly from it
+    SenderDerived,
     /// Loaded from a .call / .send / .transfer member (external call reference)
     ExternalCallRef,
+    /// Loaded from a value-carrying low-level call reference, e.g. `.call.value(x)`.
+    ValueCallRef,
+    /// Loaded specifically from a .delegatecall member
+    DelegatecallRef,
+    /// Loaded specifically from a .send member
+    SendRef,
+    /// Loaded specifically from a .transfer member
+    TransferRef,
+    /// Result bool produced by send() call
+    SendResult,
     /// Derived from a timestamp value through arithmetic
     TimestampDerived,
     /// Loaded from tx.origin
     TxOrigin,
+    /// Result value produced by ecrecover()
+    EcrecoverResult,
     /// Loaded from storage (for detecting storage-dependent loop bounds)
     StorageDerived,
     /// Loaded from block.number or blockhash (for weak PRNG detection)
@@ -74,11 +103,15 @@ fn execute_transaction(
     tx: &Transaction,
     env: &Environment,
     state: &mut SimState,
-    ast: &NormalizedAst,
+    output: &FrontendOutput,
     ir_module: &IrModule,
     cfgs: &[CfgFunction],
-    _abi: &ContractAbi,
+    abi: &ContractAbi,
+    deps: &DependencyMap,
+    checked_arithmetic: bool,
+    reentry_depth: u8,
 ) -> ExecutionTrace {
+    let ast = &output.ast;
     let mut trace = ExecutionTrace::default();
 
     // Find the IR function
@@ -128,25 +161,133 @@ fn execute_transaction(
         .or_default()
         .insert(TempOrigin::Timestamp);
 
-    // If we have a CFG, walk through blocks for coverage; otherwise walk IR blocks linearly.
+    // If we have a CFG, execute along chosen control-flow edges (path-sensitive).
     if let Some(cfg) = cfg {
-        for block in &cfg.blocks {
+        let block_map: HashMap<u32, &crate::cfg::Block> =
+            cfg.blocks.iter().map(|b| (b.id, b)).collect();
+        let mut succs: HashMap<u32, Vec<u32>> = HashMap::new();
+        for edge in &cfg.edges {
+            succs.entry(edge.from).or_default().push(edge.to);
+        }
+
+        let mut current = cfg.blocks.first().map(|b| b.id).unwrap_or(0);
+        let mut steps = 0usize;
+        let mut loop_iters: HashMap<u32, u32> = HashMap::new();
+        const MAX_CFG_STEPS: usize = 1_024;
+        const MAX_LOOP_ITERS_PER_HEADER: u32 = 8;
+
+        while steps < MAX_CFG_STEPS {
+            let Some(block) = block_map.get(&current) else {
+                break;
+            };
             trace.coverage.insert((tx.function_id, block.id));
             trace.events.push(TraceEvent {
                 function_id: tx.function_id,
                 kind: TraceEventKind::BlockVisited { block_id: block.id },
             });
 
+            let mut next_block: Option<u32> = None;
+            let mut terminated = false;
+
             for instr in &block.instrs {
                 execute_instr(
                     instr,
-                    tx.function_id,
+                    tx,
                     state,
                     &mut locals,
                     &mut trace,
+                    env,
+                    output,
+                    ir_module,
+                    cfgs,
+                    abi,
+                    deps,
                     contract_name.as_deref(),
                     &mut temp_origins,
+                    checked_arithmetic,
+                    reentry_depth,
                 );
+
+                if trace.reverted {
+                    terminated = true;
+                    next_block = None;
+                    break;
+                }
+
+                match instr {
+                    IrInstr::Return { .. } => {
+                        terminated = true;
+                        next_block = None;
+                        break;
+                    }
+                    IrInstr::Control { kind, .. } => {
+                        let outgoing = succs.get(&current).cloned().unwrap_or_default();
+                        match kind {
+                            ControlKind::If { cond } => {
+                                let cond_true = resolve_value(cond, state, &locals).is_truthy();
+                                next_block = if cond_true {
+                                    outgoing.first().copied()
+                                } else {
+                                    outgoing
+                                        .get(1)
+                                        .copied()
+                                        .or_else(|| outgoing.first().copied())
+                                };
+                            }
+                            ControlKind::Loop { cond } => {
+                                if let Some(cond_val) = cond {
+                                    let take_body =
+                                        resolve_value(cond_val, state, &locals).is_truthy();
+                                    if take_body {
+                                        let count = loop_iters.entry(current).or_insert(0);
+                                        if *count < MAX_LOOP_ITERS_PER_HEADER {
+                                            *count += 1;
+                                            next_block = outgoing.first().copied();
+                                        } else {
+                                            next_block = outgoing
+                                                .get(1)
+                                                .copied()
+                                                .or_else(|| outgoing.first().copied());
+                                        }
+                                    } else {
+                                        next_block = outgoing
+                                            .get(1)
+                                            .copied()
+                                            .or_else(|| outgoing.first().copied());
+                                    }
+                                } else {
+                                    next_block = outgoing.first().copied();
+                                }
+                            }
+                            ControlKind::Revert { .. } => {
+                                next_block = None;
+                            }
+                            _ => {
+                                next_block = outgoing.first().copied();
+                            }
+                        }
+                        terminated = true;
+                        break;
+                    }
+                    _ => {}
+                }
+            }
+
+            steps = steps.saturating_add(1);
+            if terminated {
+                if let Some(n) = next_block {
+                    trace.edge_coverage.insert((tx.function_id, current, n));
+                    current = n;
+                    continue;
+                }
+                break;
+            }
+
+            if let Some(n) = succs.get(&current).and_then(|xs| xs.first()).copied() {
+                trace.edge_coverage.insert((tx.function_id, current, n));
+                current = n;
+            } else {
+                break;
             }
         }
     } else {
@@ -159,34 +300,26 @@ fn execute_transaction(
             for instr in &block.instrs {
                 execute_instr(
                     instr,
-                    tx.function_id,
+                    tx,
                     state,
                     &mut locals,
                     &mut trace,
+                    env,
+                    output,
+                    ir_module,
+                    cfgs,
+                    abi,
+                    deps,
                     contract_name.as_deref(),
                     &mut temp_origins,
+                    checked_arithmetic,
+                    reentry_depth,
                 );
             }
         }
     }
 
     // --- Post-execution analysis ---
-
-    // Access control: check if any storage write happened without a sender check
-    let has_sender_check = trace.events.iter().any(|e| {
-        e.function_id == tx.function_id && matches!(e.kind, TraceEventKind::SenderChecked)
-    });
-    let has_storage_write = trace.events.iter().any(|e| {
-        e.function_id == tx.function_id && matches!(e.kind, TraceEventKind::StorageWrite { .. })
-    });
-    if has_storage_write && !has_sender_check {
-        trace.events.push(TraceEvent {
-            function_id: tx.function_id,
-            kind: TraceEventKind::StorageWrite {
-                var_name: "__no_sender_check".to_string(),
-            },
-        });
-    }
 
     // Exception disorder: external call followed by state write without require check
     let mut last_ext_call: Option<String> = None;
@@ -201,11 +334,11 @@ fn execute_transaction(
                 last_ext_call = Some(callee.clone());
                 ext_call_checked = false;
             }
-            TraceEventKind::Revert { .. } => {
-                // A require() was hit — marks the call as checked
+            TraceEventKind::ConditionChecked => {
+                // Any explicit condition check (require/assert/if) after the call marks it checked.
                 ext_call_checked = true;
             }
-            TraceEventKind::StorageWrite { var_name } => {
+            TraceEventKind::StorageWrite { var_name, .. } => {
                 if let Some(callee) = &last_ext_call {
                     if !ext_call_checked && var_name != "__no_sender_check" {
                         disorder_events.push(TraceEvent {
@@ -229,22 +362,38 @@ fn execute_transaction(
 /// Simulate a single IR instruction, recording trace events.
 fn execute_instr(
     instr: &IrInstr,
-    function_id: u32,
+    tx: &Transaction,
     state: &mut SimState,
     locals: &mut HashMap<String, FuzzValue>,
     trace: &mut ExecutionTrace,
+    env: &Environment,
+    output: &FrontendOutput,
+    ir_module: &IrModule,
+    cfgs: &[CfgFunction],
+    abi: &ContractAbi,
+    deps: &DependencyMap,
     contract_name: Option<&str>,
     temp_origins: &mut HashMap<String, HashSet<TempOrigin>>,
+    checked_arithmetic: bool,
+    reentry_depth: u8,
 ) {
+    let function_id = tx.function_id;
+    let ast = &output.ast;
     match instr {
         IrInstr::Store { dest, src, .. } => {
             let val = resolve_value(src, state, locals);
             if is_storage(dest) {
-                if let Some(name) = place_name(dest, contract_name) {
+                if let Some(meta) = storage_access_meta(dest, temp_origins, contract_name) {
+                    let name = meta.var_name.clone();
                     state.insert(name.clone(), val);
                     trace.events.push(TraceEvent {
                         function_id,
-                        kind: TraceEventKind::StorageWrite { var_name: name },
+                        kind: TraceEventKind::StorageWrite {
+                            var_name: meta.var_name,
+                            slot_key: meta.slot_key,
+                            authority_sensitive: meta.authority_sensitive,
+                            caller_keyed: meta.caller_keyed,
+                        },
                     });
                 }
             } else if let Some(name) = place_name(dest, contract_name) {
@@ -254,14 +403,20 @@ fn execute_instr(
         IrInstr::Load { dest, src, .. } => {
             let src_place_name = place_name(src, contract_name).unwrap_or_default();
             let dest_key = var_key(dest);
+            let storage_meta = storage_access_meta(src, temp_origins, contract_name);
 
             let val = if is_storage(src) {
-                trace.events.push(TraceEvent {
-                    function_id,
-                    kind: TraceEventKind::StorageRead {
-                        var_name: src_place_name.clone(),
-                    },
-                });
+                if let Some(meta) = &storage_meta {
+                    trace.events.push(TraceEvent {
+                        function_id,
+                        kind: TraceEventKind::StorageRead {
+                            var_name: meta.var_name.clone(),
+                            slot_key: meta.slot_key.clone(),
+                            order_sensitive: meta.order_sensitive,
+                            caller_keyed: meta.caller_keyed,
+                        },
+                    });
+                }
                 // Mark dest as storage-derived for DoS loop detection
                 temp_origins
                     .entry(dest_key.clone())
@@ -323,6 +478,13 @@ fn execute_instr(
                         });
                     }
 
+                    if full_name == "msg.sender" || base_name == "msg" && f == "sender" {
+                        temp_origins
+                            .entry(dest_key.clone())
+                            .or_default()
+                            .insert(TempOrigin::SenderDerived);
+                    }
+
                     // Detect .call / .send / .transfer member loads (external call refs)
                     if f == "call"
                         || f == "send"
@@ -334,6 +496,33 @@ fn execute_instr(
                             .entry(dest_key.clone())
                             .or_default()
                             .insert(TempOrigin::ExternalCallRef);
+                    }
+                    if f == "delegatecall" {
+                        temp_origins
+                            .entry(dest_key.clone())
+                            .or_default()
+                            .insert(TempOrigin::DelegatecallRef);
+                    } else if f == "send" {
+                        temp_origins
+                            .entry(dest_key.clone())
+                            .or_default()
+                            .insert(TempOrigin::SendRef);
+                    } else if f == "transfer" {
+                        temp_origins
+                            .entry(dest_key.clone())
+                            .or_default()
+                            .insert(TempOrigin::TransferRef);
+                    } else if f == "value" {
+                        let base_key = value_key(base);
+                        let base_is_call_ref = temp_origins
+                            .get(&base_key)
+                            .map(|o| o.contains(&TempOrigin::ExternalCallRef))
+                            .unwrap_or(false);
+                        if base_is_call_ref {
+                            let origins = temp_origins.entry(dest_key.clone()).or_default();
+                            origins.insert(TempOrigin::ExternalCallRef);
+                            origins.insert(TempOrigin::ValueCallRef);
+                        }
                     }
 
                     // Detect .length member on storage-derived arrays (for DoS)
@@ -381,6 +570,12 @@ fn execute_instr(
                             kind: TraceEventKind::TxOriginUsed,
                         });
                     }
+                    if vname == "msg.sender" {
+                        temp_origins
+                            .entry(dest_key.clone())
+                            .or_default()
+                            .insert(TempOrigin::SenderDerived);
+                    }
                 }
                 _ => {}
             }
@@ -391,6 +586,15 @@ fn execute_instr(
                     .entry(dest_key.clone())
                     .or_default()
                     .extend(origins);
+            }
+            match src {
+                IrPlace::Member { base, .. } | IrPlace::Index { base, .. } => {
+                    let base_key = value_key(base);
+                    if let Some(origins) = temp_origins.get(&base_key).cloned() {
+                        temp_origins.entry(dest_key).or_default().extend(origins);
+                    }
+                }
+                IrPlace::Var { .. } => {}
             }
 
             set_var(dest, val, locals);
@@ -423,8 +627,8 @@ fn execute_instr(
             let r = resolve_value(rhs, state, locals).as_uint();
             let result = eval_binary(op, l, r);
 
-            // Track arithmetic for overflow detection
-            if matches!(op.as_str(), "+" | "-" | "*") {
+            // For Solidity >=0.8, arithmetic is checked by default; avoid treating checked math as wrapping vulns.
+            if !checked_arithmetic && matches!(op.as_str(), "+" | "-" | "*") {
                 trace.events.push(TraceEvent {
                     function_id,
                     kind: TraceEventKind::ArithmeticOp {
@@ -492,6 +696,26 @@ fn execute_instr(
                     trace.events.push(TraceEvent {
                         function_id,
                         kind: TraceEventKind::SenderChecked,
+                    });
+                }
+            }
+
+            // Cryptographic evidence: detect explicit ecrecover result zero-address checks.
+            if matches!(op.as_str(), "==" | "!=") {
+                let lhs_is_ecrecover = temp_origins
+                    .get(&lhs_key)
+                    .map(|o| o.contains(&TempOrigin::EcrecoverResult))
+                    .unwrap_or(false);
+                let rhs_is_ecrecover = temp_origins
+                    .get(&rhs_key)
+                    .map(|o| o.contains(&TempOrigin::EcrecoverResult))
+                    .unwrap_or(false);
+                let compared_to_zero =
+                    (lhs_is_ecrecover && r == 0) || (rhs_is_ecrecover && l == 0);
+                if compared_to_zero {
+                    trace.events.push(TraceEvent {
+                        function_id,
+                        kind: TraceEventKind::EcrecoverZeroChecked,
                     });
                 }
             }
@@ -568,7 +792,20 @@ fn execute_instr(
         } => {
             let callee_name = value_name(callee);
             let callee_key = value_key(callee);
-            let has_value = options.iter().any(|o| matches!(o, IrCallOption::Value(_)));
+            let callee_origins = temp_origins.get(&callee_key);
+            let has_value = options.iter().any(|o| matches!(o, IrCallOption::Value(_)))
+                || callee_origins
+                    .map(|o| o.contains(&TempOrigin::ValueCallRef))
+                    .unwrap_or(false);
+            let callee_is_delegatecall_ref = callee_origins
+                .map(|o| o.contains(&TempOrigin::DelegatecallRef))
+                .unwrap_or(false);
+            let callee_is_send_ref = callee_origins
+                .map(|o| o.contains(&TempOrigin::SendRef))
+                .unwrap_or(false);
+            let callee_is_transfer_ref = callee_origins
+                .map(|o| o.contains(&TempOrigin::TransferRef))
+                .unwrap_or(false);
 
             // Detect selfdestruct / suicide calls
             let callee_lower = callee_name.to_lowercase();
@@ -580,7 +817,7 @@ fn execute_instr(
             }
 
             // Detect delegatecall
-            if callee_lower.contains("delegatecall") {
+            if callee_lower.contains("delegatecall") || callee_is_delegatecall_ref {
                 trace.events.push(TraceEvent {
                     function_id,
                     kind: TraceEventKind::DelegatecallDetected {
@@ -593,9 +830,7 @@ fn execute_instr(
             if callee_lower == "ecrecover" {
                 trace.events.push(TraceEvent {
                     function_id,
-                    kind: TraceEventKind::EcrecoverCalled {
-                        checked_zero: false,
-                    },
+                    kind: TraceEventKind::EcrecoverCalled,
                 });
             }
 
@@ -604,6 +839,8 @@ fn execute_instr(
                 || callee_lower == "send"
                 || callee_lower.ends_with(".transfer")
                 || callee_lower.ends_with(".send")
+                || callee_is_send_ref
+                || callee_is_transfer_ref
             {
                 trace.events.push(TraceEvent {
                     function_id,
@@ -616,8 +853,24 @@ fn execute_instr(
             // Detect require(cond) — marks that the function checks conditions
             // If 1st arg is derived from a comparison with msg.sender, emit SenderChecked
             if callee_name == "require" || callee_name == "assert" {
+                trace.events.push(TraceEvent {
+                    function_id,
+                    kind: TraceEventKind::ConditionChecked,
+                });
                 if let Some(first_arg) = args.first() {
                     let arg_key = value_key(first_arg);
+                    let arg_is_send_result = temp_origins
+                        .get(&arg_key)
+                        .map(|o| o.contains(&TempOrigin::SendResult))
+                        .unwrap_or(false);
+                    if arg_is_send_result {
+                        trace.events.push(TraceEvent {
+                            function_id,
+                            kind: TraceEventKind::UnsafeSendInRequire {
+                                callee: "send".to_string(),
+                            },
+                        });
+                    }
                     // Check if the require condition involves msg.sender comparison
                     if arg_key.contains("sender")
                         || temp_origins
@@ -643,6 +896,11 @@ fn execute_instr(
                 .map(|o| o.contains(&TempOrigin::ExternalCallRef))
                 .unwrap_or(false);
             let is_external = is_external_by_name || is_external_by_origin || has_value;
+            let reentrant_capable = is_external
+                && has_value
+                && !callee_is_send_ref
+                && !callee_is_transfer_ref
+                && !callee_lower.contains("staticcall");
 
             if is_external {
                 trace.events.push(TraceEvent {
@@ -650,6 +908,7 @@ fn execute_instr(
                     kind: TraceEventKind::ExternalCall {
                         callee: callee_name.clone(),
                         has_value,
+                        reentrant_capable,
                     },
                 });
 
@@ -664,9 +923,56 @@ fn execute_instr(
                 }
             }
 
+            if reentrant_capable && reentry_depth == 0 && tx.sender == 1 {
+                if let Some(callback_target) =
+                    select_reentrant_callback_target(function_id, ast, &output.compiler, deps)
+                {
+                    trace.events.push(TraceEvent {
+                        function_id,
+                        kind: TraceEventKind::ReentrantCallback {
+                            into_function_id: callback_target,
+                        },
+                    });
+                    let callback_tx = build_callback_transaction(callback_target, ast, tx.sender);
+                    let callback_trace = execute_transaction(
+                        &callback_tx,
+                        env,
+                        state,
+                        output,
+                        ir_module,
+                        cfgs,
+                        abi,
+                        deps,
+                        checked_arithmetic,
+                        reentry_depth.saturating_add(1),
+                    );
+                    trace.events.extend(callback_trace.events);
+                    trace.coverage.extend(callback_trace.coverage);
+                    trace.edge_coverage.extend(callback_trace.edge_coverage);
+                    trace.reverted |= callback_trace.reverted;
+                }
+            }
+
             // Set return values to defaults
             for var in dest {
                 set_var(var, FuzzValue::Uint(0), locals);
+                if callee_lower == "ecrecover" {
+                    let key = var_key(var);
+                    temp_origins
+                        .entry(key)
+                        .or_default()
+                        .insert(TempOrigin::EcrecoverResult);
+                }
+                if callee_is_send_ref
+                    || callee_lower == "send"
+                    || callee_lower.ends_with(".send")
+                {
+                    let key = var_key(var);
+                    temp_origins
+                        .entry(key)
+                        .or_default()
+                        .insert(TempOrigin::SendResult);
+                }
             }
 
             // Track ether-sending calls
@@ -682,6 +988,10 @@ fn execute_instr(
         IrInstr::Control { kind, .. } => {
             match kind {
                 ControlKind::If { cond } => {
+                    trace.events.push(TraceEvent {
+                        function_id,
+                        kind: TraceEventKind::ConditionChecked,
+                    });
                     let cond_key = value_key(cond);
                     let cond_name = value_name(cond);
 
@@ -704,6 +1014,10 @@ fn execute_instr(
                     }
                 }
                 ControlKind::Loop { cond } => {
+                    trace.events.push(TraceEvent {
+                        function_id,
+                        kind: TraceEventKind::LoopEncountered,
+                    });
                     // Detect unbounded loops: loop condition depends on storage-derived value
                     if let Some(cond_val) = cond {
                         let cond_key = value_key(cond_val);
@@ -756,6 +1070,226 @@ fn execute_instr(
         }
         _ => {}
     }
+}
+
+fn build_callback_transaction(
+    function_id: u32,
+    ast: &crate::norm::NormalizedAst,
+    sender: usize,
+) -> Transaction {
+    let args = ast
+        .functions
+        .get(function_id as usize)
+        .map(|function| vec![FuzzValue::Uint(0); function.params.len()])
+        .unwrap_or_default();
+    Transaction {
+        function_id,
+        args,
+        sender,
+        value: 0,
+    }
+}
+
+fn select_reentrant_callback_target(
+    current_function_id: u32,
+    ast: &crate::norm::NormalizedAst,
+    compiler: &crate::frontend::CompilerInfo,
+    deps: &DependencyMap,
+) -> Option<u32> {
+    let current_function = ast.functions.get(current_function_id as usize)?;
+    let contract_id = current_function.contract?;
+    let contract = ast.contracts.get(contract_id as usize)?;
+    let current_deps = deps.functions.get(&current_function_id);
+
+    let mut candidates = Vec::new();
+    for &function_id in &contract.functions {
+        let Some(function) = ast.functions.get(function_id as usize) else {
+            continue;
+        };
+        if !crate::frontend::is_mutating_entrypoint(function, compiler)
+            || function.kind != crate::norm::FunctionKind::Function
+        {
+            continue;
+        }
+        if function_id == current_function_id {
+            candidates.push((0u8, function_id));
+            continue;
+        }
+        let overlaps = current_deps
+            .zip(deps.functions.get(&function_id))
+            .map(|(current, candidate)| {
+                current
+                    .writes
+                    .iter()
+                    .any(|slot| candidate.reads.contains(slot) || candidate.writes.contains(slot))
+                    || current
+                        .reads
+                        .iter()
+                        .any(|slot| candidate.writes.contains(slot))
+            })
+            .unwrap_or(false);
+        if overlaps {
+            candidates.push((1u8, function_id));
+        }
+    }
+    candidates.sort_unstable();
+    candidates.into_iter().take(4).map(|(_, function_id)| function_id).next()
+}
+
+#[derive(Debug, Clone)]
+struct StorageAccessMeta {
+    var_name: String,
+    slot_key: String,
+    authority_sensitive: bool,
+    order_sensitive: bool,
+    caller_keyed: bool,
+}
+
+fn storage_access_meta(
+    place: &IrPlace,
+    temp_origins: &HashMap<String, HashSet<TempOrigin>>,
+    contract_name: Option<&str>,
+) -> Option<StorageAccessMeta> {
+    let var_name = place_name(place, contract_name)?;
+    let slot_key = place_slot_key(place, temp_origins, contract_name);
+    let caller_keyed = place_is_caller_keyed(place, temp_origins);
+    Some(StorageAccessMeta {
+        authority_sensitive: slot_is_authority_sensitive(&slot_key, &var_name) && !caller_keyed,
+        order_sensitive: slot_is_order_sensitive(&slot_key, &var_name),
+        caller_keyed,
+        slot_key,
+        var_name,
+    })
+}
+
+fn place_slot_key(
+    place: &IrPlace,
+    temp_origins: &HashMap<String, HashSet<TempOrigin>>,
+    contract_name: Option<&str>,
+) -> String {
+    match place {
+        IrPlace::Var {
+            var: IrVar::Named(name),
+            ..
+        } => name.clone(),
+        IrPlace::Var {
+            var: IrVar::Temp(id),
+            ..
+        } => format!("$t{}", id),
+        IrPlace::Member {
+            base, field, root, ..
+        } => {
+            if is_contract_receiver(base, contract_name) {
+                field.clone()
+            } else if let Some(root) = root {
+                root.clone()
+            } else {
+                format!(
+                    "{}.{}",
+                    value_display(base, temp_origins, contract_name),
+                    field
+                )
+            }
+        }
+        IrPlace::Index {
+            base, index, root, ..
+        } => {
+            let base_name = root
+                .clone()
+                .unwrap_or_else(|| value_display(base, temp_origins, contract_name));
+            match index {
+                Some(idx) => format!(
+                    "{}[{}]",
+                    base_name,
+                    value_display(idx, temp_origins, contract_name)
+                ),
+                None => format!("{base_name}[]"),
+            }
+        }
+    }
+}
+
+fn value_display(
+    value: &IrValue,
+    temp_origins: &HashMap<String, HashSet<TempOrigin>>,
+    _contract_name: Option<&str>,
+) -> String {
+    let key = value_key(value);
+    if temp_origins
+        .get(&key)
+        .map(|origins| origins.contains(&TempOrigin::SenderDerived))
+        .unwrap_or(false)
+    {
+        return "msg.sender".to_string();
+    }
+    value_name(value)
+}
+
+fn place_is_caller_keyed(
+    place: &IrPlace,
+    temp_origins: &HashMap<String, HashSet<TempOrigin>>,
+) -> bool {
+    let IrPlace::Index { index, .. } = place else {
+        return false;
+    };
+    let Some(index) = index else {
+        return false;
+    };
+    let key = value_key(index);
+    value_name(index).contains("sender")
+        || temp_origins
+            .get(&key)
+            .map(|origins| origins.contains(&TempOrigin::SenderDerived))
+            .unwrap_or(false)
+}
+
+fn slot_is_authority_sensitive(slot_key: &str, var_name: &str) -> bool {
+    let joined = format!("{slot_key} {var_name}").to_ascii_lowercase();
+    joined
+        .split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+        .filter(|token| !token.is_empty())
+        .any(|token| {
+            matches!(
+                token,
+                "owner"
+                    | "admin"
+                    | "operator"
+                    | "minter"
+                    | "pauser"
+                    | "implementation"
+                    | "governance"
+                    | "role"
+                    | "roles"
+                    | "whitelist"
+                    | "blacklist"
+                    | "auth"
+                    | "authority"
+            ) || token.ends_with("owner")
+                || token.ends_with("admin")
+                || token.ends_with("governance")
+        })
+}
+
+fn slot_is_order_sensitive(slot_key: &str, var_name: &str) -> bool {
+    let joined = format!("{slot_key} {var_name}").to_ascii_lowercase();
+    joined
+        .split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+        .filter(|token| !token.is_empty())
+        .any(|token| {
+            matches!(
+                token,
+                "price"
+                    | "rate"
+                    | "reward"
+                    | "bid"
+                    | "bids"
+                    | "auction"
+                    | "winner"
+                    | "quote"
+            ) || token.ends_with("price")
+                || token.ends_with("rate")
+                || token.ends_with("reward")
+        })
 }
 
 // --- Helpers ---
@@ -961,6 +1495,16 @@ fn is_external_call(name: &str) -> bool {
         || low.contains("send")
         || low.contains("delegatecall")
         || low.contains("staticcall")
+}
+
+fn has_checked_arithmetic(ast: &NormalizedAst) -> bool {
+    for file in &ast.files {
+        let src = file.source.to_ascii_lowercase();
+        if src.contains("pragma solidity") && src.contains("0.8") {
+            return true;
+        }
+    }
+    false
 }
 
 #[cfg(test)]

@@ -34,9 +34,32 @@ fn detect_shadowing(ast: &NormalizedAst) -> Vec<Finding> {
     for func in &ast.functions {
         if let Some(body) = func.body {
             let mut local_vars = HashSet::new();
+            let state_var_names = func.contract.map(|cid| {
+                ast.state_vars
+                    .iter()
+                    .filter(|sv| sv.contract == cid)
+                    .map(|sv| sv.name.as_str())
+                    .collect::<HashSet<_>>()
+            });
 
             // Add function parameters to scope
             for param_name in &func.params {
+                // Parameter shadows state variable with the same name.
+                if state_var_names
+                    .as_ref()
+                    .map(|names| names.contains(param_name.as_str()))
+                    .unwrap_or(false)
+                {
+                    findings.push(Finding {
+                        kind: FindingKind::Shadowing,
+                        severity: Severity::Medium,
+                        message: format!(
+                            "parameter '{param_name}' shadows state variable with the same name"
+                        ),
+                        span: func.span,
+                        function: Some(func.id),
+                    });
+                }
                 local_vars.insert(param_name.clone());
             }
 

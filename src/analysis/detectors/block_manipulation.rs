@@ -5,7 +5,7 @@
 //!   BM-03 – Weak PRNG (pseudorandom number generator)
 
 use crate::norm::{
-    CallOption, CallTarget, ChainSegment, ExprKind, NormalizedAst, StmtKind, Visibility,
+    CallOption, CallTarget, ChainSegment, ExprKind, NormalizedAst, Span, StmtKind, Visibility,
 };
 
 use super::{Finding, FindingKind, Severity};
@@ -228,6 +228,35 @@ fn for_each_stmt(ast: &NormalizedAst, stmt_id: u32, cb: &mut impl FnMut(u32, &cr
 }
 
 // ── Block-value detection helpers ────────────────────────────────────────────
+
+fn get_source_at_span<'a>(ast: &'a NormalizedAst, span: &Span) -> Option<&'a str> {
+    let file = ast.files.get(span.file as usize)?;
+    let start = span.start as usize;
+    let end = span.end as usize;
+    if end <= file.source.len() && start <= end {
+        Some(&file.source[start..end])
+    } else {
+        None
+    }
+}
+
+fn function_source_lower(ast: &NormalizedAst, func: &crate::norm::Function) -> Option<String> {
+    get_source_at_span(ast, &func.span).map(|source| source.to_ascii_lowercase())
+}
+
+fn source_contains_transfer_call(lower: &str) -> bool {
+    [
+        ".transfer(",
+        ".transferfrom(",
+        ".send(",
+        ".call(",
+        ".approve(",
+        ".safetransferfrom(",
+        ".delegatecall(",
+    ]
+    .iter()
+    .any(|pattern| lower.contains(pattern))
+}
 
 /// Returns `true` if `expr_id` is (or contains) `block.timestamp` or `now`.
 /// Checks three representations that the normalizer may produce:
@@ -732,6 +761,7 @@ fn detect_transaction_order_dependency(ast: &NormalizedAst) -> Vec<Finding> {
         }
 
         let Some(body) = func.body else { continue };
+        let source_lower = function_source_lower(ast, func);
 
         // --- Step 1:  Does the body reference an order-sensitive var? ------
         let mut reads_sensitive = false;
@@ -740,9 +770,20 @@ fn detect_transaction_order_dependency(ast: &NormalizedAst) -> Vec<Finding> {
                 reads_sensitive = true;
             }
         });
+        if !reads_sensitive {
+            if let Some(source_lower) = source_lower.as_deref() {
+                reads_sensitive = ORDER_SENSITIVE_VAR_HINTS
+                    .iter()
+                    .any(|hint| source_lower.contains(hint));
+            }
+        }
 
         // --- Step 2:  Does the body contain a value-transfer call? ---------
-        let has_transfer = stmt_contains_transfer(ast, body);
+        let has_transfer = stmt_contains_transfer(ast, body)
+            || source_lower
+                .as_deref()
+                .map(source_contains_transfer_call)
+                .unwrap_or(false);
 
         if !reads_sensitive {
             continue;

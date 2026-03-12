@@ -1,0 +1,12 @@
+{
+  "fixture": "fixtures/chatgpttestcases.sol",
+  "truth": [
+    "tx-origin",
+    "delegatecall",
+    "unchecked-call",
+    "selfdestruct",
+    "timestamp",
+    "shadowing",
+    "reentrancy"
+  ]
+}

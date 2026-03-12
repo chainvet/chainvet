@@ -1,5 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
+use crate::core::artifacts::Finding;
+use crate::frontend::{self, CompilerInfo};
 use crate::ir::{IrInstr, IrModule, IrPlace, IrValue, IrVar, PlaceClass};
 use crate::norm::{FunctionKind, Mutability, NormalizedAst, Visibility};
 
@@ -24,12 +26,26 @@ pub struct FunctionAbi {
     pub is_payable: bool,
 }
 
+impl FunctionAbi {
+    pub fn is_fuzz_callable(&self) -> bool {
+        match self.kind {
+            FunctionKind::Function => {
+                matches!(self.visibility, Visibility::Public | Visibility::External)
+            }
+            FunctionKind::Fallback | FunctionKind::Receive => {
+                self.is_payable && self.params.is_empty()
+            }
+            FunctionKind::Constructor | FunctionKind::Unknown => false,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct ParamInfo {
     pub name: String,
 }
 
-pub fn extract_abis(ast: &NormalizedAst) -> Vec<ContractAbi> {
+pub fn extract_abis(ast: &NormalizedAst, compiler: &CompilerInfo) -> Vec<ContractAbi> {
     let mut abis = Vec::new();
     for contract in &ast.contracts {
         let mut functions = Vec::new();
@@ -56,7 +72,7 @@ pub fn extract_abis(ast: &NormalizedAst) -> Vec<ContractAbi> {
                 id: func.id,
                 name: display_name,
                 params,
-                visibility: func.visibility,
+                visibility: frontend::effective_visibility(func, compiler),
                 mutability: func.mutability,
                 kind: func.kind,
                 is_payable: func.mutability == Mutability::Payable,
@@ -315,17 +331,29 @@ pub enum TraceEventKind {
     },
     StorageWrite {
         var_name: String,
+        slot_key: String,
+        authority_sensitive: bool,
+        caller_keyed: bool,
     },
     StorageRead {
         var_name: String,
+        slot_key: String,
+        order_sensitive: bool,
+        caller_keyed: bool,
     },
     ExternalCall {
         callee: String,
         has_value: bool,
+        reentrant_capable: bool,
+    },
+    ReentrantCallback {
+        into_function_id: u32,
     },
     Revert {
         message: Option<String>,
     },
+    /// Generic condition check (e.g., require/assert)
+    ConditionChecked,
     BranchOnTimestamp,
     ArithmeticOp {
         op: String,
@@ -346,6 +374,8 @@ pub enum TraceEventKind {
     UnboundedLoop {
         var_name: String,
     },
+    /// A loop control point was encountered during execution.
+    LoopEncountered,
     /// External call followed by state write; `checked` = whether return was require'd
     ExternalCallThenState {
         callee: String,
@@ -364,11 +394,15 @@ pub enum TraceEventKind {
     /// block.number or blockhash used (PRNG / randomness source)
     BlockNumberUsed,
     /// ecrecover called
-    EcrecoverCalled {
-        checked_zero: bool,
-    },
+    EcrecoverCalled,
+    /// ecrecover result compared against zero-address sentinel
+    EcrecoverZeroChecked,
     /// .transfer() or .send() with hardcoded gas
     HardcodedGasCall {
+        callee: String,
+    },
+    /// send() return value used directly in require/assert condition.
+    UnsafeSendInRequire {
         callee: String,
     },
     /// Division followed by multiplication pattern
@@ -385,6 +419,7 @@ pub enum TraceEventKind {
 pub struct ExecutionTrace {
     pub events: Vec<TraceEvent>,
     pub coverage: HashSet<(u32, u32)>,
+    pub edge_coverage: HashSet<(u32, u32, u32)>,
     pub reverted: bool,
     pub final_state: HashMap<String, FuzzValue>,
 }
@@ -413,6 +448,7 @@ pub enum FuzzFindingKind {
     SelfDestruct,
     UnsafeDelegatecall,
     DefaultVisibility,
+    UninitializedPermissionCheck,
     UnprotectedEtherWithdrawal,
     ArbitraryWrite,
     // --- Arithmetic ---
@@ -422,14 +458,21 @@ pub enum FuzzFindingKind {
     // --- Block Manipulation ---
     TimestampDependency,
     WeakPRNG,
+    TransactionOrderDependency,
     // --- Cryptographic ---
     CryptographicIssue,
+    SignatureMalleability,
     // --- Denial of Service ---
     DenialOfService,
     HardcodedGas,
     LockedEther,
+    UnsafeSendInRequire,
+    DosWithFailedCall,
     // --- Storage & Memory ---
     StorageMemoryIssue,
+    PublicMintBurn,
+    // --- Project extensions ---
+    Shadowing,
     // --- Other ---
     InvariantViolation,
 }
@@ -451,13 +494,65 @@ impl FuzzFindingKind {
             Self::DenialOfService => "denial-of-service",
             Self::UnsafeDelegatecall => "unsafe-delegatecall",
             Self::DefaultVisibility => "default-visibility",
+            Self::UninitializedPermissionCheck => "uninit-permission-check",
             Self::UnprotectedEtherWithdrawal => "unprotected-ether-withdrawal",
             Self::ArbitraryWrite => "arbitrary-write",
             Self::WeakPRNG => "weak-prng",
+            Self::TransactionOrderDependency => "transaction-order-dependency",
             Self::CryptographicIssue => "cryptographic-issue",
+            Self::SignatureMalleability => "signature-malleability",
             Self::HardcodedGas => "hardcoded-gas",
             Self::LockedEther => "locked-ether",
+            Self::UnsafeSendInRequire => "unsafe-send-in-require",
+            Self::DosWithFailedCall => "dos-with-failed-call",
             Self::StorageMemoryIssue => "storage-memory-issue",
+            Self::PublicMintBurn => "public-mint-burn",
+            Self::Shadowing => "shadowing",
+        }
+    }
+
+    /// Canonical label used for cross-engine comparison and hybrid reporting.
+    pub fn canonical_str(&self) -> &'static str {
+        match self {
+            Self::TxOriginAuth => "tx-origin",
+            Self::HardcodedGas => "hardcoded-gas-transfer",
+            Self::StorageMemoryIssue => "memory-manipulation",
+            _ => self.as_str(),
+        }
+    }
+
+    pub fn confidence(&self) -> FuzzConfidence {
+        match self {
+            Self::Reentrancy
+            | Self::UncheckedCall
+            | Self::TxOriginAuth
+            | Self::SelfDestruct
+            | Self::UnsafeDelegatecall
+            | Self::UninitializedPermissionCheck
+            | Self::UnprotectedEtherWithdrawal
+            | Self::ArbitraryWrite
+            | Self::UnsafeSendInRequire => FuzzConfidence::High,
+
+            Self::TimestampDependency
+            | Self::WeakPRNG
+            | Self::TransactionOrderDependency
+            | Self::IntegerOverflow
+            | Self::IntegerUnderflow
+            | Self::DivisionBeforeMultiplication
+            | Self::HardcodedGas
+            | Self::StorageMemoryIssue
+            | Self::DosWithFailedCall
+            | Self::PublicMintBurn
+            | Self::Shadowing => FuzzConfidence::Medium,
+
+            Self::ExceptionDisorder
+            | Self::AccessControl
+            | Self::DefaultVisibility
+            | Self::DenialOfService
+            | Self::LockedEther
+            | Self::CryptographicIssue
+            | Self::SignatureMalleability
+            | Self::InvariantViolation => FuzzConfidence::Low,
         }
     }
 
@@ -470,6 +565,7 @@ impl FuzzFindingKind {
             | Self::UncheckedCall
             | Self::UnsafeDelegatecall
             | Self::DefaultVisibility
+            | Self::UninitializedPermissionCheck
             | Self::UnprotectedEtherWithdrawal
             | Self::ArbitraryWrite => "Access Control",
 
@@ -477,15 +573,23 @@ impl FuzzFindingKind {
                 "Arithmetic"
             }
 
-            Self::TimestampDependency | Self::WeakPRNG => "Block Manipulation",
+            Self::TimestampDependency | Self::WeakPRNG | Self::TransactionOrderDependency => {
+                "Block Manipulation"
+            }
 
-            Self::CryptographicIssue => "Cryptographic",
+            Self::CryptographicIssue | Self::SignatureMalleability => "Cryptographic",
 
-            Self::DenialOfService | Self::HardcodedGas | Self::LockedEther => "Denial of Service",
+            Self::DenialOfService
+            | Self::HardcodedGas
+            | Self::LockedEther
+            | Self::UnsafeSendInRequire
+            | Self::DosWithFailedCall => "Denial of Service",
 
             Self::Reentrancy => "Reentrancy",
 
             Self::StorageMemoryIssue => "Storage and Memory",
+            Self::PublicMintBurn => "Access Control",
+            Self::Shadowing => "Storage and Memory",
 
             Self::ExceptionDisorder | Self::InvariantViolation => "Access Control",
         }
@@ -497,6 +601,23 @@ pub enum FuzzSeverity {
     Low,
     Medium,
     High,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum FuzzConfidence {
+    Low,
+    Medium,
+    High,
+}
+
+impl FuzzConfidence {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Low => "low",
+            Self::Medium => "medium",
+            Self::High => "high",
+        }
+    }
 }
 
 impl FuzzSeverity {
@@ -520,7 +641,9 @@ pub struct FuzzReport {
     pub total_blocks: usize,
     pub covered_blocks: usize,
     pub findings: Vec<FuzzFinding>,
+    pub meta_findings: Vec<Finding>,
     pub corpus_size: usize,
+    pub corpus_zero_reason: Option<String>,
     pub elapsed_ms: u128,
 }
 
@@ -594,7 +717,14 @@ mod tests {
     #[test]
     fn extract_abis_basic() {
         let ast = make_ast();
-        let abis = extract_abis(&ast);
+        let abis = extract_abis(
+            &ast,
+            &CompilerInfo {
+                compiler_name: "test".to_string(),
+                compiler_version: Some("0.8.0".to_string()),
+                legacy_omitted_visibility_is_public: false,
+            },
+        );
         assert_eq!(abis.len(), 1);
         assert_eq!(abis[0].contract_name, "TestToken");
         assert_eq!(abis[0].functions.len(), 2);
@@ -602,6 +732,21 @@ mod tests {
         assert!(abis[0].functions[0].is_payable);
         assert_eq!(abis[0].functions[1].name, "withdraw");
         assert!(!abis[0].functions[1].is_payable);
+    }
+
+    #[test]
+    fn legacy_unknown_visibility_becomes_callable() {
+        let mut ast = make_ast();
+        ast.functions[0].visibility = Visibility::Unknown;
+        let abis = extract_abis(
+            &ast,
+            &CompilerInfo {
+                compiler_name: "test".to_string(),
+                compiler_version: Some("0.4.15".to_string()),
+                legacy_omitted_visibility_is_public: true,
+            },
+        );
+        assert!(abis[0].functions[0].is_fuzz_callable());
     }
 
     #[test]
