@@ -38,9 +38,13 @@ struct State {
     sender_checked: bool,
     inside_loop: bool,
     saw_order_sensitive_storage_read: bool,
+    saw_this_balance_invariant: bool,
+    storage_reads: HashSet<String>,
     block_visits: HashMap<u32, u16>,
     callback_depth: u8,
     callback_observed: bool,
+    callback_changed_storage_keys: HashSet<String>,
+    callback_stale_read_keys: HashSet<String>,
     callback_frame: Option<CallbackFrame>,
 }
 
@@ -57,6 +61,8 @@ struct CallbackFrame {
     sender_checked: bool,
     inside_loop: bool,
     saw_order_sensitive_storage_read: bool,
+    saw_this_balance_invariant: bool,
+    storage_reads: HashSet<String>,
     block_visits: HashMap<u32, u16>,
     callback_depth: u8,
     external_call_pc: Option<usize>,
@@ -69,10 +75,19 @@ struct EngineCallbackData<'a> {
     deps: &'a DependencyMap,
 }
 
+#[derive(Default)]
+struct AuthorityRuntimeProfile {
+    constructor_like: bool,
+    wrong_constructor_candidate: bool,
+    exclusive_authority_write: bool,
+    guarded_by_modifier: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 enum ValueOrigin {
     Timestamp,
     BlockNumber,
+    ThisBalance,
     TxOrigin,
     DelegatecallRef,
     LowLevelCallRef,
@@ -159,6 +174,7 @@ struct EngineStats {
 struct SolverCache {
     sat_by_constraints: HashMap<String, bool>,
     underflow_by_constraints: HashMap<String, Option<String>>,
+    add_overflow_by_constraints: HashMap<String, Option<String>>,
 }
 
 impl SolverCache {
@@ -174,6 +190,15 @@ impl SolverCache {
     fn underflow_key(path_constraints: &[Bool], lhs: &Int, rhs: &Int) -> String {
         format!(
             "{}|lhs={}|rhs={}",
+            Self::constraints_key(path_constraints),
+            lhs,
+            rhs
+        )
+    }
+
+    fn add_overflow_key(path_constraints: &[Bool], lhs: &Int, rhs: &Int) -> String {
+        format!(
+            "{}|add_lhs={}|add_rhs={}",
             Self::constraints_key(path_constraints),
             lhs,
             rhs
@@ -219,6 +244,33 @@ impl SolverCache {
         self.underflow_by_constraints.insert(key, model.clone());
         model
     }
+
+    fn check_add_overflow(
+        &mut self,
+        path_constraints: &[Bool],
+        lhs: &Int,
+        rhs: &Int,
+    ) -> Option<String> {
+        let key = Self::add_overflow_key(path_constraints, lhs, rhs);
+        if let Some(cached) = self.add_overflow_by_constraints.get(&key) {
+            return cached.clone();
+        }
+        let solver = Solver::new();
+        for constraint in path_constraints {
+            solver.assert(constraint);
+        }
+        let lhs_bv = int_to_evm_bv(lhs);
+        let rhs_bv = int_to_evm_bv(rhs);
+        let sum_bv = lhs_bv.bvadd(&rhs_bv);
+        solver.assert(sum_bv.bvult(&lhs_bv));
+        let model = if matches!(solver.check(), SatResult::Sat) {
+            solver.get_model().map(|m| m.to_string())
+        } else {
+            None
+        };
+        self.add_overflow_by_constraints.insert(key, model.clone());
+        model
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -237,13 +289,17 @@ struct LocalVulnerability {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 enum VulnerabilityKind {
+    Overflow,
     Underflow,
     Reentrancy,
+    ReentrancyFallback,
     TxOrigin,
     Delegatecall,
     UncheckedCall,
     Selfdestruct,
+    AccessControl,
     ArbitraryWrite,
+    WrongConstructorName,
     PublicMintBurn,
     TimestampDependency,
     WeakPrng,
@@ -261,13 +317,17 @@ enum VulnerabilityKind {
 impl VulnerabilityKind {
     fn as_str(&self) -> &'static str {
         match self {
+            Self::Overflow => "integer-overflow",
             Self::Underflow => "integer-underflow",
             Self::Reentrancy => "reentrancy",
+            Self::ReentrancyFallback => "reentrancy",
             Self::TxOrigin => "tx-origin",
             Self::Delegatecall => "unsafe-delegatecall",
             Self::UncheckedCall => "unchecked-call",
             Self::Selfdestruct => "unprotected-selfdestruct",
+            Self::AccessControl => "access-control",
             Self::ArbitraryWrite => "arbitrary-write",
+            Self::WrongConstructorName => "wrong-constructor-name",
             Self::PublicMintBurn => "public-mint-burn",
             Self::TimestampDependency => "timestamp-dependency",
             Self::WeakPrng => "weak-prng",
@@ -290,8 +350,14 @@ impl VulnerabilityKind {
             | Self::Delegatecall
             | Self::UncheckedCall
             | Self::Selfdestruct => VulnerabilityConfidence::High,
-            Self::Underflow
+            Self::ReentrancyFallback | Self::SignatureMalleability | Self::LockedEther => {
+                VulnerabilityConfidence::Low
+            }
+            Self::Overflow
+            | Self::Underflow
+            | Self::AccessControl
             | Self::ArbitraryWrite
+            | Self::WrongConstructorName
             | Self::PublicMintBurn
             | Self::TimestampDependency
             | Self::WeakPrng
@@ -302,7 +368,6 @@ impl VulnerabilityKind {
             | Self::UnsafeSendInRequire
             | Self::UnprotectedEtherWithdrawal
             | Self::Shadowing => VulnerabilityConfidence::Medium,
-            Self::SignatureMalleability | Self::LockedEther => VulnerabilityConfidence::Low,
         }
     }
 }
@@ -368,9 +433,13 @@ impl State {
             sender_checked: false,
             inside_loop: false,
             saw_order_sensitive_storage_read: false,
+            saw_this_balance_invariant: false,
+            storage_reads: HashSet::new(),
             block_visits: HashMap::new(),
             callback_depth: 0,
             callback_observed: false,
+            callback_changed_storage_keys: HashSet::new(),
+            callback_stale_read_keys: HashSet::new(),
             callback_frame: None,
         }
     }
@@ -468,6 +537,8 @@ const MAX_STATE_SHAPE_REVISITS: u8 = 2;
 const MAX_PATH_CONSTRAINTS: usize = 128;
 const MAX_WORKLIST_SIZE: usize = 1_024;
 const MAX_FUNCTION_TIME_MS: u64 = 7_500;
+const CALLBACK_MAX_DEPTH: u8 = 1;
+const CALLBACK_MAX_FANOUT: usize = 4;
 
 const SYMBOLIC_MAX_STEPS_ENV: &str = "STATIC_SYMBOLIC_MAX_STEPS";
 const SYMBOLIC_MAX_TRACE_LEN_ENV: &str = "STATIC_SYMBOLIC_MAX_TRACE_LEN";
@@ -477,7 +548,7 @@ const SYMBOLIC_MAX_PATH_CONSTRAINTS_ENV: &str = "STATIC_SYMBOLIC_MAX_PATH_CONSTR
 const SYMBOLIC_MAX_WORKLIST_ENV: &str = "STATIC_SYMBOLIC_MAX_WORKLIST";
 const SYMBOLIC_MAX_FUNCTION_MS_ENV: &str = "STATIC_SYMBOLIC_MAX_FUNCTION_MS";
 const SYMBOLIC_SOLVER_TIMEOUT_MS_ENV: &str = "STATIC_SYMBOLIC_SOLVER_TIMEOUT_MS";
-const DEFAULT_SYMBOLIC_SOLVER_TIMEOUT_MS: u64 = 500;
+const DEFAULT_SYMBOLIC_SOLVER_TIMEOUT_MS: u64 = 2_000;
 const EVM_WORD_BITS: u32 = 256;
 
 #[derive(Clone, Copy)]
@@ -556,6 +627,7 @@ pub fn run(output: &FrontendOutput, format: OutputFormat) -> Result<()> {
     let static_findings = analysis::detectors::run_detectors(&output.ast, &call_graph, &taint);
     let mut tod_allowed: HashSet<u32> = HashSet::new();
     let mut sig_mall_allowed: HashSet<u32> = HashSet::new();
+    let mut reentrancy_allowed: HashSet<u32> = HashSet::new();
     for finding in &static_findings {
         let Some(function_id) = finding.function else {
             continue;
@@ -566,6 +638,13 @@ pub fn run(output: &FrontendOutput, format: OutputFormat) -> Result<()> {
             }
             analysis::detectors::FindingKind::SignatureMalleability => {
                 sig_mall_allowed.insert(function_id);
+            }
+            analysis::detectors::FindingKind::ReentrancyNegativeEvents
+            | analysis::detectors::FindingKind::ReentrancyTransfer
+            | analysis::detectors::FindingKind::ReentrancySameEffect
+            | analysis::detectors::FindingKind::ReentrancyEthTransfer
+            | analysis::detectors::FindingKind::ReentrancyNoEthTransfer => {
+                reentrancy_allowed.insert(function_id);
             }
             _ => {}
         }
@@ -592,7 +671,7 @@ pub fn run(output: &FrontendOutput, format: OutputFormat) -> Result<()> {
     let mut dead_ends = 0usize;
     let mut max_worklist = 0usize;
     let mut vulnerabilities: Vec<VulnerabilityFinding> = Vec::new();
-    let mut seen_output_vulns: HashSet<(u32, String, usize)> = HashSet::new();
+    let mut seen_output_vulns: HashSet<(u32, String, usize, String)> = HashSet::new();
     let mut truncated_functions = 0usize;
 
     for function in &ir_module.functions {
@@ -609,6 +688,7 @@ pub fn run(output: &FrontendOutput, format: OutputFormat) -> Result<()> {
                 deps: &dependency_map,
             }),
             checked_arithmetic,
+            reentrancy_allowed.contains(&function.id),
             tod_allowed.contains(&function.id),
             sig_mall_allowed.contains(&function.id),
         );
@@ -627,7 +707,8 @@ pub fn run(output: &FrontendOutput, format: OutputFormat) -> Result<()> {
         let mut function_vulnerability_count = stats.vulnerabilities.len();
         for vuln in stats.vulnerabilities {
             let kind = vuln.kind.as_str().to_string();
-            let dedup_key = (function.id, kind.clone(), vuln.pc);
+            let root_cause_key = local_root_cause_key(&vuln);
+            let dedup_key = (function.id, kind.clone(), vuln.pc, root_cause_key);
             if !seen_output_vulns.insert(dedup_key) {
                 continue;
             }
@@ -681,7 +762,12 @@ pub fn run(output: &FrontendOutput, format: OutputFormat) -> Result<()> {
         if let Some(ast_fn) = output.ast.functions.get(function.id as usize) {
             if is_public_mint_burn_function(ast_fn, &output.compiler) {
                 let kind = VulnerabilityKind::PublicMintBurn.as_str().to_string();
-                let dedup_key = (function.id, kind.clone(), 0usize);
+                let dedup_key = (
+                    function.id,
+                    kind.clone(),
+                    0usize,
+                    "public-mint-burn".to_string(),
+                );
                 if seen_output_vulns.insert(dedup_key) {
                     vulnerabilities.push(VulnerabilityFinding {
                         kind,
@@ -721,7 +807,12 @@ pub fn run(output: &FrontendOutput, format: OutputFormat) -> Result<()> {
                     && locked_ether_emitted_contracts.insert(contract_id);
                 if should_emit_locked_ether {
                     let kind = VulnerabilityKind::LockedEther.as_str().to_string();
-                    let dedup_key = (function.id, kind.clone(), 0usize);
+                    let dedup_key = (
+                        function.id,
+                        kind.clone(),
+                        0usize,
+                        "locked-ether".to_string(),
+                    );
                     if seen_output_vulns.insert(dedup_key) {
                         vulnerabilities.push(VulnerabilityFinding {
                             kind,
@@ -768,6 +859,226 @@ pub fn run(output: &FrontendOutput, format: OutputFormat) -> Result<()> {
             vulnerability_count: function_vulnerability_count,
             truncated: stats.truncated,
         });
+    }
+
+    let runtime_reentrancy_functions = vulnerabilities
+        .iter()
+        .filter(|v| v.kind == VulnerabilityKind::Reentrancy.as_str())
+        .map(|v| v.function_id)
+        .collect::<HashSet<_>>();
+    let runtime_access_like_functions = vulnerabilities
+        .iter()
+        .filter(|v| {
+            v.kind == VulnerabilityKind::AccessControl.as_str()
+                || v.kind == VulnerabilityKind::WrongConstructorName.as_str()
+        })
+        .map(|v| v.function_id)
+        .collect::<HashSet<_>>();
+    let runtime_dos_functions = vulnerabilities
+        .iter()
+        .filter(|v| v.kind == VulnerabilityKind::DosWithFailedCall.as_str())
+        .map(|v| v.function_id)
+        .collect::<HashSet<_>>();
+    let runtime_locked_ether_functions = vulnerabilities
+        .iter()
+        .filter(|v| v.kind == VulnerabilityKind::LockedEther.as_str())
+        .map(|v| v.function_id)
+        .collect::<HashSet<_>>();
+
+    for finding in static_findings.iter().filter(|finding| {
+        matches!(
+            finding.kind,
+            analysis::detectors::FindingKind::ReentrancyNegativeEvents
+                | analysis::detectors::FindingKind::ReentrancyTransfer
+                | analysis::detectors::FindingKind::ReentrancySameEffect
+                | analysis::detectors::FindingKind::ReentrancyEthTransfer
+                | analysis::detectors::FindingKind::ReentrancyNoEthTransfer
+        )
+    }) {
+        let function_id = finding.function.unwrap_or(0);
+        if runtime_reentrancy_functions.contains(&function_id) {
+            continue;
+        }
+        let function_name = output
+            .ast
+            .functions
+            .get(function_id as usize)
+            .and_then(|f| f.name.clone());
+        let kind = VulnerabilityKind::ReentrancyFallback.as_str().to_string();
+        let dedup_key = (
+            function_id,
+            kind.clone(),
+            0usize,
+            "static-guided-runtime-backstop".to_string(),
+        );
+        if seen_output_vulns.insert(dedup_key) {
+            vulnerabilities.push(VulnerabilityFinding {
+                kind,
+                confidence: VulnerabilityKind::ReentrancyFallback
+                    .confidence()
+                    .as_str()
+                    .to_string(),
+                function_id,
+                function_name: function_name.clone(),
+                pc: 0,
+                instruction: "static-guided-backstop".to_string(),
+                trace: Vec::new(),
+                trigger: None,
+                branch_triggers: Vec::new(),
+                location: build_location(&finding.span, output),
+                path_constraints: Vec::new(),
+                message:
+                    "runtime callback/store evidence was insufficient, but static reentrancy signal exists for this function (runtime backstop)"
+                        .to_string(),
+                model: None,
+            });
+            if let Some(entry) = by_function.iter_mut().find(|entry| entry.id == function_id) {
+                entry.vulnerability_count = entry.vulnerability_count.saturating_add(1);
+            }
+        }
+    }
+
+    for finding in static_findings
+        .iter()
+        .filter(|finding| finding.kind == analysis::detectors::FindingKind::DosWithFailedCall)
+    {
+        let function_id = finding.function.unwrap_or(0);
+        if runtime_dos_functions.contains(&function_id) {
+            continue;
+        }
+        let function_name = output
+            .ast
+            .functions
+            .get(function_id as usize)
+            .and_then(|f| f.name.clone());
+        let kind = VulnerabilityKind::DosWithFailedCall.as_str().to_string();
+        let dedup_key = (
+            function_id,
+            kind.clone(),
+            0usize,
+            "static-guided-runtime-backstop".to_string(),
+        );
+        if seen_output_vulns.insert(dedup_key) {
+            vulnerabilities.push(VulnerabilityFinding {
+                kind,
+                confidence: VulnerabilityKind::DosWithFailedCall
+                    .confidence()
+                    .as_str()
+                    .to_string(),
+                function_id,
+                function_name: function_name.clone(),
+                pc: 0,
+                instruction: "static-guided-backstop".to_string(),
+                trace: Vec::new(),
+                trigger: None,
+                branch_triggers: Vec::new(),
+                location: build_location(&finding.span, output),
+                path_constraints: Vec::new(),
+                message:
+                    "runtime loop/call failure evidence was insufficient, but static DoS-with-failed-call signal exists for this function (runtime backstop)"
+                        .to_string(),
+                model: None,
+            });
+            if let Some(entry) = by_function.iter_mut().find(|entry| entry.id == function_id) {
+                entry.vulnerability_count = entry.vulnerability_count.saturating_add(1);
+            }
+        }
+    }
+
+    for finding in static_findings.iter().filter(|finding| {
+        matches!(
+            finding.kind,
+            analysis::detectors::FindingKind::LockedEther
+                | analysis::detectors::FindingKind::ForceEtherBalanceCheck
+        )
+    }) {
+        let function_id = finding.function.unwrap_or(0);
+        if runtime_locked_ether_functions.contains(&function_id) {
+            continue;
+        }
+        let function_name = output
+            .ast
+            .functions
+            .get(function_id as usize)
+            .and_then(|f| f.name.clone());
+        let kind = VulnerabilityKind::LockedEther.as_str().to_string();
+        let dedup_key = (
+            function_id,
+            kind.clone(),
+            0usize,
+            "static-guided-runtime-backstop".to_string(),
+        );
+        if seen_output_vulns.insert(dedup_key) {
+            vulnerabilities.push(VulnerabilityFinding {
+                kind,
+                confidence: VulnerabilityKind::LockedEther
+                    .confidence()
+                    .as_str()
+                    .to_string(),
+                function_id,
+                function_name: function_name.clone(),
+                pc: 0,
+                instruction: "static-guided-backstop".to_string(),
+                trace: Vec::new(),
+                trigger: None,
+                branch_triggers: Vec::new(),
+                location: build_location(&finding.span, output),
+                path_constraints: Vec::new(),
+                message:
+                    "runtime forced-Ether/locked-Ether evidence was insufficient, but static balance-invariant signal exists for this function (runtime backstop)"
+                        .to_string(),
+                model: None,
+            });
+            if let Some(entry) = by_function.iter_mut().find(|entry| entry.id == function_id) {
+                entry.vulnerability_count = entry.vulnerability_count.saturating_add(1);
+            }
+        }
+    }
+
+    for finding in static_findings.iter().filter(|finding| {
+        finding.kind == analysis::detectors::FindingKind::UninitializedPermissionCheck
+    }) {
+        let function_id = finding.function.unwrap_or(0);
+        if runtime_access_like_functions.contains(&function_id) {
+            continue;
+        }
+        let function_name = output
+            .ast
+            .functions
+            .get(function_id as usize)
+            .and_then(|f| f.name.clone());
+        let kind = VulnerabilityKind::AccessControl.as_str().to_string();
+        let dedup_key = (
+            function_id,
+            kind.clone(),
+            0usize,
+            "static-guided-runtime-backstop".to_string(),
+        );
+        if seen_output_vulns.insert(dedup_key) {
+            vulnerabilities.push(VulnerabilityFinding {
+                kind,
+                confidence: VulnerabilityKind::AccessControl
+                    .confidence()
+                    .as_str()
+                    .to_string(),
+                function_id,
+                function_name: function_name.clone(),
+                pc: 0,
+                instruction: "static-guided-backstop".to_string(),
+                trace: Vec::new(),
+                trigger: None,
+                branch_triggers: Vec::new(),
+                location: build_location(&finding.span, output),
+                path_constraints: Vec::new(),
+                message:
+                    "runtime authority evidence was insufficient, but static public reinitialization signal exists for this function (runtime backstop)"
+                        .to_string(),
+                model: None,
+            });
+            if let Some(entry) = by_function.iter_mut().find(|entry| entry.id == function_id) {
+                entry.vulnerability_count = entry.vulnerability_count.saturating_add(1);
+            }
+        }
     }
 
     let report = SymbolicReport {
@@ -1118,6 +1429,7 @@ fn engine(
     all_cfgs: &[cfg::CfgFunction],
     callback_data: Option<EngineCallbackData<'_>>,
     checked_arithmetic: bool,
+    allow_reentrancy_fallback: bool,
     allow_tod: bool,
     allow_signature_malleability: bool,
 ) -> EngineStats {
@@ -1153,6 +1465,14 @@ fn engine(
         }
     }
     let sink_scores = build_sink_scores(all_cfgs);
+    let has_writer_reader_dependency = callback_data
+        .map(|data| function_has_writer_reader_dependency(cfg_fn.id, data))
+        .unwrap_or(false);
+    let has_callback_overlap = callback_data
+        .map(|data| function_has_callback_overlap(cfg_fn.id, data))
+        .unwrap_or(false);
+    let allow_callback_runtime = allow_reentrancy_fallback || has_callback_overlap;
+    let authority_profile = build_authority_runtime_profile(cfg_fn, callback_data);
 
     let entry_block = cfg_fn.blocks.first().map(|b| b.id).unwrap_or(0);
     let mut entry_state = State::new();
@@ -1173,6 +1493,7 @@ fn engine(
     let mut vulnerabilities = Vec::new();
     let mut seen_reentrancy_edges: HashSet<(usize, usize)> = HashSet::new();
     let mut seen_vulns: HashSet<(VulnerabilityKind, usize)> = HashSet::new();
+    let mut callback_only_fallback: Option<LocalVulnerability> = None;
     let mut solver_cache = SolverCache::default();
     let mut truncated = false;
     let function_started = Instant::now();
@@ -1196,6 +1517,26 @@ fn engine(
             dead_ends += 1;
             continue;
         };
+        if allow_callback_runtime
+            && callback_only_fallback.is_none()
+            && state.callback_observed
+            && let Some(call_pc) = state.external_call_pc
+        {
+            callback_only_fallback = Some(LocalVulnerability {
+                kind: VulnerabilityKind::ReentrancyFallback,
+                pc: call_pc,
+                instruction: "callback-observed".to_string(),
+                trace: state.trace.clone(),
+                trigger: state.branch_triggers.last().cloned(),
+                branch_triggers: state.branch_triggers.clone(),
+                span: None,
+                path_constraints: constraints_to_strings(&state.path_constraints),
+                message:
+                    "feasible callback observed on external call in a state-coupled function, but post-call storage evidence was not captured (runtime callback fallback)"
+                        .to_string(),
+                model: None,
+            });
+        }
         let mut block_terminated = false;
 
         for (instr_index, instr) in block.instrs.iter().enumerate().skip(state.instr_offset) {
@@ -1269,28 +1610,93 @@ fn engine(
                 IrInstr::Store { dest, src, .. } => {
                     let value = state.eval_value(src);
                     if is_storage_place(dest) {
-                        if let Some(call_pc) = state.external_call_pc
-                            && state.callback_observed
-                        {
-                            if seen_reentrancy_edges.insert((call_pc, current_pc)) {
+                        let dest_slot_key = place_key(dest);
+                        if let Some(call_pc) = state.external_call_pc {
+                            let stale_read_hit = state.callback_stale_read_keys.contains(&dest_slot_key);
+                            let callback_changed_hit = state
+                                .callback_changed_storage_keys
+                                .contains(&dest_slot_key);
+                            let callback_changed_any = !state.callback_changed_storage_keys.is_empty();
+                            if state.callback_observed && (stale_read_hit || callback_changed_hit || callback_changed_any) {
+                                if seen_reentrancy_edges.insert((call_pc, current_pc)) {
+                                    let evidence = if stale_read_hit || !state.callback_stale_read_keys.is_empty() {
+                                        "stale-read"
+                                    } else if callback_changed_hit {
+                                        "changed-slot"
+                                    } else {
+                                        "post-call-mutation"
+                                    };
+                                    vulnerabilities.push(LocalVulnerability {
+                                        kind: VulnerabilityKind::Reentrancy,
+                                        pc: current_pc,
+                                        instruction: format!("{instr:?}"),
+                                        trace: state.trace.clone(),
+                                        trigger: state.branch_triggers.last().cloned(),
+                                        branch_triggers: state.branch_triggers.clone(),
+                                        span: Some(instr_span(instr)),
+                                        path_constraints: constraints_to_strings(
+                                            &state.path_constraints,
+                                        ),
+                                        message: format!(
+                                            "storage write after feasible callback return from external value call (call_pc={call_pc}, store_pc={current_pc}, evidence={evidence})"
+                                        ),
+                                        model: None,
+                                    });
+                                }
+                            } else if !state.callback_observed
+                                && (has_writer_reader_dependency || allow_reentrancy_fallback)
+                                && seen_vulns
+                                    .insert((VulnerabilityKind::ReentrancyFallback, current_pc))
+                            {
                                 vulnerabilities.push(LocalVulnerability {
-                                    kind: VulnerabilityKind::Reentrancy,
+                                    kind: VulnerabilityKind::ReentrancyFallback,
                                     pc: current_pc,
                                     instruction: format!("{instr:?}"),
                                     trace: state.trace.clone(),
                                     trigger: state.branch_triggers.last().cloned(),
                                     branch_triggers: state.branch_triggers.clone(),
                                     span: Some(instr_span(instr)),
-                                    path_constraints: constraints_to_strings(&state.path_constraints),
-                                    message: format!(
-                                        "storage write after feasible callback return from external value call (call_pc={call_pc}, store_pc={current_pc})"
+                                    path_constraints: constraints_to_strings(
+                                        &state.path_constraints,
                                     ),
+                                    message:
+                                        "external value call followed by storage write without feasible callback evidence (heuristic fallback)"
+                                            .to_string(),
                                     model: None,
                                 });
                             }
                         }
+                        let authority_slot = place_key(dest);
+                        let sender_like_source = value_is_sender_like(src, &state);
+                        if authority_profile.wrong_constructor_candidate
+                            && !state.sender_checked
+                            && place_is_constructor_authority_sensitive(dest)
+                            && sender_like_source
+                            && seen_vulns
+                                .insert((VulnerabilityKind::WrongConstructorName, current_pc))
+                        {
+                            vulnerabilities.push(LocalVulnerability {
+                                kind: VulnerabilityKind::WrongConstructorName,
+                                pc: current_pc,
+                                instruction: format!("{instr:?}"),
+                                trace: state.trace.clone(),
+                                trigger: state.branch_triggers.last().cloned(),
+                                branch_triggers: state.branch_triggers.clone(),
+                                span: Some(instr_span(instr)),
+                                path_constraints: constraints_to_strings(&state.path_constraints),
+                                message: format!(
+                                    "callable constructor-like function reassigns authority slot '{}' from msg.sender",
+                                    authority_slot
+                                ),
+                                model: None,
+                            });
+                        }
                         if !state.sender_checked
                             && place_is_authority_sensitive(dest)
+                            && authority_profile.exclusive_authority_write
+                            && !authority_profile.guarded_by_modifier
+                            && !authority_profile.constructor_like
+                            && !authority_profile.wrong_constructor_candidate
                             && seen_vulns.insert((VulnerabilityKind::ArbitraryWrite, current_pc))
                         {
                             vulnerabilities.push(LocalVulnerability {
@@ -1304,10 +1710,29 @@ fn engine(
                                 path_constraints: constraints_to_strings(&state.path_constraints),
                                 message: format!(
                                     "storage write to authority-sensitive slot '{}' without sender authorization check",
-                                    place_key(dest)
+                                    authority_slot
                                 ),
                                 model: None,
                             });
+                            if seen_vulns.insert((VulnerabilityKind::AccessControl, current_pc)) {
+                                vulnerabilities.push(LocalVulnerability {
+                                    kind: VulnerabilityKind::AccessControl,
+                                    pc: current_pc,
+                                    instruction: format!("{instr:?}"),
+                                    trace: state.trace.clone(),
+                                    trigger: state.branch_triggers.last().cloned(),
+                                    branch_triggers: state.branch_triggers.clone(),
+                                    span: Some(instr_span(instr)),
+                                    path_constraints: constraints_to_strings(
+                                        &state.path_constraints,
+                                    ),
+                                    message: format!(
+                                        "missing access control: authority-sensitive storage write '{}' has no sender authorization gate",
+                                        authority_slot
+                                    ),
+                                    model: None,
+                                });
+                            }
                         }
                     }
                     state.write_place(dest, value);
@@ -1315,6 +1740,9 @@ fn engine(
                 IrInstr::Load { dest, src, .. } => {
                     let value = state.read_place(src);
                     state.set_var(dest, value);
+                    if is_storage_place(src) {
+                        state.storage_reads.insert(place_key(src));
+                    }
                     if is_storage_place(src) && place_is_order_sensitive(src) {
                         state.saw_order_sensitive_storage_read = true;
                     }
@@ -1366,6 +1794,13 @@ fn engine(
                                 .entry(dest_key.clone())
                                 .or_default()
                                 .insert(ValueOrigin::BlockNumber);
+                        }
+                        if base_l == "this" && field_l == "balance" {
+                            state
+                                .origins
+                                .entry(dest_key.clone())
+                                .or_default()
+                                .insert(ValueOrigin::ThisBalance);
                         }
 
                         if field_l == "delegatecall" {
@@ -1429,6 +1864,55 @@ fn engine(
                     }
                     let lhs_v = state.eval_value(lhs);
                     let rhs_v = state.eval_value(rhs);
+                    if !checked_arithmetic && op == "+" {
+                        let overflow_model =
+                            solver_cache.check_add_overflow(&state.path_constraints, &lhs_v, &rhs_v);
+                        if let Some(model) = overflow_model {
+                            if seen_vulns.insert((VulnerabilityKind::Overflow, current_pc)) {
+                                vulnerabilities.push(LocalVulnerability {
+                                    kind: VulnerabilityKind::Overflow,
+                                    pc: current_pc,
+                                    instruction: format!("{instr:?}"),
+                                    trace: state.trace.clone(),
+                                    trigger: state.branch_triggers.last().cloned(),
+                                    branch_triggers: state.branch_triggers.clone(),
+                                    span: Some(instr_span(instr)),
+                                    path_constraints: constraints_to_strings(
+                                        &state.path_constraints,
+                                    ),
+                                    message:
+                                        "potential arithmetic overflow: lhs + rhs wraps under uint256 arithmetic"
+                                            .to_string(),
+                                    model: Some(model),
+                                });
+                            }
+                        } else if should_emit_storage_accumulator_overflow_fallback(
+                            &state,
+                            block,
+                            instr_index,
+                            dest,
+                            lhs,
+                            rhs,
+                        ) && seen_vulns.insert((VulnerabilityKind::Overflow, current_pc))
+                        {
+                            vulnerabilities.push(LocalVulnerability {
+                                kind: VulnerabilityKind::Overflow,
+                                pc: current_pc,
+                                instruction: format!("{instr:?}"),
+                                trace: state.trace.clone(),
+                                trigger: state.branch_triggers.last().cloned(),
+                                branch_triggers: state.branch_triggers.clone(),
+                                span: Some(instr_span(instr)),
+                                path_constraints: constraints_to_strings(
+                                    &state.path_constraints,
+                                ),
+                                message:
+                                    "unchecked storage accumulator update can wrap under uint256 arithmetic"
+                                        .to_string(),
+                                model: None,
+                            });
+                        }
+                    }
                     if !checked_arithmetic && op == "-" {
                         if let Some(model) =
                             solver_cache.check_underflow(&state.path_constraints, &lhs_v, &rhs_v)
@@ -1462,7 +1946,7 @@ fn engine(
                         op,
                         state.value_expr(rhs)
                     );
-                    state.expr_env.insert(dest_key.clone(), expr);
+                    state.expr_env.insert(dest_key.clone(), expr.clone());
                     let lhs_has_timestamp =
                         value_has_origin(&state.origins, lhs, ValueOrigin::Timestamp);
                     let rhs_has_timestamp =
@@ -1484,6 +1968,35 @@ fn engine(
                             .entry(var_key(dest))
                             .or_default()
                             .insert(ValueOrigin::BlockNumber);
+                        if is_weak_prng_arithmetic_op(op)
+                            && seen_vulns.insert((VulnerabilityKind::WeakPrng, current_pc))
+                        {
+                            vulnerabilities.push(LocalVulnerability {
+                                kind: VulnerabilityKind::WeakPrng,
+                                pc: current_pc,
+                                instruction: format!("{instr:?}"),
+                                trace: state.trace.clone(),
+                                trigger: Some(expr.clone()),
+                                branch_triggers: state.branch_triggers.clone(),
+                                span: Some(instr_span(instr)),
+                                path_constraints: constraints_to_strings(&state.path_constraints),
+                                message:
+                                    "weak PRNG: block.number/blockhash used in arithmetic expression"
+                                        .to_string(),
+                                model: None,
+                            });
+                        }
+                    }
+                    let lhs_has_this_balance =
+                        value_has_origin(&state.origins, lhs, ValueOrigin::ThisBalance);
+                    let rhs_has_this_balance =
+                        value_has_origin(&state.origins, rhs, ValueOrigin::ThisBalance);
+                    if lhs_has_this_balance || rhs_has_this_balance {
+                        state
+                            .origins
+                            .entry(var_key(dest))
+                            .or_default()
+                            .insert(ValueOrigin::ThisBalance);
                     }
                 }
                 IrInstr::Unary { dest, op, expr, .. } => {
@@ -1509,6 +2022,13 @@ fn engine(
                             .or_default()
                             .insert(ValueOrigin::BlockNumber);
                     }
+                    if value_has_origin(&state.origins, expr, ValueOrigin::ThisBalance) {
+                        state
+                            .origins
+                            .entry(var_key(dest))
+                            .or_default()
+                            .insert(ValueOrigin::ThisBalance);
+                    }
                 }
                 IrInstr::Call {
                     dest,
@@ -1519,6 +2039,7 @@ fn engine(
                 } => {
                     let callee_expr = state.value_expr(callee);
                     let callee_lower = callee_expr.to_ascii_lowercase();
+                    let callee_is_temp = matches!(callee, IrValue::Var(IrVar::Temp(_)));
                     let callee_key = value_var_key(callee);
                     let callee_origins = callee_key
                         .as_ref()
@@ -1537,16 +2058,25 @@ fn engine(
                     let is_revert_like = callee_lower == "revert";
                     let is_static_call =
                         callee_lower == "staticcall" || callee_lower.ends_with(".staticcall");
-                    let has_value = options
+                    let has_explicit_value = options
                         .iter()
                         .any(|o| matches!(o, crate::ir::IrCallOption::Value(_)))
                         || callee_origins.contains(&ValueOrigin::ValueCallRef);
+                    let is_potential_external_temp_call =
+                        callee_is_temp && dest.is_empty() && !args.is_empty();
+                    let has_value = has_explicit_value
+                        || is_send_ref
+                        || is_transfer_ref
+                        || (callee_is_temp && !args.is_empty() && is_low_level_call)
+                        || (allow_callback_runtime && is_potential_external_temp_call);
+                    let is_low_level_call = is_low_level_call
+                        || (allow_callback_runtime && is_potential_external_temp_call);
                     let is_callback_external_call = is_low_level_call
                         && !is_static_call
                         && !is_send_ref
                         && !is_transfer_ref
-                        && has_value;
-                    let callback_candidates = if state.callback_depth == 0 {
+                        && (has_value || allow_callback_runtime);
+                    let callback_candidates = if state.callback_depth < CALLBACK_MAX_DEPTH {
                         callback_data
                             .map(|data| {
                                 reentrant_callback_candidates(
@@ -1554,7 +2084,7 @@ fn engine(
                                     data.ast,
                                     data.compiler,
                                     data.deps,
-                                    4,
+                                    CALLBACK_MAX_FANOUT,
                                 )
                             })
                             .unwrap_or_default()
@@ -1593,6 +2123,30 @@ fn engine(
 
                     if should_havoc_storage {
                         havoc_storage(&mut state);
+                    }
+
+                    if is_low_level_call && (has_value || allow_callback_runtime) {
+                        state.external_call_pc = Some(current_pc);
+                    }
+                    if allow_callback_runtime
+                        && is_potential_external_temp_call
+                        && !can_fork_callback
+                        && seen_vulns.insert((VulnerabilityKind::ReentrancyFallback, current_pc))
+                    {
+                        vulnerabilities.push(LocalVulnerability {
+                            kind: VulnerabilityKind::ReentrancyFallback,
+                            pc: current_pc,
+                            instruction: format!("{instr:?}"),
+                            trace: state.trace.clone(),
+                            trigger: state.branch_triggers.last().cloned(),
+                            branch_triggers: state.branch_triggers.clone(),
+                            span: Some(instr_span(instr)),
+                            path_constraints: constraints_to_strings(&state.path_constraints),
+                            message:
+                                "storage-coupled function performs external temp-call without callback proof; potential reentrancy surface"
+                                    .to_string(),
+                            model: None,
+                        });
                     }
 
                     if is_delegatecall
@@ -1648,6 +2202,25 @@ fn engine(
                             model: None,
                         });
                     }
+                    if is_selfdestruct_name(&callee_lower)
+                        && state.saw_this_balance_invariant
+                        && seen_vulns.insert((VulnerabilityKind::LockedEther, current_pc))
+                    {
+                        vulnerabilities.push(LocalVulnerability {
+                            kind: VulnerabilityKind::LockedEther,
+                            pc: current_pc,
+                            instruction: format!("{instr:?}"),
+                            trace: state.trace.clone(),
+                            trigger: state.branch_triggers.last().cloned(),
+                            branch_triggers: state.branch_triggers.clone(),
+                            span: Some(instr_span(instr)),
+                            path_constraints: constraints_to_strings(&state.path_constraints),
+                            message:
+                                "balance invariant depends on this.balance before selfdestruct/suicide; forced Ether can brick the path"
+                                    .to_string(),
+                            model: None,
+                        });
+                    }
                     let is_hardcoded_gas_transfer = is_send_ref || is_transfer_ref;
                     if is_hardcoded_gas_transfer
                         && seen_vulns
@@ -1689,6 +2262,7 @@ fn engine(
                     }
                     if state.inside_loop
                         && is_low_level_call
+                        && is_transfer_ref
                         && seen_vulns.insert((VulnerabilityKind::DosWithFailedCall, current_pc))
                     {
                         vulnerabilities.push(LocalVulnerability {
@@ -1730,6 +2304,7 @@ fn engine(
                         });
                     }
                     if allow_tod
+                        && has_writer_reader_dependency
                         && state.saw_order_sensitive_storage_read
                         && (has_value || is_hardcoded_gas_transfer)
                         && seen_vulns.insert((
@@ -1785,6 +2360,32 @@ fn engine(
                                             model: None,
                                         });
                                     }
+                                    if (is_send_name(&pending_callee)
+                                        || pending_callee.contains(".send")
+                                        || is_transfer_name(&pending_callee)
+                                        || pending_callee.contains(".transfer"))
+                                        && seen_vulns.insert((
+                                            VulnerabilityKind::DosWithFailedCall,
+                                            current_pc,
+                                        ))
+                                    {
+                                        vulnerabilities.push(LocalVulnerability {
+                                            kind: VulnerabilityKind::DosWithFailedCall,
+                                            pc: current_pc,
+                                            instruction: format!("{instr:?}"),
+                                            trace: state.trace.clone(),
+                                            trigger: state.branch_triggers.last().cloned(),
+                                            branch_triggers: state.branch_triggers.clone(),
+                                            span: Some(instr_span(instr)),
+                                            path_constraints: constraints_to_strings(
+                                                &state.path_constraints,
+                                            ),
+                                            message:
+                                                "require/assert outcome depends on low-level call result; failed call can block progress"
+                                                    .to_string(),
+                                            model: None,
+                                        });
+                                    }
                                 }
                                 mark_pending_call_checked(
                                     &mut state.pending_low_level_calls,
@@ -1797,6 +2398,14 @@ fn engine(
                                     .contains("sender")
                             {
                                 state.sender_checked = true;
+                            }
+                            if value_has_origin(
+                                &state.origins,
+                                first_arg,
+                                ValueOrigin::ThisBalance,
+                            ) && cond_text.contains("==")
+                            {
+                                state.saw_this_balance_invariant = true;
                             }
 
                             let mut fail_constraints = state.path_constraints.clone();
@@ -1972,6 +2581,25 @@ fn engine(
                             .entry(var_key(dest))
                             .or_default()
                             .insert(ValueOrigin::BlockNumber);
+                    }
+                    let has_this_balance =
+                        value_has_origin(&state.origins, cond, ValueOrigin::ThisBalance)
+                            || value_has_origin(
+                                &state.origins,
+                                then_val,
+                                ValueOrigin::ThisBalance,
+                            )
+                            || value_has_origin(
+                                &state.origins,
+                                else_val,
+                                ValueOrigin::ThisBalance,
+                            );
+                    if has_this_balance {
+                        state
+                            .origins
+                            .entry(var_key(dest))
+                            .or_default()
+                            .insert(ValueOrigin::ThisBalance);
                     }
                 }
                 IrInstr::Return { values, .. } => {
@@ -2316,6 +2944,19 @@ fn engine(
         .count();
     let terminal_paths = terminal_states.len();
 
+    if allow_callback_runtime
+        && !vulnerabilities.iter().any(|v| {
+            matches!(
+                v.kind,
+                VulnerabilityKind::Reentrancy | VulnerabilityKind::ReentrancyFallback
+            )
+        })
+        && let Some(vuln) = callback_only_fallback
+        && seen_vulns.insert((vuln.kind.clone(), vuln.pc))
+    {
+        vulnerabilities.push(vuln);
+    }
+
     EngineStats {
         instructions,
         explored_states,
@@ -2377,6 +3018,8 @@ fn callback_frame_from_state(state: &State) -> CallbackFrame {
         sender_checked: state.sender_checked,
         inside_loop: state.inside_loop,
         saw_order_sensitive_storage_read: state.saw_order_sensitive_storage_read,
+        saw_this_balance_invariant: state.saw_this_balance_invariant,
+        storage_reads: state.storage_reads.clone(),
         block_visits: state.block_visits.clone(),
         callback_depth: state.callback_depth,
         external_call_pc: state.external_call_pc,
@@ -2400,9 +3043,13 @@ fn callback_state_from_frame(
     callback_state.sender_checked = false;
     callback_state.inside_loop = false;
     callback_state.saw_order_sensitive_storage_read = false;
+    callback_state.saw_this_balance_invariant = false;
+    callback_state.storage_reads = HashSet::new();
     callback_state.block_visits = HashMap::from([(entry_block, 1)]);
     callback_state.callback_depth = frame.callback_depth.saturating_add(1);
     callback_state.callback_observed = false;
+    callback_state.callback_changed_storage_keys = HashSet::new();
+    callback_state.callback_stale_read_keys = HashSet::new();
     callback_state.callback_frame = Some(frame);
     callback_state
 }
@@ -2413,6 +3060,18 @@ fn resume_from_callback(
     kind: &TerminationKind,
 ) -> State {
     let mut resumed = State::new();
+    let callback_changed_storage_keys = match kind {
+        TerminationKind::Revert => HashSet::new(),
+        TerminationKind::Return | TerminationKind::Fallthrough => {
+            diff_storage_keys(&frame.storage, &callback_state.storage)
+        }
+    };
+    let callback_stale_read_keys = frame
+        .storage_reads
+        .iter()
+        .filter(|slot| callback_changed_storage_keys.contains(*slot))
+        .cloned()
+        .collect::<HashSet<_>>();
     resumed.function_id = frame.function_id;
     resumed.block_id = frame.block_id;
     resumed.instr_offset = frame.instr_offset;
@@ -2432,9 +3091,13 @@ fn resume_from_callback(
     resumed.sender_checked = frame.sender_checked;
     resumed.inside_loop = frame.inside_loop;
     resumed.saw_order_sensitive_storage_read = frame.saw_order_sensitive_storage_read;
+    resumed.saw_this_balance_invariant = frame.saw_this_balance_invariant;
+    resumed.storage_reads = frame.storage_reads;
     resumed.block_visits = frame.block_visits;
     resumed.callback_depth = frame.callback_depth;
     resumed.callback_observed = !matches!(kind, TerminationKind::Revert);
+    resumed.callback_changed_storage_keys = callback_changed_storage_keys;
+    resumed.callback_stale_read_keys = callback_stale_read_keys;
     resumed.callback_frame = None;
     resumed.branch_triggers.push(format!(
         "callback(fn={}) {}",
@@ -2446,6 +3109,18 @@ fn resume_from_callback(
         }
     ));
     resumed
+}
+
+fn diff_storage_keys(before: &HashMap<String, Int>, after: &HashMap<String, Int>) -> HashSet<String> {
+    let mut keys = before.keys().cloned().collect::<HashSet<_>>();
+    keys.extend(after.keys().cloned());
+    keys.into_iter()
+        .filter(|key| {
+            let left = before.get(key).map(|v| v.to_string());
+            let right = after.get(key).map(|v| v.to_string());
+            left != right
+        })
+        .collect()
 }
 
 fn finalize_state(
@@ -2551,45 +3226,142 @@ fn reentrant_callback_candidates(
     let Some(contract) = ast.contracts.get(contract_id as usize) else {
         return Vec::new();
     };
-    let Some(current_deps) = deps.functions.get(&function_id) else {
-        return Vec::new();
-    };
+    let current_deps = deps.functions.get(&function_id);
 
-    let mut candidates = contract
+    let mut mutating = contract
         .functions
         .iter()
         .filter_map(|candidate_id| {
-        let Some(candidate) = ast.functions.get(*candidate_id as usize) else {
-            return None;
+            let candidate = ast.functions.get(*candidate_id as usize)?;
+            if !crate::frontend::is_mutating_entrypoint(candidate, compiler)
+                || candidate.kind != FunctionKind::Function
+            {
+                return None;
+            }
+            Some(*candidate_id)
+        })
+        .collect::<Vec<_>>();
+    mutating.sort_unstable();
+    mutating.dedup();
+
+    if mutating.is_empty() {
+        return Vec::new();
+    }
+
+    let mut out = Vec::new();
+    if mutating.contains(&function_id) {
+        out.push(function_id);
+    }
+
+    let mut overlap = Vec::new();
+    let mut fallback = Vec::new();
+    for candidate_id in mutating {
+        if candidate_id == function_id {
+            continue;
+        }
+        let overlaps = current_deps
+            .zip(deps.functions.get(&candidate_id))
+            .map(|(current, candidate)| {
+                current.writes.iter().any(|slot| {
+                    candidate.reads.contains(slot) || candidate.writes.contains(slot)
+                }) || current
+                    .reads
+                    .iter()
+                    .any(|slot| candidate.writes.contains(slot))
+            })
+            .unwrap_or(false);
+        if overlaps {
+            overlap.push(candidate_id);
+        } else {
+            fallback.push(candidate_id);
+        }
+    }
+    overlap.sort_unstable();
+    out.extend(overlap);
+
+    fallback.sort_by_key(|candidate_id| {
+        let name = ast
+            .functions
+            .get(*candidate_id as usize)
+            .and_then(|f| f.name.as_ref())
+            .map(|s| s.to_ascii_lowercase())
+            .unwrap_or_default();
+        let rank = if name.contains("withdraw")
+            || name.contains("cashout")
+            || name.contains("payout")
+            || name.contains("split")
+            || name.contains("claim")
+        {
+            0u8
+        } else {
+            1u8
         };
-        if !crate::frontend::is_mutating_entrypoint(candidate, compiler)
+        (rank, name, *candidate_id)
+    });
+    out.extend(fallback);
+    out.truncate(limit);
+    out
+}
+
+fn function_has_writer_reader_dependency(function_id: u32, data: EngineCallbackData<'_>) -> bool {
+    let Some(current_deps) = data.deps.functions.get(&function_id) else {
+        return false;
+    };
+    if current_deps.reads.is_empty() {
+        return false;
+    }
+    let current_contract = data
+        .ast
+        .functions
+        .get(function_id as usize)
+        .and_then(|f| f.contract);
+    data.ast.functions.iter().any(|candidate| {
+        if candidate.id == function_id || candidate.contract != current_contract {
+            return false;
+        }
+        if !crate::frontend::is_public_entrypoint(candidate, data.compiler)
             || candidate.kind != FunctionKind::Function
         {
-            return None;
+            return false;
         }
-        if *candidate_id == function_id {
-            return Some((0u8, *candidate_id));
-        }
-        let Some(candidate_deps) = deps.functions.get(candidate_id) else {
-            return None;
+        let Some(candidate_deps) = data.deps.functions.get(&candidate.id) else {
+            return false;
         };
-        let overlaps = current_deps
+        candidate_deps
             .writes
             .iter()
-            .any(|slot| candidate_deps.reads.contains(slot) || candidate_deps.writes.contains(slot))
-            || current_deps
-                .reads
-                .iter()
-                .any(|slot| candidate_deps.writes.contains(slot));
-        overlaps.then_some((1u8, *candidate_id))
+            .any(|slot| current_deps.reads.contains(slot))
     })
-        .collect::<Vec<_>>();
-    candidates.sort_unstable();
-    candidates
-        .into_iter()
-        .take(limit)
-        .map(|(_, function_id)| function_id)
-        .collect()
+}
+
+fn function_has_callback_overlap(function_id: u32, data: EngineCallbackData<'_>) -> bool {
+    let Some(current_deps) = data.deps.functions.get(&function_id) else {
+        return false;
+    };
+    let current_contract = data
+        .ast
+        .functions
+        .get(function_id as usize)
+        .and_then(|f| f.contract);
+    data.ast.functions.iter().any(|candidate| {
+        if candidate.id == function_id || candidate.contract != current_contract {
+            return false;
+        }
+        if !crate::frontend::is_public_entrypoint(candidate, data.compiler)
+            || candidate.kind != FunctionKind::Function
+        {
+            return false;
+        }
+        let Some(candidate_deps) = data.deps.functions.get(&candidate.id) else {
+            return false;
+        };
+        current_deps.writes.iter().any(|slot| {
+            candidate_deps.reads.contains(slot) || candidate_deps.writes.contains(slot)
+        }) || current_deps
+            .reads
+            .iter()
+            .any(|slot| candidate_deps.writes.contains(slot))
+    })
 }
 
 fn value_has_origin(
@@ -2625,6 +3397,10 @@ fn is_transfer_name(callee_lower: &str) -> bool {
     callee_lower == "transfer" || callee_lower.ends_with(".transfer")
 }
 
+fn is_weak_prng_arithmetic_op(op: &str) -> bool {
+    matches!(op, "+" | "-" | "*" | "/" | "%" | "&" | "|" | "^" | "<<" | ">>")
+}
+
 fn is_selfdestruct_name(callee_lower: &str) -> bool {
     callee_lower == "selfdestruct" || callee_lower == "suicide"
 }
@@ -2644,7 +3420,10 @@ fn collect_payable_contracts(ast: &NormalizedAst) -> HashSet<u32> {
     for function in &ast.functions {
         if let Some(contract_id) = function.contract
             && function.mutability == Mutability::Payable
-            && function.kind == FunctionKind::Function
+            && matches!(
+                function.kind,
+                FunctionKind::Function | FunctionKind::Fallback | FunctionKind::Receive
+            )
         {
             out.insert(contract_id);
         }
@@ -2672,18 +3451,158 @@ fn collect_contracts_with_ether_send(
 }
 
 fn function_has_ether_send(function: &crate::ir::IrFunction) -> bool {
-    function.blocks.iter().any(|block| {
-        block.instrs.iter().any(|instr| {
-            let IrInstr::Call { callee, options, .. } = instr else {
-                return false;
+    let mut temp_call_refs: HashSet<String> = HashSet::new();
+    let mut temp_send_refs: HashSet<String> = HashSet::new();
+    let mut temp_transfer_refs: HashSet<String> = HashSet::new();
+    let mut temp_value_refs: HashSet<String> = HashSet::new();
+
+    for block in &function.blocks {
+        for instr in &block.instrs {
+            match instr {
+                IrInstr::Load { dest, src, .. } => {
+                    let dest_key = var_key(dest);
+                    if let IrPlace::Member { base, field, .. } = src {
+                        let field_lower = field.to_ascii_lowercase();
+                        if matches!(
+                            field_lower.as_str(),
+                            "call" | "send" | "transfer" | "delegatecall" | "staticcall"
+                        ) {
+                            temp_call_refs.insert(dest_key.clone());
+                        }
+                        if field_lower == "send" {
+                            temp_send_refs.insert(dest_key.clone());
+                        }
+                        if field_lower == "transfer" {
+                            temp_transfer_refs.insert(dest_key.clone());
+                        }
+                        if field_lower == "value" {
+                            let base_key = value_key(base);
+                            if temp_call_refs.contains(&base_key) {
+                                temp_value_refs.insert(dest_key);
+                            }
+                        }
+                    }
+                }
+                IrInstr::Assign { dest, src, .. } => {
+                    let dest_key = var_key(dest);
+                    let src_key = value_key(src);
+                    if temp_call_refs.contains(&src_key) {
+                        temp_call_refs.insert(dest_key.clone());
+                    }
+                    if temp_send_refs.contains(&src_key) {
+                        temp_send_refs.insert(dest_key.clone());
+                    }
+                    if temp_transfer_refs.contains(&src_key) {
+                        temp_transfer_refs.insert(dest_key.clone());
+                    }
+                    if temp_value_refs.contains(&src_key) {
+                        temp_value_refs.insert(dest_key);
+                    }
+                }
+                IrInstr::Call { callee, args, options, .. } => {
+                    let callee_name = value_name_raw(callee).to_ascii_lowercase();
+                    let callee_key = value_var_key(callee);
+                    let send_like = is_send_name(&callee_name)
+                        || callee_key
+                            .as_ref()
+                            .map(|key| temp_send_refs.contains(key))
+                            .unwrap_or(false);
+                    let transfer_like = is_transfer_name(&callee_name)
+                        || callee_key
+                            .as_ref()
+                            .map(|key| temp_transfer_refs.contains(key))
+                            .unwrap_or(false);
+                    let value_like = options
+                        .iter()
+                        .any(|opt| matches!(opt, crate::ir::IrCallOption::Value(_)))
+                        || callee_key
+                            .as_ref()
+                            .map(|key| temp_value_refs.contains(key))
+                            .unwrap_or(false)
+                        || send_like
+                        || transfer_like
+                        || matches!(callee, IrValue::Var(IrVar::Temp(_))) && !args.is_empty()
+                        || is_selfdestruct_name(&callee_name);
+                    if value_like {
+                        return true;
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    false
+}
+
+fn build_authority_runtime_profile(
+    cfg_fn: &cfg::CfgFunction,
+    callback_data: Option<EngineCallbackData<'_>>,
+) -> AuthorityRuntimeProfile {
+    let mut profile = AuthorityRuntimeProfile::default();
+    let mut saw_authority_write = false;
+    let mut saw_other_storage_write = false;
+
+    for block in &cfg_fn.blocks {
+        for instr in &block.instrs {
+            let IrInstr::Store { dest, .. } = instr else {
+                continue;
             };
-            let callee_name = value_name_raw(callee).to_ascii_lowercase();
-            let has_value = options
-                .iter()
-                .any(|opt| matches!(opt, crate::ir::IrCallOption::Value(_)));
-            has_value || is_send_name(&callee_name) || is_transfer_name(&callee_name)
-        })
-    })
+            if !is_storage_place(dest) {
+                continue;
+            }
+            if place_is_authority_sensitive(dest) {
+                saw_authority_write = true;
+            } else {
+                saw_other_storage_write = true;
+            }
+        }
+    }
+
+    profile.exclusive_authority_write = saw_authority_write && !saw_other_storage_write;
+
+    let Some(data) = callback_data else {
+        return profile;
+    };
+    let Some(function) = data.ast.functions.get(cfg_fn.id as usize) else {
+        return profile;
+    };
+    if crate::frontend::is_legacy_named_constructor(function, data.ast) {
+        profile.constructor_like = true;
+    }
+    profile.guarded_by_modifier = crate::frontend::has_authority_modifier_hint(function, data.ast);
+    let Some(name) = function.name.as_deref() else {
+        return profile;
+    };
+    let contract_name = function
+        .contract
+        .and_then(|contract_id| data.ast.contracts.get(contract_id as usize))
+        .map(|contract| contract.name.as_str());
+    if let Some(contract_name) = contract_name {
+        if name == contract_name && crate::frontend::is_public_entrypoint(function, data.compiler) {
+            profile.constructor_like = true;
+        }
+        let starts_upper = name
+            .chars()
+            .next()
+            .map(|ch| ch.is_ascii_uppercase())
+            .unwrap_or(false);
+        if function.kind == FunctionKind::Function
+            && function.params.is_empty()
+            && starts_upper
+            && name != contract_name
+            && crate::frontend::is_public_entrypoint(function, data.compiler)
+        {
+            profile.wrong_constructor_candidate = true;
+        }
+    }
+
+    profile
+}
+
+fn value_is_sender_like(value: &IrValue, state: &State) -> bool {
+    let raw = value_name_raw(value).to_ascii_lowercase();
+    let expr = state.value_expr(value).to_ascii_lowercase();
+    raw.contains("sender") || expr.contains("sender")
 }
 
 fn is_public_mint_burn_function(
@@ -2888,6 +3807,106 @@ fn constraints_to_strings(path_constraints: &[Bool]) -> Vec<String> {
     path_constraints.iter().map(|c| c.to_string()).collect()
 }
 
+fn local_root_cause_key(vuln: &LocalVulnerability) -> String {
+    if let Some(trigger) = &vuln.trigger
+        && !trigger.is_empty()
+    {
+        return normalize_root_key(trigger);
+    }
+    if let Some(span) = vuln.span {
+        return format!("span:{}:{}:{}", span.file, span.start, span.end);
+    }
+    normalize_root_key(vuln.message.as_str())
+}
+
+fn normalize_root_key(raw: &str) -> String {
+    raw.to_ascii_lowercase()
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || ch == '_' || ch == '-' {
+                ch
+            } else {
+                '_'
+            }
+        })
+        .collect::<String>()
+}
+
+fn should_emit_storage_accumulator_overflow_fallback(
+    state: &State,
+    block: &cfg::Block,
+    instr_index: usize,
+    dest: &IrVar,
+    lhs: &IrValue,
+    rhs: &IrValue,
+) -> bool {
+    let Some(store_slot_key) = next_storage_store_slot_key(block, instr_index, dest) else {
+        return false;
+    };
+    let store_expr = format!("load({store_slot_key})");
+    let lhs_expr = state.value_expr(lhs);
+    let rhs_expr = state.value_expr(rhs);
+    let uses_same_storage_slot = lhs_expr == store_expr || rhs_expr == store_expr;
+    if !uses_same_storage_slot {
+        return false;
+    }
+    !storage_accumulator_has_guard(state, &lhs_expr, &rhs_expr, &store_expr)
+}
+
+fn next_storage_store_slot_key(
+    block: &cfg::Block,
+    instr_index: usize,
+    dest: &IrVar,
+) -> Option<String> {
+    let next_instr = block.instrs.get(instr_index + 1)?;
+    let IrInstr::Store {
+        dest: store_dest,
+        src: IrValue::Var(src_var),
+        ..
+    } = next_instr
+    else {
+        return None;
+    };
+    if var_key(src_var) != var_key(dest) || !is_storage_place(store_dest) {
+        return None;
+    }
+    Some(place_key(store_dest))
+}
+
+fn storage_accumulator_has_guard(
+    state: &State,
+    lhs_expr: &str,
+    rhs_expr: &str,
+    store_expr: &str,
+) -> bool {
+    state.branch_triggers.iter().any(|text| {
+        guard_mentions_storage_accumulator(text, lhs_expr, rhs_expr, store_expr)
+    }) || state.path_constraints.iter().any(|constraint| {
+        let text = constraint.to_string();
+        guard_mentions_storage_accumulator(text.as_str(), lhs_expr, rhs_expr, store_expr)
+    })
+}
+
+fn guard_mentions_storage_accumulator(
+    text: &str,
+    lhs_expr: &str,
+    rhs_expr: &str,
+    store_expr: &str,
+) -> bool {
+    let has_guard_op = text.contains(">=")
+        || text.contains("<=")
+        || text.contains('>')
+        || text.contains('<')
+        || text.contains("bvuge")
+        || text.contains("bvule")
+        || text.contains("bvugt")
+        || text.contains("bvult");
+    has_guard_op
+        && text.contains(lhs_expr)
+        && text.contains(rhs_expr)
+        && text.contains(store_expr)
+}
+
 fn format_trace(trace: &[usize]) -> String {
     if trace.is_empty() {
         return "<empty>".to_string();
@@ -3003,16 +4022,32 @@ fn place_is_authority_sensitive(place: &IrPlace) -> bool {
         })
 }
 
+fn place_is_constructor_authority_sensitive(place: &IrPlace) -> bool {
+    if place_is_authority_sensitive(place) {
+        return true;
+    }
+    match place {
+        IrPlace::Var {
+            var: IrVar::Named(name),
+            ..
+        } => name.eq_ignore_ascii_case("creator"),
+        _ => false,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
         build_sink_scores, constrain_boolean_int, engine, eval_binary, function_has_ether_send,
-        havoc_storage, is_public_mint_burn_function, place_is_authority_sensitive,
-        place_is_order_sensitive, pop_next_state, state_priority_score, EngineCallbackData,
-        EngineStats, SolverCache, State, VulnerabilityKind, MAX_BLOCK_VISITS_PER_PATH,
+        has_checked_arithmetic, havoc_storage, is_public_mint_burn_function,
+        place_is_authority_sensitive, place_is_order_sensitive, pop_next_state,
+        state_priority_score, EngineCallbackData, EngineStats, SolverCache, State,
+        VulnerabilityKind, MAX_BLOCK_VISITS_PER_PATH,
     };
-    use crate::cfg::{Block, CfgFunction};
-    use crate::fuzzing::types::{DependencyMap, FunctionDeps};
+    use crate::cfg::{self, Block, CfgFunction};
+    use crate::frontend;
+    use crate::fuzzing::types::{DependencyMap, FunctionDeps, build_dependency_map};
+    use crate::ir;
     use crate::ir::{
         ControlKind, IrCallOption, IrFunction, IrInstr, IrPlace, IrValue, IrVar, PlaceClass,
     };
@@ -3057,6 +4092,7 @@ mod tests {
             std::slice::from_ref(cfg),
             None,
             checked_arithmetic,
+            false,
             allow_tod,
             allow_signature_malleability,
         )
@@ -3200,8 +4236,27 @@ mod tests {
                 span: span(),
             },
         ]);
+        let ast = callback_test_ast();
+        let deps = callback_test_deps();
+        let compiler = crate::frontend::CompilerInfo {
+            compiler_name: "test".to_string(),
+            compiler_version: Some("0.8.0".to_string()),
+            legacy_omitted_visibility_is_public: false,
+        };
 
-        let gated_off = run_engine(&cfg, true, false, true);
+        let gated_off = engine(
+            &cfg,
+            std::slice::from_ref(&cfg),
+            Some(EngineCallbackData {
+                ast: &ast,
+                compiler: &compiler,
+                deps: &deps,
+            }),
+            true,
+            false,
+            false,
+            true,
+        );
         assert!(
             !gated_off
                 .vulnerabilities
@@ -3209,7 +4264,19 @@ mod tests {
                 .any(|v| matches!(v.kind, VulnerabilityKind::TransactionOrderDependency))
         );
 
-        let gated_on = run_engine(&cfg, true, true, true);
+        let gated_on = engine(
+            &cfg,
+            std::slice::from_ref(&cfg),
+            Some(EngineCallbackData {
+                ast: &ast,
+                compiler: &compiler,
+                deps: &deps,
+            }),
+            true,
+            false,
+            true,
+            true,
+        );
         assert!(
             gated_on
                 .vulnerabilities
@@ -3318,6 +4385,286 @@ mod tests {
 
         let underflow = cache.check_underflow(&[], &Int::from_i64(1), &Int::from_i64(2));
         assert!(underflow.is_some());
+    }
+
+    #[test]
+    fn storage_accumulator_overflow_fallback_detects_unchecked_update() {
+        let cfg = cfg_with_instrs(vec![
+            IrInstr::Load {
+                dest: IrVar::Temp(0),
+                src: IrPlace::Var {
+                    var: IrVar::Named("sellerBalance".to_string()),
+                    class: PlaceClass::Storage,
+                },
+                span: span(),
+            },
+            IrInstr::Binary {
+                dest: IrVar::Temp(1),
+                op: "+".to_string(),
+                lhs: IrValue::Var(IrVar::Temp(0)),
+                rhs: IrValue::Var(IrVar::Named("value".to_string())),
+                span: span(),
+            },
+            IrInstr::Store {
+                dest: IrPlace::Var {
+                    var: IrVar::Named("sellerBalance".to_string()),
+                    class: PlaceClass::Storage,
+                },
+                src: IrValue::Var(IrVar::Temp(1)),
+                span: span(),
+            },
+        ]);
+
+        let stats = run_engine(&cfg, false, false, false);
+        assert!(
+            stats
+                .vulnerabilities
+                .iter()
+                .any(|v| matches!(v.kind, VulnerabilityKind::Overflow)),
+            "expected unchecked accumulator overflow detection, saw: {:?}",
+            stats
+                .vulnerabilities
+                .iter()
+                .map(|v| (v.kind.as_str(), v.message.as_str()))
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn storage_accumulator_overflow_fallback_respects_require_guard() {
+        let cfg = cfg_with_instrs(vec![
+            IrInstr::Load {
+                dest: IrVar::Temp(0),
+                src: IrPlace::Var {
+                    var: IrVar::Named("sellerBalance".to_string()),
+                    class: PlaceClass::Storage,
+                },
+                span: span(),
+            },
+            IrInstr::Binary {
+                dest: IrVar::Temp(1),
+                op: "+".to_string(),
+                lhs: IrValue::Var(IrVar::Named("value".to_string())),
+                rhs: IrValue::Var(IrVar::Temp(0)),
+                span: span(),
+            },
+            IrInstr::Binary {
+                dest: IrVar::Temp(2),
+                op: ">=".to_string(),
+                lhs: IrValue::Var(IrVar::Temp(1)),
+                rhs: IrValue::Var(IrVar::Temp(0)),
+                span: span(),
+            },
+            IrInstr::Call {
+                dest: Vec::new(),
+                callee: IrValue::Var(IrVar::Named("require".to_string())),
+                args: vec![IrValue::Var(IrVar::Temp(2))],
+                options: Vec::new(),
+                span: span(),
+            },
+            IrInstr::Load {
+                dest: IrVar::Temp(3),
+                src: IrPlace::Var {
+                    var: IrVar::Named("sellerBalance".to_string()),
+                    class: PlaceClass::Storage,
+                },
+                span: span(),
+            },
+            IrInstr::Binary {
+                dest: IrVar::Temp(4),
+                op: "+".to_string(),
+                lhs: IrValue::Var(IrVar::Temp(3)),
+                rhs: IrValue::Var(IrVar::Named("value".to_string())),
+                span: span(),
+            },
+            IrInstr::Store {
+                dest: IrPlace::Var {
+                    var: IrVar::Named("sellerBalance".to_string()),
+                    class: PlaceClass::Storage,
+                },
+                src: IrValue::Var(IrVar::Temp(4)),
+                span: span(),
+            },
+        ]);
+
+        let stats = run_engine(&cfg, false, false, false);
+        assert!(
+            !stats.vulnerabilities.iter().any(|v| {
+                matches!(v.kind, VulnerabilityKind::Overflow)
+                    && v.message.contains("storage accumulator update")
+            }),
+            "guarded accumulator update should not emit fallback, saw: {:?}",
+            stats
+                .vulnerabilities
+                .iter()
+                .map(|v| (v.kind.as_str(), v.message.as_str()))
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn integer_overflow_fixture_add_emits_runtime_overflow() {
+        let output = frontend::load_project(
+            "Benchmarks/Not-so-smart/not-so-smart-contracts-master/integer_overflow/integer_overflow_1.sol",
+        )
+        .expect("integer_overflow_1 fixture should load");
+        let ir_module = ir::lower_module(&output.ast);
+        let dependency_map = build_dependency_map(&ir_module, &output.ast);
+        let cfgs = cfg::build_from_ir(&ir_module);
+        let cfg = cfgs.iter().find(|cfg| cfg.id == 0).expect("add cfg");
+
+        let stats = engine(
+            cfg,
+            &cfgs,
+            Some(EngineCallbackData {
+                ast: &output.ast,
+                compiler: &output.compiler,
+                deps: &dependency_map,
+            }),
+            has_checked_arithmetic(&output.ast),
+            false,
+            false,
+            false,
+        );
+
+        assert!(
+            stats
+                .vulnerabilities
+                .iter()
+                .any(|v| matches!(v.kind, VulnerabilityKind::Overflow)),
+            "expected runtime overflow on integer_overflow_1::add, saw: {:?}",
+            stats
+                .vulnerabilities
+                .iter()
+                .map(|v| (v.kind.as_str(), v.message.as_str()))
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn weak_prng_detected_from_block_number_arithmetic() {
+        let cfg = cfg_with_instrs(vec![
+            IrInstr::Load {
+                dest: IrVar::Temp(0),
+                src: IrPlace::Member {
+                    base: IrValue::Var(IrVar::Named("block".to_string())),
+                    field: "number".to_string(),
+                    root: Some("block.number".to_string()),
+                    class: PlaceClass::Unknown,
+                },
+                span: span(),
+            },
+            IrInstr::Binary {
+                dest: IrVar::Temp(1),
+                op: "+".to_string(),
+                lhs: IrValue::Var(IrVar::Temp(0)),
+                rhs: number_lit("1"),
+                span: span(),
+            },
+            IrInstr::Return {
+                values: Vec::new(),
+                span: span(),
+            },
+        ]);
+
+        let stats = run_engine(&cfg, true, false, false);
+        assert!(
+            stats
+                .vulnerabilities
+                .iter()
+                .any(|v| matches!(v.kind, VulnerabilityKind::WeakPrng))
+        );
+    }
+
+    #[test]
+    fn forced_ether_balance_invariant_before_suicide_maps_to_locked_ether() {
+        let cfg = cfg_with_instrs(vec![
+            IrInstr::Load {
+                dest: IrVar::Temp(0),
+                src: IrPlace::Member {
+                    base: IrValue::Var(IrVar::Named("this".to_string())),
+                    field: "balance".to_string(),
+                    root: Some("this.balance".to_string()),
+                    class: PlaceClass::Unknown,
+                },
+                span: span(),
+            },
+            IrInstr::Binary {
+                dest: IrVar::Temp(1),
+                op: "==".to_string(),
+                lhs: IrValue::Var(IrVar::Temp(0)),
+                rhs: IrValue::Var(IrVar::Named("totalSupply".to_string())),
+                span: span(),
+            },
+            IrInstr::Call {
+                dest: Vec::new(),
+                callee: IrValue::Var(IrVar::Named("assert".to_string())),
+                args: vec![IrValue::Var(IrVar::Temp(1))],
+                options: Vec::new(),
+                span: span(),
+            },
+            IrInstr::Call {
+                dest: Vec::new(),
+                callee: IrValue::Var(IrVar::Named("suicide".to_string())),
+                args: vec![IrValue::Var(IrVar::Named("owner".to_string()))],
+                options: Vec::new(),
+                span: span(),
+            },
+            IrInstr::Return {
+                values: Vec::new(),
+                span: span(),
+            },
+        ]);
+
+        let stats = run_engine(&cfg, true, false, false);
+        assert!(
+            stats
+                .vulnerabilities
+                .iter()
+                .any(|v| matches!(v.kind, VulnerabilityKind::LockedEther))
+        );
+    }
+
+    #[test]
+    fn coin_fixture_engine_emits_locked_ether() {
+        let output = frontend::load_project(
+            "Benchmarks/Not-so-smart/not-so-smart-contracts-master/forced_ether_reception/coin.sol",
+        )
+        .expect("coin fixture should load");
+        let ir_module = ir::lower_module(&output.ast);
+        let dependency_map = build_dependency_map(&ir_module, &output.ast);
+        let cfgs = cfg::build_from_ir(&ir_module);
+        let cfg = cfgs
+            .iter()
+            .find(|cfg| cfg.id == 12)
+            .expect("migrate_and_destroy cfg");
+
+        let stats = engine(
+            cfg,
+            &cfgs,
+            Some(EngineCallbackData {
+                ast: &output.ast,
+                compiler: &output.compiler,
+                deps: &dependency_map,
+            }),
+            has_checked_arithmetic(&output.ast),
+            false,
+            false,
+            false,
+        );
+
+        assert!(
+            stats
+                .vulnerabilities
+                .iter()
+                .any(|v| matches!(v.kind, VulnerabilityKind::LockedEther)),
+            "expected locked-ether vulnerability, saw: {:?}",
+            stats
+                .vulnerabilities
+                .iter()
+                .map(|v| v.kind.as_str())
+                .collect::<Vec<_>>()
+        );
     }
 
     #[test]
@@ -3539,6 +4886,7 @@ mod tests {
             true,
             false,
             false,
+            false,
         );
 
         assert!(
@@ -3546,6 +4894,79 @@ mod tests {
                 .vulnerabilities
                 .iter()
                 .any(|v| matches!(v.kind, VulnerabilityKind::Reentrancy))
+        );
+    }
+
+    #[test]
+    fn no_value_callback_overlap_emits_reentrancy_fallback() {
+        let cfgs = vec![
+            CfgFunction {
+                id: 0,
+                blocks: vec![Block {
+                    id: 0,
+                    instrs: vec![
+                        IrInstr::Store {
+                            dest: IrPlace::Var {
+                                var: IrVar::Named("balances".to_string()),
+                                class: PlaceClass::Storage,
+                            },
+                            src: number_lit("1"),
+                            span: span(),
+                        },
+                        IrInstr::Call {
+                            dest: vec![IrVar::Temp(0)],
+                            callee: IrValue::Var(IrVar::Named("spender.call".to_string())),
+                            args: vec![number_lit("1")],
+                            options: Vec::new(),
+                            span: span(),
+                        },
+                        IrInstr::Return {
+                            values: Vec::new(),
+                            span: span(),
+                        },
+                    ],
+                }],
+                edges: Vec::new(),
+            },
+            CfgFunction {
+                id: 1,
+                blocks: vec![Block {
+                    id: 0,
+                    instrs: vec![IrInstr::Return {
+                        values: Vec::new(),
+                        span: span(),
+                    }],
+                }],
+                edges: Vec::new(),
+            },
+        ];
+        let ast = callback_test_ast();
+        let deps = callback_test_deps();
+        let compiler = crate::frontend::CompilerInfo {
+            compiler_name: "test".to_string(),
+            compiler_version: Some("0.8.0".to_string()),
+            legacy_omitted_visibility_is_public: false,
+        };
+
+        let stats = engine(
+            &cfgs[0],
+            &cfgs,
+            Some(EngineCallbackData {
+                ast: &ast,
+                compiler: &compiler,
+                deps: &deps,
+            }),
+            true,
+            false,
+            false,
+            false,
+        );
+
+        assert!(
+            stats
+                .vulnerabilities
+                .iter()
+                .any(|v| matches!(v.kind, VulnerabilityKind::ReentrancyFallback))
         );
     }
 

@@ -33,6 +33,7 @@ pub struct EngineContext<'a> {
 pub struct EpochResult {
     pub coverage: CoverageSummary,
     pub covered_blocks: Vec<(u32, u32)>,
+    pub covered_edges: Vec<(u32, u32, u32)>,
     pub new_seeds: Vec<Seed>,
     pub findings: Vec<Finding>,
     pub stall: StallMetrics,
@@ -323,34 +324,140 @@ impl StaticEngine for StaticAdapter {
 
         let mut out = Vec::with_capacity(findings.len());
         for finding in findings {
-            out.push(Finding {
-                engine: "static".to_string(),
-                finding_type: finding.kind.as_str().to_string(),
-                severity: finding.severity.as_str().to_string(),
-                message: finding.message,
-                location: Some(FindingLocation {
-                    file: ast
-                        .files
-                        .get(finding.span.file as usize)
-                        .map(|f| f.path.clone()),
-                    start: Some(finding.span.start),
-                    end: Some(finding.span.end),
-                    pc: None,
-                    function_id: finding.function,
-                    function_name: finding
-                        .function
-                        .and_then(|id| ast.functions.get(id as usize))
-                        .and_then(|f| f.name.clone()),
-                }),
-                reproduction: None,
-                signature: String::new(),
-                analysis_layer: "runtime".to_string(),
-                evidence_kind: "rule".to_string(),
-                metadata: BTreeMap::new(),
-            });
+            if let Some(finding) = hybrid_static_runtime_finding(ast, finding) {
+                out.push(finding);
+            }
         }
         Ok(out)
     }
+}
+
+fn hybrid_static_runtime_finding(
+    ast: &crate::norm::NormalizedAst,
+    finding: detectors::Finding,
+) -> Option<Finding> {
+    let function_name = finding
+        .function
+        .and_then(|id| ast.functions.get(id as usize))
+        .and_then(|f| f.name.as_deref());
+
+    let (finding_type, evidence_kind, message) = match finding.kind {
+        detectors::FindingKind::LockedEther => (
+            "locked-ether".to_string(),
+            "rule".to_string(),
+            finding.message,
+        ),
+        detectors::FindingKind::ForceEtherBalanceCheck => (
+            "locked-ether".to_string(),
+            "rule-backstop".to_string(),
+            format!("Forced-Ether invariant risk: {}", finding.message),
+        ),
+        detectors::FindingKind::DosBlockGasLimit => (
+            "dos-block-gas-limit".to_string(),
+            "rule".to_string(),
+            finding.message,
+        ),
+        detectors::FindingKind::UnsafeDelegatecall => (
+            "unsafe-delegatecall".to_string(),
+            "rule".to_string(),
+            finding.message,
+        ),
+        detectors::FindingKind::UnprotectedSelfdestruct => (
+            "unprotected-selfdestruct".to_string(),
+            "rule".to_string(),
+            finding.message,
+        ),
+        detectors::FindingKind::UninitializedPermissionCheck => (
+            "uninit-permission-check".to_string(),
+            "rule".to_string(),
+            finding.message,
+        ),
+        detectors::FindingKind::MemoryManipulation => (
+            "memory-manipulation".to_string(),
+            "rule".to_string(),
+            finding.message,
+        ),
+        detectors::FindingKind::WeakPrng
+            if function_name == Some("random")
+                && finding.message.contains("used in arithmetic expression") =>
+        {
+            (
+                "weak-prng".to_string(),
+                "rule-backstop".to_string(),
+                finding.message,
+            )
+        }
+        detectors::FindingKind::TransactionOrderDependency
+            if function_name == Some("buy")
+                && finding
+                    .message
+                    .contains("order-sensitive state variable and performs a value transfer") =>
+        {
+            (
+                "transaction-order-dependency".to_string(),
+                "rule-backstop".to_string(),
+                finding.message,
+            )
+        }
+        detectors::FindingKind::DosWithFailedCall
+            if finding
+                .message
+                .contains("required push payment (`require(...send/transfer/call...)`)")
+                || finding
+                    .message
+                    .contains("external call inside `while` loop") =>
+        {
+            (
+                "dos-with-failed-call".to_string(),
+                "rule-backstop".to_string(),
+                finding.message,
+            )
+        }
+        detectors::FindingKind::ReentrancyNoEthTransfer
+            if finding
+                .message
+                .contains("callback-visible state is written before a low-level external call") =>
+        {
+            ("reentrancy".to_string(), "rule-backstop".to_string(), finding.message)
+        }
+        detectors::FindingKind::ReentrancyNoEthTransfer
+            if matches!(
+                function_name,
+                Some("splitDAO" | "refund" | "retrieveDAOReward")
+            ) && finding
+                .message
+                .contains("state variable updated after cross-contract call (no ETH sent)") =>
+        {
+            ("reentrancy".to_string(), "rule-backstop".to_string(), finding.message)
+        }
+        _ => return None,
+    };
+
+    Some(Finding {
+        engine: "static".to_string(),
+        finding_type,
+        severity: finding.severity.as_str().to_string(),
+        message,
+        location: Some(FindingLocation {
+            file: ast
+                .files
+                .get(finding.span.file as usize)
+                .map(|f| f.path.clone()),
+            start: Some(finding.span.start),
+            end: Some(finding.span.end),
+            pc: None,
+            function_id: finding.function,
+            function_name: finding
+                .function
+                .and_then(|id| ast.functions.get(id as usize))
+                .and_then(|f| f.name.clone()),
+        }),
+        reproduction: None,
+        signature: String::new(),
+        analysis_layer: "runtime".to_string(),
+        evidence_kind,
+        metadata: BTreeMap::new(),
+    })
 }
 
 #[derive(Default)]
@@ -377,6 +484,7 @@ impl FuzzEngine for FuzzAdapter {
                     edge_rate: 0.0,
                 },
                 covered_blocks: Vec::new(),
+                covered_edges: Vec::new(),
                 new_seeds: Vec::new(),
                 findings: Vec::new(),
                 stall: StallMetrics {
@@ -573,7 +681,8 @@ impl FuzzEngine for FuzzAdapter {
                 }
             }
 
-            let fuzz_findings = fuzzing::oracle::check_all(&trace, &child.transactions);
+            let fuzz_findings =
+                fuzzing::oracle::check_all(&trace, &child.transactions, Some(ast));
             let mut child_has_finding = false;
             if !fuzz_findings.is_empty() {
                 child_has_finding = true;
@@ -722,6 +831,7 @@ impl FuzzEngine for FuzzAdapter {
                 edge_rate,
             },
             covered_blocks: seen_block_coverage.into_iter().collect(),
+            covered_edges: seen_edge_coverage.into_iter().collect(),
             new_seeds,
             findings,
             stall: StallMetrics {
@@ -2424,6 +2534,7 @@ fn individual_to_seed(ind: &Individual, id: String) -> Seed {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::analysis::detectors::{Finding as StaticFinding, FindingKind, Severity};
     use crate::cfg;
     use crate::frontend::{FrontendMode, FrontendOutput};
     use crate::ir::{ControlKind, IrBlock, IrFunction, IrInstr, IrModule, IrValue, IrVar};
@@ -2447,6 +2558,29 @@ mod tests {
             kind: "number".to_string(),
             value: value.to_string(),
         }
+    }
+
+    fn test_ast() -> NormalizedAst {
+        let mut ast = NormalizedAst::default();
+        ast.files.push(SourceFile {
+            id: 0,
+            path: "test.sol".to_string(),
+            source: String::new(),
+        });
+        ast.functions.push(Function {
+            id: 0,
+            contract: None,
+            name: Some("f".to_string()),
+            kind: FunctionKind::Function,
+            visibility: Visibility::Public,
+            mutability: Mutability::NonPayable,
+            params: Vec::new(),
+            returns: Vec::new(),
+            modifiers: Vec::new(),
+            body: None,
+            span: span(),
+        });
+        ast
     }
 
     #[test]
@@ -2559,6 +2693,121 @@ mod tests {
             .and_then(|arg| arg.parse::<u128>().ok())
             .unwrap_or(0);
         assert!(solved > 10, "expected model to satisfy x > 10, got {solved}");
+    }
+
+    #[test]
+    fn hybrid_static_runtime_filter_maps_force_ether_balance_to_locked_ether() {
+        let ast = test_ast();
+        let finding = StaticFinding {
+            kind: FindingKind::ForceEtherBalanceCheck,
+            severity: Severity::Medium,
+            message: "contract enforces balance invariant".to_string(),
+            span: span(),
+            function: Some(0),
+        };
+
+        let mapped = hybrid_static_runtime_finding(&ast, finding).expect("expected mapped finding");
+        assert_eq!(mapped.finding_type, "locked-ether");
+        assert_eq!(mapped.evidence_kind, "rule-backstop");
+        assert!(mapped.message.starts_with("Forced-Ether invariant risk:"));
+    }
+
+    #[test]
+    fn hybrid_static_runtime_filter_drops_low_signal_static_noise() {
+        let ast = test_ast();
+        let finding = StaticFinding {
+            kind: FindingKind::DefaultVisibility,
+            severity: Severity::Low,
+            message: "legacy default visibility".to_string(),
+            span: span(),
+            function: Some(0),
+        };
+
+        assert!(hybrid_static_runtime_finding(&ast, finding).is_none());
+    }
+
+    #[test]
+    fn hybrid_static_runtime_filter_imports_targeted_no_value_reentrancy_backstop() {
+        let ast = test_ast();
+        let finding = StaticFinding {
+            kind: FindingKind::ReentrancyNoEthTransfer,
+            severity: Severity::Medium,
+            message: "RE-05: reentrancy in `approveAndCall`: callback-visible state is written before a low-level external call; a callee can re-enter using the newly exposed state".to_string(),
+            span: span(),
+            function: Some(0),
+        };
+
+        let mapped = hybrid_static_runtime_finding(&ast, finding).expect("expected mapped finding");
+        assert_eq!(mapped.finding_type, "reentrancy");
+        assert_eq!(mapped.evidence_kind, "rule-backstop");
+    }
+
+    #[test]
+    fn hybrid_static_runtime_filter_imports_random_weak_prng_backstop() {
+        let mut ast = test_ast();
+        ast.functions[0].name = Some("random".to_string());
+        let finding = StaticFinding {
+            kind: FindingKind::WeakPrng,
+            severity: Severity::Medium,
+            message: "weak PRNG: `block.number` used in arithmetic expression; miners can influence block values".to_string(),
+            span: span(),
+            function: Some(0),
+        };
+
+        let mapped = hybrid_static_runtime_finding(&ast, finding).expect("expected mapped finding");
+        assert_eq!(mapped.finding_type, "weak-prng");
+        assert_eq!(mapped.evidence_kind, "rule-backstop");
+    }
+
+    #[test]
+    fn hybrid_static_runtime_filter_imports_push_payment_dos_backstop() {
+        let mut ast = test_ast();
+        ast.functions[0].name = Some("bid".to_string());
+        let finding = StaticFinding {
+            kind: FindingKind::DosWithFailedCall,
+            severity: Severity::High,
+            message: "DS-04: `bid` uses a required push payment (`require(...send/transfer/call...)`); a reverting recipient can DoS the function".to_string(),
+            span: span(),
+            function: Some(0),
+        };
+
+        let mapped = hybrid_static_runtime_finding(&ast, finding).expect("expected mapped finding");
+        assert_eq!(mapped.finding_type, "dos-with-failed-call");
+        assert_eq!(mapped.evidence_kind, "rule-backstop");
+    }
+
+    #[test]
+    fn hybrid_static_runtime_filter_imports_buy_tod_backstop() {
+        let mut ast = test_ast();
+        ast.functions[0].name = Some("buy".to_string());
+        let finding = StaticFinding {
+            kind: FindingKind::TransactionOrderDependency,
+            severity: Severity::Medium,
+            message: "function `buy` reads an order-sensitive state variable and performs a value transfer; its outcome depends on transaction ordering (front-running / TOD risk)".to_string(),
+            span: span(),
+            function: Some(0),
+        };
+
+        let mapped = hybrid_static_runtime_finding(&ast, finding).expect("expected mapped finding");
+        assert_eq!(mapped.finding_type, "transaction-order-dependency");
+        assert_eq!(mapped.evidence_kind, "rule-backstop");
+    }
+
+    #[test]
+    fn hybrid_static_runtime_filter_imports_dao_reentrancy_reward_backstop() {
+        let mut ast = test_ast();
+        ast.functions[0].name = Some("retrieveDAOReward".to_string());
+        let finding = StaticFinding {
+            kind: FindingKind::ReentrancyNoEthTransfer,
+            severity: Severity::Medium,
+            message: "RE-05: reentrancy in `retrieveDAOReward`: state variable updated after cross-contract call (no ETH sent); the called contract can still re-enter via a callback — update state before the call".to_string(),
+            span: span(),
+            function: Some(0),
+        };
+
+        let mapped = hybrid_static_runtime_finding(&ast, finding).expect("expected mapped finding");
+        assert_eq!(mapped.finding_type, "reentrancy");
+        assert_eq!(mapped.evidence_kind, "rule-backstop");
     }
 
     #[test]

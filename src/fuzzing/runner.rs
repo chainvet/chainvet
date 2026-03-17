@@ -88,6 +88,11 @@ pub fn run(output: &FrontendOutput, config: &FuzzConfig) -> FuzzReport {
     // Add AST-level access control pattern for taxonomy parity.
     all_findings.extend(detect_public_mint_burn_findings(ast, &output.compiler));
     all_findings = apply_static_fp_guards(all_findings, &tod_allowed, &sig_mall_allowed);
+    all_findings.extend(inject_static_runtime_backstops(
+        &all_findings,
+        &static_findings,
+        ast,
+    ));
 
     // Deduplicate findings
     let findings = oracle::deduplicate(all_findings);
@@ -210,6 +215,229 @@ fn hash_local_finding(kind: &str, detail: &str) -> String {
     format!("{:x}", hasher.finalize())
 }
 
+fn inject_static_runtime_backstops(
+    runtime_findings: &[FuzzFinding],
+    static_findings: &[analysis::detectors::Finding],
+    ast: &NormalizedAst,
+) -> Vec<FuzzFinding> {
+    let runtime_reentrancy_fns = runtime_findings
+        .iter()
+        .filter(|finding| {
+            matches!(
+                finding.kind,
+                FuzzFindingKind::Reentrancy | FuzzFindingKind::ReentrancyHeuristic
+            )
+        })
+        .filter_map(|finding| extract_function_id_from_message(finding.message.as_str()))
+        .collect::<std::collections::HashSet<_>>();
+    let runtime_access_like_fns = runtime_findings
+        .iter()
+        .filter(|finding| {
+            matches!(
+                finding.kind,
+                FuzzFindingKind::AccessControl | FuzzFindingKind::WrongConstructorName
+            )
+        })
+        .filter_map(|finding| extract_function_id_from_message(finding.message.as_str()))
+        .collect::<std::collections::HashSet<_>>();
+    let runtime_dos_fns = runtime_findings
+        .iter()
+        .filter(|finding| finding.kind == FuzzFindingKind::DosWithFailedCall)
+        .filter_map(|finding| extract_function_id_from_message(finding.message.as_str()))
+        .collect::<std::collections::HashSet<_>>();
+    let runtime_weak_prng_fns = runtime_findings
+        .iter()
+        .filter(|finding| finding.kind == FuzzFindingKind::WeakPRNG)
+        .filter_map(|finding| extract_function_id_from_message(finding.message.as_str()))
+        .collect::<std::collections::HashSet<_>>();
+    let runtime_locked_ether_fns = runtime_findings
+        .iter()
+        .filter(|finding| finding.kind == FuzzFindingKind::LockedEther)
+        .filter_map(|finding| extract_function_id_from_message(finding.message.as_str()))
+        .collect::<std::collections::HashSet<_>>();
+    let runtime_unchecked_call_fns = runtime_findings
+        .iter()
+        .filter(|finding| finding.kind == FuzzFindingKind::UncheckedCall)
+        .filter_map(|finding| extract_function_id_from_message(finding.message.as_str()))
+        .collect::<std::collections::HashSet<_>>();
+
+    let mut out = Vec::new();
+    let mut injected = std::collections::HashSet::<(&'static str, u32)>::new();
+
+    for finding in static_findings.iter().filter(|finding| {
+        matches!(
+            finding.kind,
+            analysis::detectors::FindingKind::ReentrancyNegativeEvents
+                | analysis::detectors::FindingKind::ReentrancyTransfer
+                | analysis::detectors::FindingKind::ReentrancySameEffect
+                | analysis::detectors::FindingKind::ReentrancyEthTransfer
+                | analysis::detectors::FindingKind::ReentrancyNoEthTransfer
+        )
+    }) {
+        let function_id = finding.function.unwrap_or(0);
+        if runtime_reentrancy_fns.contains(&function_id)
+            || !injected.insert(("reentrancy", function_id))
+        {
+            continue;
+        }
+        let function_name = ast
+            .functions
+            .get(function_id as usize)
+            .and_then(|f| f.name.as_deref())
+            .unwrap_or("<unknown>");
+        out.push(FuzzFinding {
+            kind: FuzzFindingKind::ReentrancyHeuristic,
+            severity: FuzzSeverity::Low,
+            message: format!(
+                "Static-guided runtime backstop: function {} ('{}') has static reentrancy signal but runtime callback/store evidence was not captured",
+                function_id, function_name
+            ),
+            tx_sequence: Vec::new(),
+            trace_hash: hash_local_finding("runtime-backstop-reentrancy", &function_id.to_string()),
+        });
+    }
+
+    for finding in static_findings
+        .iter()
+        .filter(|finding| finding.kind == analysis::detectors::FindingKind::DosWithFailedCall)
+    {
+        let function_id = finding.function.unwrap_or(0);
+        if runtime_dos_fns.contains(&function_id) || !injected.insert(("dos", function_id)) {
+            continue;
+        }
+        let function_name = ast
+            .functions
+            .get(function_id as usize)
+            .and_then(|f| f.name.as_deref())
+            .unwrap_or("<unknown>");
+        out.push(FuzzFinding {
+            kind: FuzzFindingKind::DosWithFailedCall,
+            severity: FuzzSeverity::Low,
+            message: format!(
+                "Static-guided runtime backstop: function {} ('{}') has static DoS-with-failed-call signal but runtime loop/call-failure evidence was not captured",
+                function_id, function_name
+            ),
+            tx_sequence: Vec::new(),
+            trace_hash: hash_local_finding("runtime-backstop-dos-with-failed-call", &function_id.to_string()),
+        });
+    }
+
+    for finding in static_findings
+        .iter()
+        .filter(|finding| finding.kind == analysis::detectors::FindingKind::WeakPrng)
+    {
+        let function_id = finding.function.unwrap_or(0);
+        if runtime_weak_prng_fns.contains(&function_id)
+            || !injected.insert(("weak-prng", function_id))
+        {
+            continue;
+        }
+        let function_name = ast
+            .functions
+            .get(function_id as usize)
+            .and_then(|f| f.name.as_deref())
+            .unwrap_or("<unknown>");
+        out.push(FuzzFinding {
+            kind: FuzzFindingKind::WeakPRNG,
+            severity: FuzzSeverity::Low,
+            message: format!(
+                "Static-guided runtime backstop: function {} ('{}') has static weak-PRNG signal but runtime block-number/blockhash execution evidence was not captured",
+                function_id, function_name
+            ),
+            tx_sequence: Vec::new(),
+            trace_hash: hash_local_finding("runtime-backstop-weak-prng", &function_id.to_string()),
+        });
+    }
+
+    for finding in static_findings.iter().filter(|finding| {
+        matches!(
+            finding.kind,
+            analysis::detectors::FindingKind::LockedEther
+                | analysis::detectors::FindingKind::ForceEtherBalanceCheck
+        )
+    }) {
+        let function_id = finding.function.unwrap_or(0);
+        if runtime_locked_ether_fns.contains(&function_id)
+            || !injected.insert(("locked-ether", function_id))
+        {
+            continue;
+        }
+        let function_name = ast
+            .functions
+            .get(function_id as usize)
+            .and_then(|f| f.name.as_deref())
+            .unwrap_or("<unknown>");
+        out.push(FuzzFinding {
+            kind: FuzzFindingKind::LockedEther,
+            severity: FuzzSeverity::Low,
+            message: format!(
+                "Static-guided runtime backstop: function {} ('{}') has static locked-Ether signal but runtime deposit/withdraw evidence was not captured",
+                function_id, function_name
+            ),
+            tx_sequence: Vec::new(),
+            trace_hash: hash_local_finding("runtime-backstop-locked-ether", &function_id.to_string()),
+        });
+    }
+
+    for finding in static_findings
+        .iter()
+        .filter(|finding| finding.kind == analysis::detectors::FindingKind::UnusedReturnValue)
+    {
+        let function_id = finding.function.unwrap_or(0);
+        if runtime_unchecked_call_fns.contains(&function_id)
+            || !injected.insert(("unchecked-call", function_id))
+        {
+            continue;
+        }
+        let function_name = ast
+            .functions
+            .get(function_id as usize)
+            .and_then(|f| f.name.as_deref())
+            .unwrap_or("<unknown>");
+        out.push(FuzzFinding {
+            kind: FuzzFindingKind::UncheckedCall,
+            severity: FuzzSeverity::Low,
+            message: format!(
+                "Static-guided runtime backstop: function {} ('{}') has static unchecked-call signal but runtime return-value tracking evidence was not captured",
+                function_id, function_name
+            ),
+            tx_sequence: Vec::new(),
+            trace_hash: hash_local_finding("runtime-backstop-unchecked-call", &function_id.to_string()),
+        });
+    }
+
+    for finding in static_findings.iter().filter(|finding| {
+        finding.kind == analysis::detectors::FindingKind::UninitializedPermissionCheck
+    }) {
+        let function_id = finding.function.unwrap_or(0);
+        if runtime_access_like_fns.contains(&function_id)
+            || !injected.insert(("access-control", function_id))
+        {
+            continue;
+        }
+        let function_name = ast
+            .functions
+            .get(function_id as usize)
+            .and_then(|f| f.name.as_deref())
+            .unwrap_or("<unknown>");
+        out.push(FuzzFinding {
+            kind: FuzzFindingKind::AccessControl,
+            severity: FuzzSeverity::Low,
+            message: format!(
+                "Static-guided runtime backstop: function {} ('{}') is publicly reinitializable or lacks a permission check on authority setup",
+                function_id, function_name
+            ),
+            tx_sequence: Vec::new(),
+            trace_hash: hash_local_finding(
+                "runtime-backstop-access-control-init",
+                &function_id.to_string(),
+            ),
+        });
+    }
+
+    out
+}
+
 fn build_static_fp_guards(
     findings: &[analysis::detectors::Finding],
 ) -> (
@@ -312,6 +540,13 @@ fn build_locked_ether_candidates(
     candidates
 }
 
+fn keep_locked_ether_finding(finding: &FuzzFinding, locked_ether_candidate: bool) -> bool {
+    if finding.kind != FuzzFindingKind::LockedEther {
+        return true;
+    }
+    locked_ether_candidate || finding.message.starts_with("Forced-Ether invariant risk:")
+}
+
 fn ir_function_has_ether_send(function: &ir::IrFunction) -> bool {
     function.blocks.iter().any(|block| {
         block.instrs.iter().any(|instr| {
@@ -358,10 +593,8 @@ fn fuzz_contract(
     // Execute initial population
     for ind in &population {
         let trace = executor::execute_individual(ind, output, ir_module, cfgs, abi, deps);
-        let mut findings = oracle::check_all(&trace, &ind.transactions);
-        if !locked_ether_candidate {
-            findings.retain(|finding| finding.kind != FuzzFindingKind::LockedEther);
-        }
+        let mut findings = oracle::check_all(&trace, &ind.transactions, Some(&output.ast));
+        findings.retain(|finding| keep_locked_ether_finding(finding, locked_ether_candidate));
         all_findings.extend(findings);
         scheduler::update_corpus(corpus, ind, &trace, global_coverage);
     }
@@ -425,10 +658,8 @@ fn fuzz_contract(
         let trace = executor::execute_individual(&child, output, ir_module, cfgs, abi, deps);
 
         // Oracle check
-        let mut findings = oracle::check_all(&trace, &child.transactions);
-        if !locked_ether_candidate {
-            findings.retain(|finding| finding.kind != FuzzFindingKind::LockedEther);
-        }
+        let mut findings = oracle::check_all(&trace, &child.transactions, Some(&output.ast));
+        findings.retain(|finding| keep_locked_ether_finding(finding, locked_ether_candidate));
         if !findings.is_empty() {
             // Tag the corpus entry with finding hashes
             let hashes: Vec<String> = findings.iter().map(|f| f.trace_hash.clone()).collect();
@@ -554,7 +785,8 @@ pub fn print_report(report: &FuzzReport) {
 mod tests {
     use super::{
         apply_static_fp_guards, build_locked_ether_candidates, build_static_fp_guards,
-        extract_function_id_from_message,
+        extract_function_id_from_message, inject_static_runtime_backstops,
+        keep_locked_ether_finding,
     };
     use crate::analysis::detectors::{Finding, FindingKind, Severity};
     use crate::fuzzing::types::{FuzzFinding, FuzzFindingKind, FuzzSeverity};
@@ -771,5 +1003,85 @@ mod tests {
         };
         let candidates = build_locked_ether_candidates(&ast, &ir_module);
         assert_eq!(candidates.get("Vault").copied(), Some(false));
+    }
+
+    #[test]
+    fn inject_static_runtime_backstops_adds_missing_runtime_kinds() {
+        let ast = make_contract_ast(true);
+        let static_findings = vec![
+            Finding {
+                kind: FindingKind::WeakPrng,
+                severity: Severity::Medium,
+                message: "weak-prng".to_string(),
+                span: Span {
+                    file: 0,
+                    start: 0,
+                    end: 1,
+                },
+                function: Some(0),
+            },
+            Finding {
+                kind: FindingKind::LockedEther,
+                severity: Severity::High,
+                message: "locked".to_string(),
+                span: Span {
+                    file: 0,
+                    start: 0,
+                    end: 1,
+                },
+                function: Some(0),
+            },
+            Finding {
+                kind: FindingKind::UnusedReturnValue,
+                severity: Severity::Medium,
+                message: "unchecked".to_string(),
+                span: Span {
+                    file: 0,
+                    start: 0,
+                    end: 1,
+                },
+                function: Some(0),
+            },
+        ];
+
+        let injected = inject_static_runtime_backstops(&[], &static_findings, &ast);
+        assert!(injected.iter().any(|f| f.kind == FuzzFindingKind::WeakPRNG));
+        assert!(injected.iter().any(|f| f.kind == FuzzFindingKind::LockedEther));
+        assert!(injected.iter().any(|f| f.kind == FuzzFindingKind::UncheckedCall));
+    }
+
+    #[test]
+    fn inject_static_runtime_backstop_maps_force_ether_balance_check_to_locked_ether() {
+        let ast = make_contract_ast(true);
+        let static_findings = vec![Finding {
+            kind: FindingKind::ForceEtherBalanceCheck,
+            severity: Severity::High,
+            message: "force-ether".to_string(),
+            span: Span {
+                file: 0,
+                start: 0,
+                end: 1,
+            },
+            function: Some(0),
+        }];
+
+        let injected = inject_static_runtime_backstops(&[], &static_findings, &ast);
+        assert!(injected.iter().any(|f| f.kind == FuzzFindingKind::LockedEther));
+    }
+
+    #[test]
+    fn strong_locked_ether_runtime_signal_survives_candidate_filter() {
+        let strong = finding(
+            FuzzFindingKind::LockedEther,
+            "Forced-Ether invariant risk: function 12 checks this.balance/address(this).balance in require/assert before selfdestruct/suicide",
+        );
+        let generic = finding(
+            FuzzFindingKind::LockedEther,
+            "Contract accepts Ether but has no withdrawal mechanism — Ether may be permanently locked",
+        );
+
+        assert!(keep_locked_ether_finding(&strong, false));
+        assert!(!keep_locked_ether_finding(&generic, false));
+        assert!(keep_locked_ether_finding(&generic, true));
     }
 }

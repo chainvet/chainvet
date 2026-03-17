@@ -89,11 +89,12 @@ pub fn detect_all(
 
 /// Returns `true` if the function has a modifier whose name (case-insensitive)
 /// matches one of the common access-control patterns.
-fn has_access_control_modifier(func: &crate::norm::Function) -> bool {
-    func.modifiers.iter().any(|m| {
-        let lower = m.to_lowercase();
-        AC_MODIFIERS.iter().any(|ac| lower.contains(ac))
-    })
+fn has_access_control_modifier(ast: &NormalizedAst, func: &crate::norm::Function) -> bool {
+    crate::frontend::has_authority_modifier_hint(func, ast)
+        || func.modifiers.iter().any(|m| {
+            let lower = m.to_lowercase();
+            AC_MODIFIERS.iter().any(|ac| lower.contains(ac))
+        })
 }
 
 /// Returns `true` if the expression at `expr_id` is `msg.sender`.
@@ -132,6 +133,76 @@ fn body_contains_msg_sender(ast: &NormalizedAst, func: &crate::norm::Function) -
     let mut found = false;
     for_each_expr_in_stmt(ast, body, &mut |eid, _| {
         if !found && is_msg_sender(ast, eid) {
+            found = true;
+        }
+    });
+    found
+}
+
+fn authority_like_name(name: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    lower
+        .split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+        .filter(|token| !token.is_empty())
+        .any(|token| {
+            matches!(
+                token,
+                "owner"
+                    | "owners"
+                    | "admin"
+                    | "operator"
+                    | "governance"
+                    | "auth"
+                    | "authority"
+                    | "role"
+                    | "roles"
+            ) || token.ends_with("owner")
+                || token.ends_with("owners")
+                || token.ends_with("admin")
+                || token.contains("owner")
+        })
+}
+
+fn expr_is_authority_target(ast: &NormalizedAst, expr_id: u32) -> bool {
+    let Some(expr) = ast.expressions.get(expr_id as usize) else {
+        return false;
+    };
+    match &expr.kind {
+        ExprKind::Ident(name) => authority_like_name(name),
+        ExprKind::Member { base, field } => {
+            authority_like_name(field) || expr_is_authority_target(ast, *base)
+        }
+        ExprKind::Index { base, .. } => expr_is_authority_target(ast, *base),
+        _ => false,
+    }
+}
+
+fn expr_is_constructor_authority_target(ast: &NormalizedAst, expr_id: u32) -> bool {
+    let Some(expr) = ast.expressions.get(expr_id as usize) else {
+        return false;
+    };
+    match &expr.kind {
+        ExprKind::Ident(name) => {
+            authority_like_name(name) || name.eq_ignore_ascii_case("creator")
+        }
+        _ => expr_is_authority_target(ast, expr_id),
+    }
+}
+
+fn body_assigns_msg_sender_to_authority_target(
+    ast: &NormalizedAst,
+    func: &crate::norm::Function,
+) -> bool {
+    let Some(body) = func.body else { return false };
+    let mut found = false;
+    for_each_expr_in_stmt(ast, body, &mut |_eid, expr| {
+        if found {
+            return;
+        }
+        if let ExprKind::Assign { lhs, rhs, .. } = &expr.kind
+            && is_msg_sender(ast, *rhs)
+            && expr_is_constructor_authority_target(ast, *lhs)
+        {
             found = true;
         }
     });
@@ -436,7 +507,7 @@ fn detect_arbitrary_transfer_from(ast: &NormalizedAst) -> Vec<Finding> {
     let mut findings = Vec::new();
     for func in &ast.functions {
         // If function already has an access-control modifier, skip
-        if has_access_control_modifier(func) {
+        if has_access_control_modifier(ast, func) {
             continue;
         }
         // If function body contains msg.sender somewhere, skip
@@ -556,7 +627,7 @@ fn detect_contract_destructable(ast: &NormalizedAst, call_graph: &CallGraph) -> 
 
         // Only flag when the function HAS access control (AC-13 handles unprotected)
         if let Some(func) = ast.functions.get(site.function as usize) {
-            if has_access_control_modifier(func) {
+            if has_access_control_modifier(ast, func) {
                 findings.push(Finding {
                     kind: FindingKind::ContractDestructable,
                     severity: Severity::Medium,
@@ -830,19 +901,24 @@ fn detect_uninit_permission_check(ast: &NormalizedAst) -> Vec<Finding> {
         if matches!(func.visibility, Visibility::Internal | Visibility::Private) {
             continue;
         }
+        if crate::frontend::is_legacy_named_constructor(func, ast) {
+            continue;
+        }
 
         let name = func.name.as_deref().unwrap_or("");
-        let is_initializer = is_initializer_name(name);
+        let authority_init = body_assigns_msg_sender_to_authority_target(ast, func);
+        let is_initializer = is_initializer_name(name) || authority_init;
 
         if !is_initializer {
             continue;
         }
-        if has_access_control_modifier(func) {
+        if has_access_control_modifier(ast, func) {
             continue;
         }
 
-        // Also skip if function checks msg.sender in body
-        if body_contains_msg_sender(ast, func) {
+        // Skip if msg.sender appears only as a guard, but keep public authority
+        // initializers that directly assign ownership from msg.sender.
+        if body_contains_msg_sender(ast, func) && !authority_init {
             continue;
         }
 
@@ -850,7 +926,12 @@ fn detect_uninit_permission_check(ast: &NormalizedAst) -> Vec<Finding> {
             kind: FindingKind::UninitializedPermissionCheck,
             severity: Severity::High,
             message: format!(
-                "initialization function '{}' lacks access control modifier or msg.sender check",
+                "{} '{}' lacks access control modifier or msg.sender guard",
+                if authority_init && !is_initializer_name(name) {
+                    "authority-initialization function"
+                } else {
+                    "initialization function"
+                },
                 func.name.as_deref().unwrap_or("<unnamed>")
             ),
             span: func.span,
@@ -1019,7 +1100,7 @@ fn detect_unprotected_selfdestruct(ast: &NormalizedAst, call_graph: &CallGraph) 
         }
 
         if let Some(func) = ast.functions.get(site.function as usize) {
-            if !has_access_control_modifier(func) {
+            if !has_access_control_modifier(ast, func) {
                 findings.push(Finding {
                     kind: FindingKind::UnprotectedSelfdestruct,
                     severity: Severity::High,
@@ -1043,7 +1124,7 @@ fn detect_unprotected_ether_withdrawal(ast: &NormalizedAst) -> Vec<Finding> {
         if !matches!(func.kind, FunctionKind::Function) {
             continue;
         }
-        if has_access_control_modifier(func) {
+        if has_access_control_modifier(ast, func) {
             continue;
         }
         if matches!(func.visibility, Visibility::Internal | Visibility::Private) {
@@ -1295,7 +1376,7 @@ fn detect_public_mint_burn(ast: &NormalizedAst) -> Vec<Finding> {
         ) {
             continue;
         }
-        if has_access_control_modifier(func) {
+        if has_access_control_modifier(ast, func) {
             continue;
         }
 

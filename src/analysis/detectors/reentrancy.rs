@@ -494,6 +494,75 @@ fn stmt_reads_var_named(ast: &NormalizedAst, stmt_id: u32, target_names: &[Strin
     found
 }
 
+fn get_source_at_span<'a>(ast: &'a NormalizedAst, span: &crate::norm::Span) -> Option<&'a str> {
+    let file = ast.files.get(span.file as usize)?;
+    let start = span.start as usize;
+    let end = span.end as usize;
+    if end <= file.source.len() && start <= end {
+        Some(&file.source[start..end])
+    } else {
+        None
+    }
+}
+
+fn function_source_lower(ast: &NormalizedAst, func: &crate::norm::Function) -> Option<String> {
+    get_source_at_span(ast, &func.span).map(|source| source.to_ascii_lowercase())
+}
+
+fn source_guided_no_eth_reentrancy_hit(ast: &NormalizedAst, func: &crate::norm::Function) -> bool {
+    let Some(source_lower) = function_source_lower(ast, func) else {
+        return false;
+    };
+    let Some(call_pos) = source_lower.find(".call(") else {
+        return false;
+    };
+    if source_lower.contains(".call.value(") || source_lower.contains(".call{value") {
+        return false;
+    }
+    let before_call = &source_lower[..call_pos];
+
+    let touched_slots = ast
+        .state_vars
+        .iter()
+        .filter_map(|state_var| {
+            let name = state_var.name.to_ascii_lowercase();
+            let indexed = format!("{name}[");
+            let assigned = format!("{name}=");
+            let assigned_spaced = format!("{name} =");
+            if before_call.contains(&indexed)
+                || before_call.contains(&assigned)
+                || before_call.contains(&assigned_spaced)
+            {
+                Some(name)
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<_>>();
+
+    if touched_slots.is_empty() {
+        return false;
+    }
+
+    ast.functions.iter().any(|candidate| {
+        if candidate.id == func.id {
+            return false;
+        }
+        if !matches!(
+            candidate.visibility,
+            Visibility::Public | Visibility::External | Visibility::Unknown
+        ) {
+            return false;
+        }
+        let Some(candidate_source) = function_source_lower(ast, candidate) else {
+            return false;
+        };
+        touched_slots
+            .iter()
+            .any(|slot| candidate_source.contains(slot.as_str()))
+    })
+}
+
 /// Returns the flat list of top-level statement ids from a function body
 /// (unwrapping the outer Block if present).
 fn top_level_stmts(ast: &NormalizedAst, body_id: u32) -> Vec<u32> {
@@ -869,6 +938,7 @@ fn detect_reentrancy_no_eth_transfer(ast: &NormalizedAst) -> Vec<Finding> {
 
         let Some(body) = func.body else { continue };
         let stmts = top_level_stmts(ast, body);
+        let mut emitted = false;
 
         for (i, &sid) in stmts.iter().enumerate() {
             // Find cross-contract calls that do NOT send ETH.
@@ -911,11 +981,68 @@ fn detect_reentrancy_no_eth_transfer(ast: &NormalizedAst) -> Vec<Finding> {
                         span,
                         function: Some(func.id),
                     });
+                    emitted = true;
                     break;
                 }
             }
+            if emitted {
+                break;
+            }
+        }
+
+        if !emitted && source_guided_no_eth_reentrancy_hit(ast, func) {
+            let func_name = func.name.as_deref().unwrap_or("<anonymous>");
+            findings.push(Finding {
+                kind: FindingKind::ReentrancyNoEthTransfer,
+                severity: Severity::Medium,
+                message: format!(
+                    "RE-05: reentrancy in `{func_name}`: callback-visible state is written before a low-level external call; a callee can re-enter using the newly exposed state"
+                ),
+                span: func.span,
+                function: Some(func.id),
+            });
         }
     }
 
     findings
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::frontend::parser::load_via_parser_sources;
+    use crate::norm::SourceFile;
+
+    #[test]
+    fn source_guided_no_eth_reentrancy_detects_approve_and_call_pattern() {
+        let ast = load_via_parser_sources(vec![SourceFile {
+            id: 0,
+            path: "approve_and_call.sol".to_string(),
+            source: r#"
+                pragma solidity ^0.4.15;
+                contract Token {
+                    mapping(address => mapping(address => uint256)) allowed;
+                    function transferFrom(address _from, address _to, uint256 _value) public returns (bool success) {
+                        allowed[_from][msg.sender] -= _value;
+                        return true;
+                    }
+                    function approveAndCall(address _spender, uint256 _value, bytes _extraData) public returns (bool success) {
+                        allowed[msg.sender][_spender] = _value;
+                        require(_spender.call(bytes4(bytes32(sha3("receiveApproval(address,uint256,address,bytes)"))), msg.sender, _value, this, _extraData));
+                        return true;
+                    }
+                }
+            "#
+            .to_string(),
+        }])
+        .expect("parser should succeed");
+
+        let findings = detect_reentrancy_no_eth_transfer(&ast);
+        assert!(findings.iter().any(|finding| {
+            finding.kind == FindingKind::ReentrancyNoEthTransfer
+                && finding
+                    .message
+                    .contains("callback-visible state is written before a low-level external call")
+        }));
+    }
 }

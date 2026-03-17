@@ -536,6 +536,19 @@ fn parse_ts_statement(node: Node, ctx: &mut TsContext) -> Option<u32> {
             .named_child(0)
             .and_then(|child| parse_ts_statement(child, ctx)),
         "block" | "block_statement" | "function_body" => Some(parse_ts_block(node, ctx)),
+        "ERROR" => {
+            let mut cursor = node.walk();
+            for child in node.named_children(&mut cursor) {
+                if let Some(stmt_id) = parse_ts_statement(child, ctx) {
+                    return Some(stmt_id);
+                }
+            }
+            if let Some(expr) = first_ts_expr_child(node) {
+                let expr_id = parse_ts_expr(expr, ctx);
+                return Some(push_stmt(ctx.ast, StmtKind::Expr(expr_id), span));
+            }
+            None
+        }
         "expression_statement" => {
             let expr = first_ts_expr_child(node).map(|expr| parse_ts_expr(expr, ctx));
             let expr_id = expr.unwrap_or_else(|| push_expr(ctx.ast, Expr::unknown(span)));
@@ -1194,6 +1207,9 @@ fn parse_ts_expr(node: Node, ctx: &mut TsContext) -> u32 {
                     push_expr(ctx.ast, Expr::unknown(span_from_node(node, ctx.file_id)))
                 })
         }
+        "ERROR" => first_ts_expr_child(node)
+            .map(|expr| parse_ts_expr(expr, ctx))
+            .unwrap_or_else(|| push_expr(ctx.ast, Expr::unknown(span_from_node(node, ctx.file_id)))),
         _ => push_expr(ctx.ast, Expr::unknown(span_from_node(node, ctx.file_id))),
     }
 }
@@ -3614,6 +3630,7 @@ mod tests {
         let inner_expr = ast.expressions.get(*inner as usize).expect("inner callee");
         assert!(matches!(inner_expr.kind, ExprKind::Member { .. }));
     }
+
 }
 
 trait UnknownExpr {

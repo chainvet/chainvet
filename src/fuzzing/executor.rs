@@ -94,6 +94,8 @@ enum TempOrigin {
     StorageDerived,
     /// Loaded from block.number or blockhash (for weak PRNG detection)
     BlockNumberDerived,
+    /// Loaded from this.balance/address(this).balance
+    ThisBalanceDerived,
     /// Result of a division operation (for div-before-mul detection)
     DivisionResult,
 }
@@ -155,6 +157,11 @@ fn execute_transaction(
 
     // Track temp variable origins for oracle detection
     let mut temp_origins: HashMap<String, HashSet<TempOrigin>> = HashMap::new();
+    // Track low-level call return values and whether they are checked in control flow.
+    let mut tracked_call_by_var: HashMap<String, usize> = HashMap::new();
+    let mut tracked_calls: HashMap<usize, String> = HashMap::new();
+    let mut checked_calls: HashSet<usize> = HashSet::new();
+    let mut next_call_id: usize = 0;
     // Mark block.timestamp as a timestamp source
     temp_origins
         .entry("block.timestamp".to_string())
@@ -204,6 +211,10 @@ fn execute_transaction(
                     deps,
                     contract_name.as_deref(),
                     &mut temp_origins,
+                    &mut tracked_call_by_var,
+                    &mut tracked_calls,
+                    &mut checked_calls,
+                    &mut next_call_id,
                     checked_arithmetic,
                     reentry_depth,
                 );
@@ -312,6 +323,10 @@ fn execute_transaction(
                     deps,
                     contract_name.as_deref(),
                     &mut temp_origins,
+                    &mut tracked_call_by_var,
+                    &mut tracked_calls,
+                    &mut checked_calls,
+                    &mut next_call_id,
                     checked_arithmetic,
                     reentry_depth,
                 );
@@ -356,6 +371,16 @@ fn execute_transaction(
     }
     trace.events.extend(disorder_events);
 
+    // Any tracked low-level call result that was never checked is an unchecked call.
+    for (call_id, callee) in tracked_calls {
+        if !checked_calls.contains(&call_id) {
+            trace.events.push(TraceEvent {
+                function_id: tx.function_id,
+                kind: TraceEventKind::CallReturnUnchecked { callee },
+            });
+        }
+    }
+
     trace
 }
 
@@ -374,6 +399,10 @@ fn execute_instr(
     deps: &DependencyMap,
     contract_name: Option<&str>,
     temp_origins: &mut HashMap<String, HashSet<TempOrigin>>,
+    tracked_call_by_var: &mut HashMap<String, usize>,
+    tracked_calls: &mut HashMap<usize, String>,
+    checked_calls: &mut HashSet<usize>,
+    next_call_id: &mut usize,
     checked_arithmetic: bool,
     reentry_depth: u8,
 ) {
@@ -385,16 +414,42 @@ fn execute_instr(
             if is_storage(dest) {
                 if let Some(meta) = storage_access_meta(dest, temp_origins, contract_name) {
                     let name = meta.var_name.clone();
+                    let constructor_like =
+                        function_is_constructor_like(function_id, ast, &output.compiler);
+                    let wrong_constructor_candidate = is_wrong_constructor_runtime_candidate(
+                        function_id,
+                        ast,
+                        &output.compiler,
+                    );
+                    let sender_derived =
+                        value_is_sender_derived(src, temp_origins) || value_name(src).contains("sender");
                     state.insert(name.clone(), val);
                     trace.events.push(TraceEvent {
                         function_id,
                         kind: TraceEventKind::StorageWrite {
-                            var_name: meta.var_name,
-                            slot_key: meta.slot_key,
-                            authority_sensitive: meta.authority_sensitive,
+                            var_name: meta.var_name.clone(),
+                            slot_key: meta.slot_key.clone(),
+                            authority_sensitive: meta.authority_sensitive && !constructor_like,
                             caller_keyed: meta.caller_keyed,
                         },
                     });
+                    if wrong_constructor_candidate
+                        && meta.authority_sensitive
+                        && !meta.caller_keyed
+                        && sender_derived
+                    {
+                        trace.events.push(TraceEvent {
+                            function_id,
+                            kind: TraceEventKind::WrongConstructorCandidate {
+                                function_name: ast
+                                    .functions
+                                    .get(function_id as usize)
+                                    .and_then(|function| function.name.clone())
+                                    .unwrap_or_else(|| "<anonymous>".to_string()),
+                                slot_key: meta.slot_key,
+                            },
+                        });
+                    }
                 }
             } else if let Some(name) = place_name(dest, contract_name) {
                 locals.insert(name, val);
@@ -464,6 +519,16 @@ fn execute_instr(
                             function_id,
                             kind: TraceEventKind::BlockNumberUsed,
                         });
+                    }
+
+                    if full_name == "this.balance"
+                        || (base_name == "this" && f == "balance")
+                        || (f == "balance" && is_contract_receiver(base, contract_name))
+                    {
+                        temp_origins
+                            .entry(dest_key.clone())
+                            .or_default()
+                            .insert(TempOrigin::ThisBalanceDerived);
                     }
 
                     // Detect tx.origin loads
@@ -587,14 +652,23 @@ fn execute_instr(
                     .or_default()
                     .extend(origins);
             }
+            let mut call_origin = tracked_call_by_var.get(&src_place_name).copied();
             match src {
                 IrPlace::Member { base, .. } | IrPlace::Index { base, .. } => {
                     let base_key = value_key(base);
                     if let Some(origins) = temp_origins.get(&base_key).cloned() {
                         temp_origins.entry(dest_key).or_default().extend(origins);
                     }
+                    if call_origin.is_none() {
+                        call_origin = tracked_call_by_var.get(&base_key).copied();
+                    }
                 }
                 IrPlace::Var { .. } => {}
+            }
+            if let Some(call_id) = call_origin {
+                tracked_call_by_var.insert(var_key(dest), call_id);
+            } else {
+                tracked_call_by_var.remove(&var_key(dest));
             }
 
             set_var(dest, val, locals);
@@ -606,6 +680,7 @@ fn execute_instr(
                 .unwrap_or(FuzzValue::Uint(0));
             for name in names {
                 locals.insert(name.clone(), val.clone());
+                tracked_call_by_var.remove(name);
             }
         }
         IrInstr::Assign { dest, src, .. } => {
@@ -613,9 +688,14 @@ fn execute_instr(
 
             // Propagate origins
             let src_key = value_key(src);
+            let dest_key = var_key(dest);
             if let Some(origins) = temp_origins.get(&src_key).cloned() {
-                let dest_key = var_key(dest);
-                temp_origins.entry(dest_key).or_default().extend(origins);
+                temp_origins.entry(dest_key.clone()).or_default().extend(origins);
+            }
+            if let Some(call_id) = tracked_call_by_var.get(&src_key).copied() {
+                tracked_call_by_var.insert(dest_key.clone(), call_id);
+            } else {
+                tracked_call_by_var.remove(&dest_key);
             }
 
             set_var(dest, val, locals);
@@ -626,6 +706,7 @@ fn execute_instr(
             let l = resolve_value(lhs, state, locals).as_uint();
             let r = resolve_value(rhs, state, locals).as_uint();
             let result = eval_binary(op, l, r);
+            let dest_key = var_key(dest);
 
             // For Solidity >=0.8, arithmetic is checked by default; avoid treating checked math as wrapping vulns.
             if !checked_arithmetic && matches!(op.as_str(), "+" | "-" | "*") {
@@ -656,9 +737,8 @@ fn execute_instr(
                 })
                 .unwrap_or(false);
             if lhs_has_ts || rhs_has_ts {
-                let dest_key = var_key(dest);
                 temp_origins
-                    .entry(dest_key)
+                    .entry(dest_key.clone())
                     .or_default()
                     .insert(TempOrigin::TimestampDerived);
             }
@@ -673,9 +753,8 @@ fn execute_instr(
                 .map(|o| o.contains(&TempOrigin::StorageDerived))
                 .unwrap_or(false);
             if lhs_storage || rhs_storage {
-                let dest_key = var_key(dest);
                 temp_origins
-                    .entry(dest_key)
+                    .entry(dest_key.clone())
                     .or_default()
                     .insert(TempOrigin::StorageDerived);
             }
@@ -688,9 +767,8 @@ fn execute_instr(
                 let rhs_is_sender =
                     rhs_key.contains("sender") || value_name(rhs).contains("sender");
                 if (lhs_is_sender && rhs_storage) || (rhs_is_sender && lhs_storage) {
-                    let dest_key = var_key(dest);
                     temp_origins
-                        .entry(dest_key)
+                        .entry(dest_key.clone())
                         .or_default()
                         .insert(TempOrigin::StorageDerived);
                     trace.events.push(TraceEvent {
@@ -720,13 +798,37 @@ fn execute_instr(
                 }
             }
 
+            let lhs_this_balance = temp_origins
+                .get(&lhs_key)
+                .map(|o| o.contains(&TempOrigin::ThisBalanceDerived))
+                .unwrap_or(false);
+            let rhs_this_balance = temp_origins
+                .get(&rhs_key)
+                .map(|o| o.contains(&TempOrigin::ThisBalanceDerived))
+                .unwrap_or(false);
+            if lhs_this_balance || rhs_this_balance {
+                temp_origins
+                    .entry(dest_key.clone())
+                    .or_default()
+                    .insert(TempOrigin::ThisBalanceDerived);
+            }
+
+            if let Some(call_id) = tracked_call_by_var
+                .get(&lhs_key)
+                .copied()
+                .or_else(|| tracked_call_by_var.get(&rhs_key).copied())
+            {
+                tracked_call_by_var.insert(dest_key.clone(), call_id);
+            } else {
+                tracked_call_by_var.remove(&dest_key);
+            }
+
             set_var(dest, FuzzValue::Uint(result), locals);
 
             // Track division results for div-before-mul detection
             if op == "/" {
-                let dest_key_dm = var_key(dest);
                 temp_origins
-                    .entry(dest_key_dm)
+                    .entry(dest_key)
                     .or_default()
                     .insert(TempOrigin::DivisionResult);
             }
@@ -767,6 +869,7 @@ fn execute_instr(
 
             // Propagate timestamp taint through unary ops
             let expr_key = value_key(expr);
+            let dest_key = var_key(dest);
             if temp_origins
                 .get(&expr_key)
                 .map(|o| {
@@ -774,11 +877,26 @@ fn execute_instr(
                 })
                 .unwrap_or(false)
             {
-                let dest_key = var_key(dest);
                 temp_origins
-                    .entry(dest_key)
+                    .entry(dest_key.clone())
                     .or_default()
                     .insert(TempOrigin::TimestampDerived);
+            }
+            if temp_origins
+                .get(&expr_key)
+                .map(|o| o.contains(&TempOrigin::ThisBalanceDerived))
+                .unwrap_or(false)
+            {
+                temp_origins
+                    .entry(dest_key.clone())
+                    .or_default()
+                    .insert(TempOrigin::ThisBalanceDerived);
+            }
+
+            if let Some(call_id) = tracked_call_by_var.get(&expr_key).copied() {
+                tracked_call_by_var.insert(dest_key.clone(), call_id);
+            } else {
+                tracked_call_by_var.remove(&dest_key);
             }
 
             set_var(dest, FuzzValue::Uint(result), locals);
@@ -792,20 +910,29 @@ fn execute_instr(
         } => {
             let callee_name = value_name(callee);
             let callee_key = value_key(callee);
+            let callee_is_temp = matches!(callee, IrValue::Var(IrVar::Temp(_)));
             let callee_origins = temp_origins.get(&callee_key);
-            let has_value = options.iter().any(|o| matches!(o, IrCallOption::Value(_)))
+            let has_explicit_value = options.iter().any(|o| matches!(o, IrCallOption::Value(_)))
                 || callee_origins
                     .map(|o| o.contains(&TempOrigin::ValueCallRef))
                     .unwrap_or(false);
             let callee_is_delegatecall_ref = callee_origins
                 .map(|o| o.contains(&TempOrigin::DelegatecallRef))
                 .unwrap_or(false);
-            let callee_is_send_ref = callee_origins
+            let mut callee_is_send_ref = callee_origins
                 .map(|o| o.contains(&TempOrigin::SendRef))
                 .unwrap_or(false);
-            let callee_is_transfer_ref = callee_origins
+            let mut callee_is_transfer_ref = callee_origins
                 .map(|o| o.contains(&TempOrigin::TransferRef))
                 .unwrap_or(false);
+            // Legacy parser fallback can lower `.send`/`.transfer` as temp callees with a
+            // single destination (bool result) and one value argument.
+            let is_send_like_temp =
+                callee_is_temp && dest.len() == 1 && args.len() == 1 && !has_explicit_value;
+            if is_send_like_temp {
+                callee_is_send_ref = true;
+                callee_is_transfer_ref = false;
+            }
 
             // Detect selfdestruct / suicide calls
             let callee_lower = callee_name.to_lowercase();
@@ -859,6 +986,9 @@ fn execute_instr(
                 });
                 if let Some(first_arg) = args.first() {
                     let arg_key = value_key(first_arg);
+                    if let Some(call_id) = tracked_call_by_var.get(&arg_key).copied() {
+                        checked_calls.insert(call_id);
+                    }
                     let arg_is_send_result = temp_origins
                         .get(&arg_key)
                         .map(|o| o.contains(&TempOrigin::SendResult))
@@ -869,6 +999,16 @@ fn execute_instr(
                             kind: TraceEventKind::UnsafeSendInRequire {
                                 callee: "send".to_string(),
                             },
+                        });
+                    }
+                    let arg_has_this_balance = temp_origins
+                        .get(&arg_key)
+                        .map(|o| o.contains(&TempOrigin::ThisBalanceDerived))
+                        .unwrap_or(false);
+                    if arg_has_this_balance {
+                        trace.events.push(TraceEvent {
+                            function_id,
+                            kind: TraceEventKind::BalanceInvariantCheck,
                         });
                     }
                     // Check if the require condition involves msg.sender comparison
@@ -895,12 +1035,48 @@ fn execute_instr(
                 .get(&callee_key)
                 .map(|o| o.contains(&TempOrigin::ExternalCallRef))
                 .unwrap_or(false);
-            let is_external = is_external_by_name || is_external_by_origin || has_value;
+            // Legacy parser fallback often lowers low-level members (send/call/transfer) as temp callees.
+            // Treat temp callees with call-like shape as external to avoid silently dropping these paths.
+            let is_external_by_temp = callee_is_temp && (has_explicit_value || !args.is_empty());
+            let is_external =
+                is_external_by_name
+                    || is_external_by_origin
+                    || has_explicit_value
+                    || is_external_by_temp;
+            let is_low_level_by_name = callee_lower == "call"
+                || callee_lower == "send"
+                || callee_lower == "transfer"
+                || callee_lower == "delegatecall"
+                || callee_lower == "staticcall"
+                || callee_lower.ends_with(".call")
+                || callee_lower.ends_with(".send")
+                || callee_lower.ends_with(".transfer")
+                || callee_lower.ends_with(".delegatecall")
+                || callee_lower.ends_with(".staticcall");
+            let is_low_level_by_temp = callee_is_temp && args.len() <= 1;
+            let is_low_level_call = is_external
+                && (is_low_level_by_name
+                    || is_external_by_origin
+                    || callee_is_delegatecall_ref
+                    || is_low_level_by_temp);
+            let has_value = has_explicit_value
+                || callee_is_send_ref
+                || callee_is_transfer_ref
+                || (is_low_level_by_temp && !args.is_empty());
+            let is_transfer_call = callee_lower == "transfer"
+                || callee_lower.ends_with(".transfer")
+                || callee_is_transfer_ref;
+            let unchecked_call_candidate = is_low_level_call && !is_transfer_call;
+            let callback_overlap = if reentry_depth == 0 && tx.sender == 1 {
+                has_no_value_reentrant_callback_overlap(function_id, ast, &output.compiler, deps)
+            } else {
+                false
+            };
             let reentrant_capable = is_external
-                && has_value
                 && !callee_is_send_ref
                 && !callee_is_transfer_ref
-                && !callee_lower.contains("staticcall");
+                && !callee_lower.contains("staticcall")
+                && (has_value || (is_low_level_call && callback_overlap));
 
             if is_external {
                 trace.events.push(TraceEvent {
@@ -912,21 +1088,34 @@ fn execute_instr(
                     },
                 });
 
-                // For unchecked call detection:
-                if dest.is_empty() {
-                    trace.events.push(TraceEvent {
-                        function_id,
-                        kind: TraceEventKind::CallReturnUnchecked {
-                            callee: callee_name.clone(),
-                        },
-                    });
+                if unchecked_call_candidate {
+                    if dest.is_empty() {
+                        trace.events.push(TraceEvent {
+                            function_id,
+                            kind: TraceEventKind::CallReturnUnchecked {
+                                callee: callee_name.clone(),
+                            },
+                        });
+                    } else {
+                        let call_id = *next_call_id;
+                        *next_call_id = next_call_id.saturating_add(1);
+                        tracked_calls.insert(call_id, callee_name.clone());
+                        for ret_var in dest {
+                            tracked_call_by_var.insert(var_key(ret_var), call_id);
+                        }
+                    }
+                } else {
+                    for ret_var in dest {
+                        tracked_call_by_var.remove(&var_key(ret_var));
+                    }
                 }
             }
 
             if reentrant_capable && reentry_depth == 0 && tx.sender == 1 {
-                if let Some(callback_target) =
-                    select_reentrant_callback_target(function_id, ast, &output.compiler, deps)
-                {
+                let callback_targets =
+                    select_reentrant_callback_targets(function_id, ast, &output.compiler, deps);
+                if !callback_targets.is_empty() {
+                    for callback_target in callback_targets {
                     trace.events.push(TraceEvent {
                         function_id,
                         kind: TraceEventKind::ReentrantCallback {
@@ -950,6 +1139,7 @@ fn execute_instr(
                     trace.coverage.extend(callback_trace.coverage);
                     trace.edge_coverage.extend(callback_trace.edge_coverage);
                     trace.reverted |= callback_trace.reverted;
+                    }
                 }
             }
 
@@ -993,6 +1183,9 @@ fn execute_instr(
                         kind: TraceEventKind::ConditionChecked,
                     });
                     let cond_key = value_key(cond);
+                    if let Some(call_id) = tracked_call_by_var.get(&cond_key).copied() {
+                        checked_calls.insert(call_id);
+                    }
                     let cond_name = value_name(cond);
 
                     // Detect timestamp dependency: branch on value derived from block.timestamp
@@ -1021,6 +1214,9 @@ fn execute_instr(
                     // Detect unbounded loops: loop condition depends on storage-derived value
                     if let Some(cond_val) = cond {
                         let cond_key = value_key(cond_val);
+                        if let Some(call_id) = tracked_call_by_var.get(&cond_key).copied() {
+                            checked_calls.insert(call_id);
+                        }
                         let is_storage_dep = temp_origins
                             .get(&cond_key)
                             .map(|o| o.contains(&TempOrigin::StorageDerived))
@@ -1055,11 +1251,43 @@ fn execute_instr(
             ..
         } => {
             let c = resolve_value(cond, state, locals);
+            let cond_key = value_key(cond);
+            let then_key = value_key(then_val);
+            let else_key = value_key(else_val);
             let val = if c.is_truthy() {
                 resolve_value(then_val, state, locals)
             } else {
                 resolve_value(else_val, state, locals)
             };
+            let dest_key = var_key(dest);
+            let call_id = tracked_call_by_var
+                .get(&cond_key)
+                .copied()
+                .or_else(|| tracked_call_by_var.get(&then_key).copied())
+                .or_else(|| tracked_call_by_var.get(&else_key).copied());
+            if let Some(call_id) = call_id {
+                tracked_call_by_var.insert(dest_key.clone(), call_id);
+            } else {
+                tracked_call_by_var.remove(&dest_key);
+            }
+            let has_this_balance = temp_origins
+                .get(&cond_key)
+                .map(|o| o.contains(&TempOrigin::ThisBalanceDerived))
+                .unwrap_or(false)
+                || temp_origins
+                    .get(&then_key)
+                    .map(|o| o.contains(&TempOrigin::ThisBalanceDerived))
+                    .unwrap_or(false)
+                || temp_origins
+                    .get(&else_key)
+                    .map(|o| o.contains(&TempOrigin::ThisBalanceDerived))
+                    .unwrap_or(false);
+            if has_this_balance {
+                temp_origins
+                    .entry(dest_key.clone())
+                    .or_default()
+                    .insert(TempOrigin::ThisBalanceDerived);
+            }
             set_var(dest, val, locals);
         }
         IrInstr::InlineAsm { .. } => {
@@ -1090,16 +1318,24 @@ fn build_callback_transaction(
     }
 }
 
-fn select_reentrant_callback_target(
+fn select_reentrant_callback_targets(
     current_function_id: u32,
     ast: &crate::norm::NormalizedAst,
     compiler: &crate::frontend::CompilerInfo,
     deps: &DependencyMap,
-) -> Option<u32> {
-    let current_function = ast.functions.get(current_function_id as usize)?;
-    let contract_id = current_function.contract?;
-    let contract = ast.contracts.get(contract_id as usize)?;
-    let current_deps = deps.functions.get(&current_function_id);
+) -> Vec<u32> {
+    let Some(current_function) = ast.functions.get(current_function_id as usize) else {
+        return Vec::new();
+    };
+    let Some(contract_id) = current_function.contract else {
+        return Vec::new();
+    };
+    let Some(contract) = ast.contracts.get(contract_id as usize) else {
+        return Vec::new();
+    };
+    let Some(current_deps) = deps.functions.get(&current_function_id) else {
+        return Vec::new();
+    };
 
     let mut candidates = Vec::new();
     for &function_id in &contract.functions {
@@ -1115,14 +1351,15 @@ fn select_reentrant_callback_target(
             candidates.push((0u8, function_id));
             continue;
         }
-        let overlaps = current_deps
-            .zip(deps.functions.get(&function_id))
-            .map(|(current, candidate)| {
-                current
+        let overlaps = deps
+            .functions
+            .get(&function_id)
+            .map(|candidate| {
+                current_deps
                     .writes
                     .iter()
                     .any(|slot| candidate.reads.contains(slot) || candidate.writes.contains(slot))
-                    || current
+                    || current_deps
                         .reads
                         .iter()
                         .any(|slot| candidate.writes.contains(slot))
@@ -1133,7 +1370,54 @@ fn select_reentrant_callback_target(
         }
     }
     candidates.sort_unstable();
-    candidates.into_iter().take(4).map(|(_, function_id)| function_id).next()
+    candidates
+        .into_iter()
+        .take(4)
+        .map(|(_, function_id)| function_id)
+        .collect()
+}
+
+fn has_no_value_reentrant_callback_overlap(
+    current_function_id: u32,
+    ast: &crate::norm::NormalizedAst,
+    compiler: &crate::frontend::CompilerInfo,
+    deps: &DependencyMap,
+) -> bool {
+    let Some(current_function) = ast.functions.get(current_function_id as usize) else {
+        return false;
+    };
+    let Some(contract_id) = current_function.contract else {
+        return false;
+    };
+    let Some(current_deps) = deps.functions.get(&current_function_id) else {
+        return false;
+    };
+
+    ast.contracts
+        .get(contract_id as usize)
+        .into_iter()
+        .flat_map(|contract| contract.functions.iter().copied())
+        .filter(|&function_id| function_id != current_function_id)
+        .filter_map(|function_id| {
+            let function = ast.functions.get(function_id as usize)?;
+            if !crate::frontend::is_mutating_entrypoint(function, compiler)
+                || function.kind != crate::norm::FunctionKind::Function
+            {
+                return None;
+            }
+            let candidate = deps.functions.get(&function_id)?;
+            Some(
+                current_deps
+                    .writes
+                    .iter()
+                    .any(|slot| candidate.reads.contains(slot) || candidate.writes.contains(slot))
+                    || current_deps
+                        .reads
+                        .iter()
+                        .any(|slot| candidate.writes.contains(slot)),
+            )
+        })
+        .any(|overlaps| overlaps)
 }
 
 #[derive(Debug, Clone)]
@@ -1252,6 +1536,7 @@ fn slot_is_authority_sensitive(slot_key: &str, var_name: &str) -> bool {
             matches!(
                 token,
                 "owner"
+                    | "creator"
                     | "admin"
                     | "operator"
                     | "minter"
@@ -1268,6 +1553,77 @@ fn slot_is_authority_sensitive(slot_key: &str, var_name: &str) -> bool {
                 || token.ends_with("admin")
                 || token.ends_with("governance")
         })
+}
+
+fn value_is_sender_derived(
+    value: &IrValue,
+    temp_origins: &HashMap<String, HashSet<TempOrigin>>,
+) -> bool {
+    let key = value_key(value);
+    value_name(value).contains("sender")
+        || temp_origins
+            .get(&key)
+            .map(|origins| origins.contains(&TempOrigin::SenderDerived))
+            .unwrap_or(false)
+}
+
+fn function_is_constructor_like(
+    function_id: u32,
+    ast: &NormalizedAst,
+    compiler: &crate::frontend::CompilerInfo,
+) -> bool {
+    let Some(function) = ast.functions.get(function_id as usize) else {
+        return false;
+    };
+    if function.kind == crate::norm::FunctionKind::Constructor {
+        return true;
+    }
+    let Some(name) = function.name.as_deref() else {
+        return false;
+    };
+    let contract_name = function
+        .contract
+        .and_then(|contract_id| ast.contracts.get(contract_id as usize))
+        .map(|contract| contract.name.as_str());
+    contract_name
+        .map(|contract_name| {
+            name == contract_name && crate::frontend::is_public_entrypoint(function, compiler)
+        })
+        .unwrap_or(false)
+}
+
+fn is_wrong_constructor_runtime_candidate(
+    function_id: u32,
+    ast: &NormalizedAst,
+    compiler: &crate::frontend::CompilerInfo,
+) -> bool {
+    let Some(function) = ast.functions.get(function_id as usize) else {
+        return false;
+    };
+    if function.kind != crate::norm::FunctionKind::Function
+        || !function.params.is_empty()
+        || !crate::frontend::is_public_entrypoint(function, compiler)
+    {
+        return false;
+    }
+    let Some(name) = function.name.as_deref() else {
+        return false;
+    };
+    let starts_upper = name
+        .chars()
+        .next()
+        .map(|ch| ch.is_ascii_uppercase())
+        .unwrap_or(false);
+    if !starts_upper {
+        return false;
+    }
+    let contract_name = function
+        .contract
+        .and_then(|contract_id| ast.contracts.get(contract_id as usize))
+        .map(|contract| contract.name.as_str());
+    contract_name
+        .map(|contract_name| name != contract_name)
+        .unwrap_or(false)
 }
 
 fn slot_is_order_sensitive(slot_key: &str, var_name: &str) -> bool {
@@ -1510,6 +1866,15 @@ fn has_checked_arithmetic(ast: &NormalizedAst) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::cfg;
+    use crate::frontend::{CompilerInfo, FrontendMode, FrontendOutput};
+    use crate::fuzzing::types::{
+        ContractAbi, DependencyMap, FunctionAbi, Individual, ParamInfo, build_dependency_map,
+        extract_abis,
+    };
+    use crate::ir::{IrBlock, IrCallOption, IrFunction, IrInstr, IrModule, IrPlace, IrValue};
+    use crate::norm::{FunctionKind, Mutability, NormalizedAst, Span, Visibility};
+    use crate::{frontend, ir};
 
     #[test]
     fn eval_binary_ops() {
@@ -1545,5 +1910,188 @@ mod tests {
         locals.insert("$t5".to_string(), FuzzValue::Uint(100));
         let val = resolve_value(&IrValue::Var(IrVar::Temp(5)), &state, &locals);
         assert_eq!(val.as_uint(), 100);
+    }
+
+    #[test]
+    fn contract_receiver_balance_assert_marks_balance_invariant() {
+        let tx = Transaction {
+            function_id: 12,
+            args: Vec::new(),
+            sender: 0,
+            value: 0,
+        };
+        let env = Environment::default();
+        let output = FrontendOutput {
+            mode: FrontendMode::Full,
+            ast: NormalizedAst::default(),
+            compiler: CompilerInfo {
+                compiler_name: "solc".to_string(),
+                compiler_version: Some("0.4.16".to_string()),
+                legacy_omitted_visibility_is_public: true,
+            },
+        };
+        let abi = ContractAbi {
+            contract_name: "MyAdvancedToken".to_string(),
+            functions: vec![FunctionAbi {
+                id: 12,
+                name: "migrate_and_destroy".to_string(),
+                params: Vec::<ParamInfo>::new(),
+                visibility: Visibility::Public,
+                mutability: Mutability::NonPayable,
+                kind: FunctionKind::Function,
+                is_payable: false,
+            }],
+        };
+        let ir_module = IrModule {
+            functions: vec![IrFunction {
+                id: 12,
+                name: Some("migrate_and_destroy".to_string()),
+                source: Some(12),
+                span: Span::default(),
+                blocks: vec![IrBlock {
+                    id: 0,
+                    instrs: Vec::new(),
+                }],
+            }],
+        };
+        let cfgs = Vec::new();
+        let deps = DependencyMap::default();
+        let mut state = SimState::new();
+        let mut locals = HashMap::from([("totalSupply".to_string(), FuzzValue::Uint(0))]);
+        let mut trace = ExecutionTrace::default();
+        let mut temp_origins = HashMap::new();
+        let mut tracked_call_by_var = HashMap::new();
+        let mut tracked_calls = HashMap::new();
+        let mut checked_calls = HashSet::new();
+        let mut next_call_id = 0usize;
+
+        let load_balance = IrInstr::Load {
+            dest: IrVar::Temp(0),
+            src: IrPlace::Member {
+                base: IrValue::Var(IrVar::Named("MyAdvancedToken".to_string())),
+                field: "balance".to_string(),
+                root: Some("balance".to_string()),
+                class: PlaceClass::Storage,
+            },
+            span: Span::default(),
+        };
+        let compare = IrInstr::Binary {
+            dest: IrVar::Temp(1),
+            op: "==".to_string(),
+            lhs: IrValue::Var(IrVar::Temp(0)),
+            rhs: IrValue::Var(IrVar::Named("totalSupply".to_string())),
+            span: Span::default(),
+        };
+        let assert_call = IrInstr::Call {
+            dest: Vec::new(),
+            callee: IrValue::Var(IrVar::Named("assert".to_string())),
+            args: vec![IrValue::Var(IrVar::Temp(1))],
+            options: Vec::<IrCallOption>::new(),
+            span: Span::default(),
+        };
+
+        execute_instr(
+            &load_balance,
+            &tx,
+            &mut state,
+            &mut locals,
+            &mut trace,
+            &env,
+            &output,
+            &ir_module,
+            &cfgs,
+            &abi,
+            &deps,
+            Some("MyAdvancedToken"),
+            &mut temp_origins,
+            &mut tracked_call_by_var,
+            &mut tracked_calls,
+            &mut checked_calls,
+            &mut next_call_id,
+            false,
+            0,
+        );
+        execute_instr(
+            &compare,
+            &tx,
+            &mut state,
+            &mut locals,
+            &mut trace,
+            &env,
+            &output,
+            &ir_module,
+            &cfgs,
+            &abi,
+            &deps,
+            Some("MyAdvancedToken"),
+            &mut temp_origins,
+            &mut tracked_call_by_var,
+            &mut tracked_calls,
+            &mut checked_calls,
+            &mut next_call_id,
+            false,
+            0,
+        );
+        execute_instr(
+            &assert_call,
+            &tx,
+            &mut state,
+            &mut locals,
+            &mut trace,
+            &env,
+            &output,
+            &ir_module,
+            &cfgs,
+            &abi,
+            &deps,
+            Some("MyAdvancedToken"),
+            &mut temp_origins,
+            &mut tracked_call_by_var,
+            &mut tracked_calls,
+            &mut checked_calls,
+            &mut next_call_id,
+            false,
+            0,
+        );
+
+        assert!(trace.events.iter().any(|event| {
+            matches!(event.kind, TraceEventKind::BalanceInvariantCheck)
+        }));
+    }
+
+    #[test]
+    fn coin_fixture_migrate_and_destroy_emits_balance_invariant_check() {
+        let output = frontend::load_project(
+            "Benchmarks/Not-so-smart/not-so-smart-contracts-master/forced_ether_reception/coin.sol",
+        )
+        .expect("coin fixture should load");
+        let ir_module = ir::lower_module(&output.ast);
+        let cfgs = cfg::build_from_ir(&ir_module);
+        let abis = extract_abis(&output.ast, &output.compiler);
+        let abi = abis
+            .iter()
+            .find(|abi| abi.contract_name == "MyAdvancedToken")
+            .expect("MyAdvancedToken abi");
+        let deps = build_dependency_map(&ir_module, &output.ast);
+        let individual = Individual {
+            transactions: vec![Transaction {
+                function_id: 12,
+                args: Vec::new(),
+                sender: 0,
+                value: 0,
+            }],
+            environment: Environment::default(),
+            energy: 1.0,
+        };
+
+        let trace = execute_individual(&individual, &output, &ir_module, &cfgs, abi, &deps);
+        assert!(
+            trace
+                .events
+                .iter()
+                .any(|event| matches!(event.kind, TraceEventKind::BalanceInvariantCheck)),
+            "expected BalanceInvariantCheck in trace, saw events: {:?}",
+            trace.events
+        );
     }
 }

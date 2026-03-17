@@ -1,111 +1,145 @@
 # Not-so-smart Benchmark Comparison (4 Modes)
 
-Date: 2026-03-11  
+Date: 2026-03-18
 Dataset: `Benchmarks/Not-so-smart/not-so-smart-contracts-master` (25 contracts)
 
 Analysis artifacts used:
 
-- `runs/benchmark_not_so_smart_1773235777_taxonomy_complete/summary.tsv`
-- `runs/benchmark_not_so_smart_1773235777_taxonomy_complete/aggregate_metrics.json`
-- `runs/benchmark_not_so_smart_1773235777_taxonomy_complete/fp_analysis/summary_all.json`
-- `runs/benchmark_not_so_smart_1773235777_taxonomy_complete/fp_analysis/summary_core.json`
-- `runs/benchmark_not_so_smart_1773235777_taxonomy_complete/fp_analysis/top_fp_core_*.tsv`
+- `runs/benchmark_not_so_smart_1773789016_post_step26/summary.tsv`
+- `runs/benchmark_not_so_smart_1773789016_post_step26/aggregate_metrics.json`
+- `runs/benchmark_not_so_smart_1773789016_post_step26/fp_analysis/summary_all.json`
+- `runs/benchmark_not_so_smart_1773789016_post_step26/fp_analysis/summary_core.json`
+- `runs/benchmark_not_so_smart_1773789016_post_step26/reviewed_truth_analysis/summary.json`
+
+Reference baseline for delta notes:
+
+- `runs/benchmark_not_so_smart_1773773952_post_step24/*`
 
 ## Environment Note
 
-- This run completed with no mode timeouts (`0/25` for all modes).
-- Binary execution was measured after a single pre-build, so runtime numbers below exclude compile time.
-- Standalone `--symbolic` and `--fuzzing` now include taxonomy-completion `meta` findings in addition to native runtime findings.
+- Completed with no mode timeouts (`0/25` for all modes).
+- Same runtime/meta split scoring pipeline was used for all modes.
 
 ## Aggregate Comparison
 
 | Mode | Runs OK | Timeouts | Contracts With Findings | Sum Findings | Unique Finding Types |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| `--static` | 25/25 | 0 | 25/25 | 685 | 30 |
-| `--symbolic` | 25/25 | 0 | 24/25 | 537 | 33 |
-| `--fuzzing` | 25/25 | 0 | 24/25 | 554 | 35 |
-| `--hybrid` | 25/25 | 0 | 25/25 | 742 (unique) | 37 |
+| `--static` | 25/25 | 0 | 25/25 | 733 | 34 |
+| `--symbolic` | 25/25 | 0 | 19/25 | 177 | 38 |
+| `--fuzzing` | 25/25 | 0 | 24/25 | 246 | 39 |
+| `--hybrid` | 25/25 | 0 | 24/25 | 144 (unique) | 23 |
 
 ## Runtime vs Meta Split
 
-This table is important now that symbolic and fuzzing expose exact taxonomy rows via `meta` findings.
-
 | Mode | Contracts With Runtime Findings | Contracts With Meta Findings | Runtime Findings | Meta Findings |
 | --- | ---: | ---: | ---: | ---: |
-| `--static` | 25 | 0 | 685 | 0 |
-| `--symbolic` | 18 | 24 | 56 | 481 |
-| `--fuzzing` | 18 | 24 | 73 | 481 |
-| `--hybrid` | 25 | 9 | 733 (unique) | 9 (unique) |
-
-Hybrid-specific notes:
-
-- `runtime_findings_total = 75,067` observed runtime finding events before dedup.
-- `runtime_findings_unique = 733`
-- `meta_findings_unique = 9`
-- `se_assists = 9`
-- `seeds_injected_by_se = 57`
+| `--static` | 25 | 0 | 733 | 0 |
+| `--symbolic` | 19 | 25 | 177 | 596 |
+| `--fuzzing` | 24 | 25 | 246 | 596 |
+| `--hybrid` | 22 | 10 | 134 (unique) | 10 (unique) |
 
 ## Runtime Cost
 
 | Mode | Total Wall-Clock | Median Per Contract |
 | --- | ---: | ---: |
-| `--static` | 896 ms | 37 ms |
-| `--symbolic` | 55,295 ms | 43 ms |
-| `--fuzzing` | 18,052 ms | 306 ms |
-| `--hybrid` | 55,217 ms | 2,132 ms |
+| `--static` | 735 ms | 13 ms |
+| `--symbolic` | 437,056 ms | 8,117 ms |
+| `--fuzzing` | 89,552 ms | 698 ms |
+| `--hybrid` | 108,580 ms | 2,409 ms |
 
-## False-Positive (FP) Analysis
-
-Method used here is benchmark-label mismatch, not exploit-level proof.
-
-- Each contract gets an expected vulnerability family from benchmark category.
-- Findings are canonically normalized before scoring:
-  - `underflow` -> `integer-underflow`
-  - `hardcoded-gas` -> `hardcoded-gas-transfer`
-  - `storage-memory-issue` -> `memory-manipulation`
-- For this rerun, symbolic and fuzzing are scored on their surfaced output, which now includes runtime plus `meta` taxonomy-completion findings.
-
-### FP/TP/FN Metrics (All 25 Contracts)
+## Benchmark-Relative Metrics (Runtime Primary, All 25)
 
 | Mode | TP | FP | FN | Precision | Recall | F1 |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| `--static` | 11 | 131 | 62 | 0.077 | 0.151 | 0.102 |
-| `--symbolic` | 19 | 127 | 54 | 0.130 | 0.260 | 0.174 |
-| `--fuzzing` | 22 | 133 | 51 | 0.142 | 0.301 | 0.193 |
-| `--hybrid` | 23 | 151 | 50 | 0.132 | 0.315 | 0.186 |
+| `--static` | 18 | 27 | 30 | 0.400 | 0.375 | 0.387 |
+| `--symbolic` | 17 | 10 | 31 | 0.630 | 0.354 | 0.453 |
+| `--fuzzing` | 20 | 22 | 28 | 0.476 | 0.417 | 0.444 |
+| `--hybrid` | 21 | 16 | 27 | 0.568 | 0.438 | 0.494 |
 
-### FP/TP/FN Metrics (Core Set)
+## Benchmark-Relative Metrics (Runtime Primary, Core Set)
 
-Core set excludes honeypots and `ReentrancyExploit.sol` to reduce benchmark-label ambiguity.
+Core set excludes honeypots and `ReentrancyExploit.sol`.
 
 | Mode | TP | FP | FN | Precision | Recall | F1 |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| `--static` | 9 | 98 | 45 | 0.084 | 0.167 | 0.112 |
-| `--symbolic` | 12 | 95 | 42 | 0.112 | 0.222 | 0.149 |
-| `--fuzzing` | 15 | 97 | 39 | 0.134 | 0.278 | 0.181 |
-| `--hybrid` | 15 | 109 | 39 | 0.121 | 0.278 | 0.169 |
+| `--static` | 16 | 4 | 18 | 0.800 | 0.471 | 0.593 |
+| `--symbolic` | 16 | 2 | 18 | 0.889 | 0.471 | 0.615 |
+| `--fuzzing` | 18 | 4 | 16 | 0.818 | 0.529 | 0.643 |
+| `--hybrid` | 19 | 0 | 15 | 1.000 | 0.559 | 0.717 |
 
-### Top FP Kinds (Core Set)
+## Top Runtime-Primary FP Kinds (Core)
 
 | Mode | Top FP kinds |
 | --- | --- |
-| `--static` | `default-visibility`(14), `shadowing`(11), `storage-array-by-value`(11), `integer-overflow`(7), `tainted-call`(6), `hardcoded-gas-transfer`(5), `integer-underflow`(5), `missing-input-validation`(5) |
-| `--symbolic` | `default-visibility`(14), `storage-array-by-value`(11), `integer-overflow`(7), `arbitrary-write`(6), `hardcoded-gas-transfer`(5), `integer-underflow`(5), `locked-ether`(5), `missing-input-validation`(5) |
-| `--fuzzing` | `default-visibility`(14), `storage-array-by-value`(11), `integer-overflow`(7), `integer-underflow`(6), `hardcoded-gas-transfer`(5), `locked-ether`(5), `missing-input-validation`(5), `arbitrary-write`(4) |
-| `--hybrid` | `default-visibility`(14), `shadowing`(11), `storage-array-by-value`(11), `integer-overflow`(7), `tainted-call`(6), `hardcoded-gas-transfer`(5), `integer-underflow`(5), `missing-input-validation`(5) |
+| `--static` | `storage-array-by-value`(3), `missing-input-validation`(1) |
+| `--symbolic` | `access-control`(1), `reentrancy`(1) |
+| `--fuzzing` | `unchecked-call`(2), `unprotected-ether-withdrawal`(2) |
+| `--hybrid` | `none` |
+
+## Reviewed-Truth Coverage (Runtime Primary, 26 issues)
+
+| Mode | Hits | Misses | Coverage |
+| --- | ---: | ---: | ---: |
+| `--static` | 18 | 8 | 0.692 |
+| `--symbolic` | 16 | 10 | 0.615 |
+| `--fuzzing` | 18 | 8 | 0.692 |
+| `--hybrid` | 18 | 8 | 0.692 |
+
+Coverage is recall against the reviewed issue list. It does not penalize extra bug kinds.
+
+## Reviewed-Truth Strict Metrics (Runtime Primary, Closest Proxy to Pure Accuracy)
+
+True TN-based accuracy is not meaningful here because the space of possible extra bug kinds is open-ended. The strict reviewed-truth score below is the closest current proxy to "real state" because it penalizes both misses and extra predicted bug kinds:
+
+`strict_score = hits / (hits + misses + extra_kinds)`
+
+| Mode | Hits | Misses | Extra Kinds | Precision | Recall | F1 | Strict Score |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `--static` | 18 | 8 | 37 | 0.327 | 0.692 | 0.444 | 0.286 |
+| `--symbolic` | 16 | 10 | 18 | 0.471 | 0.615 | 0.533 | 0.364 |
+| `--fuzzing` | 18 | 8 | 35 | 0.340 | 0.692 | 0.456 | 0.295 |
+| `--hybrid` | 18 | 8 | 27 | 0.400 | 0.692 | 0.507 | 0.340 |
 
 ## Interpretation
 
-- Static still dominates raw runtime breadth because it emits many AST-level and detector-level findings directly.
-- Symbolic and fuzzing now cover much more of the benchmark at the surfaced-output level because they expose taxonomy-completion `meta` findings.
-- Runtime-only dynamic detection is still much smaller than surfaced-output detection:
-  - symbolic: `56 runtime` vs `481 meta`
-  - fuzzing: `73 runtime` vs `481 meta`
-- Fuzzing now has the best benchmark-relative F1 in this rerun (`0.193` on all contracts, `0.181` on the core set).
-- Hybrid has the best recall on all contracts (`0.315`) but not the best F1, because it carries static-style breadth and therefore more benchmark-mismatch FP.
-
-## Important Caveat
-
-These FP numbers are benchmark-relative FP against each contract's primary benchmark family. They are not semantic proof that every extra finding is a true false alarm in absolute terms.
-
-They also now reflect surfaced engine output, not only native runtime detection, for `--symbolic` and `--fuzzing`.
+- Runtime-primary reviewed-truth strict score improved across every mode versus `post_step24`:
+  - static: `0.200 -> 0.286`
+  - symbolic: `0.283 -> 0.364`
+  - fuzzing: `0.221 -> 0.295`
+  - hybrid: `0.260 -> 0.340`
+- Runtime-primary reviewed-truth hits also improved across every mode:
+  - static: `15 -> 18`
+  - symbolic: `13 -> 16`
+  - fuzzing: `15 -> 18`
+  - hybrid: `13 -> 18`
+- Static benefited the most from the constructor-name / authority-initialization cleanup:
+  - all-25 F1: `0.294 -> 0.387`
+  - core F1: `0.400 -> 0.593`
+  - `theRun.sol` no longer emits a spurious constructor-style `uninit-permission-check`
+  - `Rubixi.sol` recovered `uninit-permission-check` without reopening the `theRun.sol` false positive
+- Symbolic remains the cleanest pure runtime engine by strict score, but recall is still capped by misses on:
+  - `timestamp-dependency`
+  - `dos-block-gas-limit`
+  - `unused-return-value`
+  - `shadowing`
+  - the non-runtime honeypot families
+- Fuzzing’s strict score improved even though benchmark-relative all-25 F1 dipped slightly:
+  - all-25 F1: `0.449 -> 0.444`
+  - strict score: `0.221 -> 0.295`
+  - the drop comes from finding more true reviewed issues while still carrying extra runtime kinds on honeypots and payout-management functions
+- Hybrid is now the best balanced runtime mode on this benchmark:
+  - all-25 F1: `0.341 -> 0.494`
+  - core F1: `0.456 -> 0.717`
+  - core runtime-primary FP: `10 -> 0`
+  - reviewed-truth strict score: `0.260 -> 0.340`
+- The focused modifier/constructor pass removed the generic `theRun.sol` runtime noise that was previously polluting symbolic, fuzzing, and hybrid:
+  - no more `access-control`
+  - no more `arbitrary-write`
+  - no more constructor-style `uninit-permission-check`
+- Biggest remaining runtime-primary blockers:
+  - `timestamp-dependency` on `theRun.sol`
+  - `dos-block-gas-limit` on `auction.sol` and non-hybrid `list_dos.sol`
+  - `unused-return-value` on `KingOfTheEtherThrone.sol`
+  - `Unprotected.sol` secondary issue recovery
+  - `WalletLibrary.sol` full takeover-path recovery in hybrid
+  - `shadowing`, `incorrect-interface`, and honeypot families, which remain mostly meta-oriented or benchmark-specific

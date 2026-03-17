@@ -93,6 +93,89 @@ pub fn is_mutating_entrypoint(function: &Function, compiler: &CompilerInfo) -> b
     !matches!(function.mutability, Mutability::Pure | Mutability::View)
 }
 
+pub fn is_legacy_named_constructor(function: &Function, ast: &NormalizedAst) -> bool {
+    if function.kind == FunctionKind::Constructor {
+        return true;
+    }
+    let Some(name) = function.name.as_deref() else {
+        return false;
+    };
+    surrounding_contract_name(function, ast)
+        .or_else(|| {
+            function
+                .contract
+                .and_then(|contract_id| ast.contracts.get(contract_id as usize))
+                .map(|contract| contract.name.clone())
+        })
+        .map(|contract_name| name == contract_name)
+        .unwrap_or(false)
+}
+
+pub fn has_authority_modifier_hint(function: &Function, ast: &NormalizedAst) -> bool {
+    if function
+        .modifiers
+        .iter()
+        .any(|modifier| authority_modifier_token(modifier))
+    {
+        return true;
+    }
+
+    function_head_snippet(function, ast)
+        .map(signature_contains_authority_modifier)
+        .unwrap_or(false)
+}
+
+fn authority_modifier_token(name: &str) -> bool {
+    let lower = name.trim().to_ascii_lowercase();
+    lower.starts_with("only")
+        || matches!(
+            lower.as_str(),
+            "authorized"
+                | "auth"
+                | "restricted"
+                | "owneronly"
+                | "adminonly"
+                | "governanceonly"
+                | "operatoronly"
+        )
+}
+
+fn function_head_snippet<'a>(function: &Function, ast: &'a NormalizedAst) -> Option<&'a str> {
+    let file = ast.files.get(function.span.file as usize)?;
+    let start = function.span.start as usize;
+    let end = function.span.end as usize;
+    let snippet = file.source.get(start..end)?;
+    let head_end = snippet
+        .find('{')
+        .or_else(|| snippet.find(';'))
+        .unwrap_or(snippet.len());
+    snippet.get(..head_end)
+}
+
+fn signature_contains_authority_modifier(signature: &str) -> bool {
+    signature
+        .split(|ch: char| !(ch.is_ascii_alphanumeric() || ch == '_'))
+        .filter(|token| !token.is_empty())
+        .any(authority_modifier_token)
+}
+
+fn surrounding_contract_name(function: &Function, ast: &NormalizedAst) -> Option<String> {
+    let file = ast.files.get(function.span.file as usize)?;
+    let prefix = file.source.get(..function.span.start as usize)?;
+    let mut tokens = prefix
+        .split(|ch: char| !(ch.is_ascii_alphanumeric() || ch == '_'))
+        .filter(|token| !token.is_empty());
+    let mut last_name = None::<String>;
+    while let Some(token) = tokens.next() {
+        if matches!(token, "contract" | "library" | "interface") {
+            if let Some(name) = tokens.next() {
+                last_name = Some(name.to_string());
+            }
+        }
+    }
+    last_name
+}
+
 pub fn load_sources(root: &str) -> Result<Vec<SourceFile>> {
     let root = Path::new(root);
     let mut files = Vec::new();
@@ -182,9 +265,11 @@ fn infer_compiler_info(files: &[SourceFile]) -> CompilerInfo {
     let compiler_version = best_version.map(|(major, minor, patch)| {
         format!("{major}.{minor}.{patch}")
     });
+    // If pragma is missing entirely, prefer legacy entrypoint semantics so
+    // omitted visibilities are treated as externally callable (0.4-style).
     let legacy_omitted_visibility_is_public = best_version
         .map(|(major, minor, _)| major == 0 && minor < 5)
-        .unwrap_or(false);
+        .unwrap_or(true);
 
     CompilerInfo {
         compiler_name: "solidity".to_string(),
@@ -406,5 +491,17 @@ mod tests {
         let func = function(FunctionKind::Function, Visibility::Unknown, Mutability::NonPayable);
         assert_eq!(effective_visibility(&func, &info), Visibility::Unknown);
         assert!(!is_public_entrypoint(&func, &info));
+    }
+
+    #[test]
+    fn missing_pragma_defaults_unknown_visibility_to_public_for_legacy_compat() {
+        let info = infer_compiler_info(&[SourceFile {
+            id: 0,
+            path: "test.sol".to_string(),
+            source: "contract C { function f() {} }".to_string(),
+        }]);
+        let func = function(FunctionKind::Function, Visibility::Unknown, Mutability::NonPayable);
+        assert_eq!(effective_visibility(&func, &info), Visibility::Public);
+        assert!(is_public_entrypoint(&func, &info));
     }
 }
