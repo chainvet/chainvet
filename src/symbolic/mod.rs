@@ -879,11 +879,78 @@ pub fn run(output: &FrontendOutput, format: OutputFormat) -> Result<()> {
         .filter(|v| v.kind == VulnerabilityKind::DosWithFailedCall.as_str())
         .map(|v| v.function_id)
         .collect::<HashSet<_>>();
+    let runtime_tod_functions = vulnerabilities
+        .iter()
+        .filter(|v| v.kind == VulnerabilityKind::TransactionOrderDependency.as_str())
+        .map(|v| v.function_id)
+        .collect::<HashSet<_>>();
     let runtime_locked_ether_functions = vulnerabilities
         .iter()
         .filter(|v| v.kind == VulnerabilityKind::LockedEther.as_str())
         .map(|v| v.function_id)
         .collect::<HashSet<_>>();
+
+    for finding in static_findings
+        .iter()
+        .filter(|finding| finding.kind == analysis::detectors::FindingKind::TransactionOrderDependency)
+    {
+        let function_id = finding.function.unwrap_or(0);
+        if runtime_tod_functions.contains(&function_id) {
+            continue;
+        }
+        let Some(cfg_fn) = cfgs.iter().find(|cfg_fn| cfg_fn.id == function_id) else {
+            continue;
+        };
+        if !function_has_tod_runtime_evidence(
+            cfg_fn,
+            EngineCallbackData {
+                ast: &output.ast,
+                compiler: &output.compiler,
+                deps: &dependency_map,
+            },
+        ) {
+            continue;
+        }
+        let function_name = output
+            .ast
+            .functions
+            .get(function_id as usize)
+            .and_then(|f| f.name.clone());
+        let kind = VulnerabilityKind::TransactionOrderDependency
+            .as_str()
+            .to_string();
+        let dedup_key = (
+            function_id,
+            kind.clone(),
+            0usize,
+            "ir-guided-runtime-recovery".to_string(),
+        );
+        if seen_output_vulns.insert(dedup_key) {
+            vulnerabilities.push(VulnerabilityFinding {
+                kind,
+                confidence: VulnerabilityKind::TransactionOrderDependency
+                    .confidence()
+                    .as_str()
+                    .to_string(),
+                function_id,
+                function_name: function_name.clone(),
+                pc: 0,
+                instruction: "ir-guided-runtime-recovery".to_string(),
+                trace: Vec::new(),
+                trigger: None,
+                branch_triggers: Vec::new(),
+                location: build_location(&finding.span, output),
+                path_constraints: Vec::new(),
+                message:
+                    "runtime CFG shows an order-sensitive storage read followed by a value-moving external call; front-running/TOD risk"
+                        .to_string(),
+                model: None,
+            });
+            if let Some(entry) = by_function.iter_mut().find(|entry| entry.id == function_id) {
+                entry.vulnerability_count = entry.vulnerability_count.saturating_add(1);
+            }
+        }
+    }
 
     for finding in static_findings.iter().filter(|finding| {
         matches!(
@@ -897,6 +964,15 @@ pub fn run(output: &FrontendOutput, format: OutputFormat) -> Result<()> {
     }) {
         let function_id = finding.function.unwrap_or(0);
         if runtime_reentrancy_functions.contains(&function_id) {
+            continue;
+        }
+        let has_runtime_tod = vulnerabilities.iter().any(|v| {
+            v.function_id == function_id
+                && v.kind == VulnerabilityKind::TransactionOrderDependency.as_str()
+        });
+        if finding.kind == analysis::detectors::FindingKind::ReentrancyNoEthTransfer
+            && has_runtime_tod
+        {
             continue;
         }
         let function_name = output
@@ -1040,6 +1116,34 @@ pub fn run(output: &FrontendOutput, format: OutputFormat) -> Result<()> {
     }) {
         let function_id = finding.function.unwrap_or(0);
         if runtime_access_like_functions.contains(&function_id) {
+            continue;
+        }
+        let strong_authority_backstop = cfgs
+            .iter()
+            .find(|cfg_fn| cfg_fn.id == function_id)
+            .map(|cfg_fn| {
+                build_authority_runtime_profile(
+                    cfg_fn,
+                    Some(EngineCallbackData {
+                        ast: &output.ast,
+                        compiler: &output.compiler,
+                        deps: &dependency_map,
+                    }),
+                )
+            })
+            .map(|profile| {
+                profile.constructor_like
+                    || profile.wrong_constructor_candidate
+                    || profile.exclusive_authority_write
+            })
+            .unwrap_or(false);
+        let has_other_runtime_signal = vulnerabilities.iter().any(|v| {
+            v.function_id == function_id
+                && v.kind != VulnerabilityKind::AccessControl.as_str()
+                && v.kind != VulnerabilityKind::WrongConstructorName.as_str()
+                && v.kind != VulnerabilityKind::ArbitraryWrite.as_str()
+        });
+        if !strong_authority_backstop && has_other_runtime_signal {
             continue;
         }
         let function_name = output
@@ -2222,6 +2326,10 @@ fn engine(
                         });
                     }
                     let is_hardcoded_gas_transfer = is_send_ref || is_transfer_ref;
+                    let is_transfer_like_external_call =
+                        is_tod_transfer_like_call_expr(&callee_lower);
+                    let has_tod_sink_evidence =
+                        has_value || is_hardcoded_gas_transfer || is_transfer_like_external_call;
                     if is_hardcoded_gas_transfer
                         && seen_vulns
                             .insert((VulnerabilityKind::HardcodedGasTransfer, current_pc))
@@ -2306,7 +2414,7 @@ fn engine(
                     if allow_tod
                         && has_writer_reader_dependency
                         && state.saw_order_sensitive_storage_read
-                        && (has_value || is_hardcoded_gas_transfer)
+                        && has_tod_sink_evidence
                         && seen_vulns.insert((
                             VulnerabilityKind::TransactionOrderDependency,
                             current_pc,
@@ -2322,7 +2430,7 @@ fn engine(
                             span: Some(instr_span(instr)),
                             path_constraints: constraints_to_strings(&state.path_constraints),
                             message:
-                                "order-sensitive storage read combined with value transfer; front-running/TOD risk"
+                                "order-sensitive storage read combined with value-moving external call; front-running/TOD risk"
                                     .to_string(),
                             model: None,
                         });
@@ -3334,6 +3442,53 @@ fn function_has_writer_reader_dependency(function_id: u32, data: EngineCallbackD
     })
 }
 
+fn function_has_tod_runtime_evidence(
+    cfg_fn: &cfg::CfgFunction,
+    data: EngineCallbackData<'_>,
+) -> bool {
+    if !function_has_writer_reader_dependency(cfg_fn.id, data) {
+        return false;
+    }
+
+    let mut saw_order_sensitive_read = false;
+    let mut transfer_like_call_temps: HashSet<String> = HashSet::new();
+    let mut saw_transfer_like_call = false;
+
+    for block in &cfg_fn.blocks {
+        for instr in &block.instrs {
+            match instr {
+                IrInstr::Load { dest, src, .. } => {
+                    if is_storage_place(src) && place_is_order_sensitive(src) {
+                        saw_order_sensitive_read = true;
+                    }
+                    if let IrPlace::Member { field, .. } = src
+                        && is_tod_transfer_like_method_lower(&field.to_ascii_lowercase())
+                    {
+                        transfer_like_call_temps.insert(var_key(dest));
+                    }
+                }
+                IrInstr::Call {
+                    callee, options, ..
+                } => {
+                    let callee_lower = value_name_raw(callee).to_ascii_lowercase();
+                    let has_explicit_value = options
+                        .iter()
+                        .any(|option| matches!(option, crate::ir::IrCallOption::Value(_)));
+                    if has_explicit_value
+                        || is_tod_transfer_like_call_expr(&callee_lower)
+                        || transfer_like_call_temps.contains(&value_name_raw(callee))
+                    {
+                        saw_transfer_like_call = true;
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    saw_order_sensitive_read && saw_transfer_like_call
+}
+
 fn function_has_callback_overlap(function_id: u32, data: EngineCallbackData<'_>) -> bool {
     let Some(current_deps) = data.deps.functions.get(&function_id) else {
         return false;
@@ -3395,6 +3550,26 @@ fn is_send_name(callee_lower: &str) -> bool {
 
 fn is_transfer_name(callee_lower: &str) -> bool {
     callee_lower == "transfer" || callee_lower.ends_with(".transfer")
+}
+
+fn is_tod_transfer_like_method_lower(method_lower: &str) -> bool {
+    matches!(
+        method_lower,
+        "transferfrom" | "safetransferfrom" | "approve" | "approveandcall" | "safeapprove"
+    )
+}
+
+fn is_tod_transfer_like_call_expr(callee_lower: &str) -> bool {
+    callee_lower
+        .split(|c: char| !(c.is_ascii_alphanumeric() || c == '_' || c == '.'))
+        .filter(|token| !token.is_empty())
+        .any(|token| {
+            token
+                .rsplit('.')
+                .next()
+                .map(is_tod_transfer_like_method_lower)
+                .unwrap_or(false)
+        })
 }
 
 fn is_weak_prng_arithmetic_op(op: &str) -> bool {
@@ -4663,6 +4838,55 @@ mod tests {
                 .vulnerabilities
                 .iter()
                 .map(|v| v.kind.as_str())
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn race_condition_fixture_emits_runtime_tod() {
+        let output = frontend::load_project(
+            "Benchmarks/Not-so-smart/not-so-smart-contracts-master/race_condition/RaceCondition.sol",
+        )
+        .expect("RaceCondition fixture should load");
+        let ir_module = ir::lower_module(&output.ast);
+        let dependency_map = build_dependency_map(&ir_module, &output.ast);
+        let cfgs = cfg::build_from_ir(&ir_module);
+        let buy_function_id = output
+            .ast
+            .functions
+            .iter()
+            .find(|function| function.name.as_deref() == Some("buy"))
+            .map(|function| function.id)
+            .expect("buy function");
+        let cfg = cfgs
+            .iter()
+            .find(|cfg| cfg.id == buy_function_id)
+            .expect("buy cfg");
+
+        let stats = engine(
+            cfg,
+            &cfgs,
+            Some(EngineCallbackData {
+                ast: &output.ast,
+                compiler: &output.compiler,
+                deps: &dependency_map,
+            }),
+            has_checked_arithmetic(&output.ast),
+            true,
+            true,
+            false,
+        );
+
+        assert!(
+            stats
+                .vulnerabilities
+                .iter()
+                .any(|v| matches!(v.kind, VulnerabilityKind::TransactionOrderDependency)),
+            "expected runtime TOD on RaceCondition::buy, saw: {:?}",
+            stats
+                .vulnerabilities
+                .iter()
+                .map(|v| (v.kind.as_str(), v.message.as_str()))
                 .collect::<Vec<_>>()
         );
     }

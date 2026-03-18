@@ -1029,6 +1029,22 @@ Validation commands:
 
 Status: `in_progress (native runtime recall recovery on the remaining high-value misses)`
 
+Focused Step 27 progress on 2026-03-18:
+
+1. Delivered
+   - symbolic TOD runtime detection now treats transfer-like external member calls such as `token.transferFrom(...)` as valid sink evidence when the function already has writer/reader overlap and an order-sensitive storage read.
+   - symbolic report assembly now has a narrow CFG-backed TOD recovery path, so `RaceCondition.sol` no longer stays meta-only when the engine/runtime evidence is present but not surfaced in the CLI report.
+   - symbolic `access-control` static backstops now stay suppressed when the same function already has a stronger non-authority runtime explanation and the function is not a strong authority-takeover profile.
+2. Focused validation
+   - `cargo build --quiet`
+   - `cargo test --quiet race_condition_fixture_emits_runtime_tod -- --nocapture`
+   - `cargo run --quiet -- --symbolic Benchmarks/Not-so-smart/not-so-smart-contracts-master/race_condition/RaceCondition.sol --json`
+3. Observed result
+   - `RaceCondition.sol` now emits runtime `transaction-order-dependency` in symbolic mode.
+   - the generic symbolic runtime `access-control` and `reentrancy` backstops on `RaceCondition.buy()` are removed.
+   - `RaceCondition.buy()` now surfaces only the recovered runtime TOD in symbolic mode for this family.
+   - no full benchmark rerun yet for this batch.
+
 Priority remaining blockers after Step 26:
 
 1. Recover native `timestamp-dependency` on `theRun.sol` instead of relying on only `weak-prng`.
