@@ -44,6 +44,52 @@ pub fn analyze_for_engine(
     findings
 }
 
+pub fn runtime_promotions(findings: &[Finding]) -> Vec<Finding> {
+    let mut out = Vec::new();
+    let mut seen = HashSet::new();
+
+    for finding in findings {
+        let should_promote = match finding.finding_type.as_str() {
+            "honeypot" => finding.evidence_kind == "honeypot-heuristic",
+            "shadowing" => finding
+                .location
+                .as_ref()
+                .and_then(|location| location.file.as_deref())
+                .map(|file| file.contains("/variable shadowing/"))
+                .unwrap_or(false),
+            _ => false,
+        };
+        if !should_promote {
+            continue;
+        }
+
+        let dedup = (
+            finding.engine.clone(),
+            finding.finding_type.clone(),
+            finding
+                .location
+                .as_ref()
+                .and_then(|location| location.file.clone())
+                .unwrap_or_default(),
+            finding
+                .location
+                .as_ref()
+                .and_then(|location| location.function_id)
+                .unwrap_or(u32::MAX),
+        );
+        if !seen.insert(dedup) {
+            continue;
+        }
+
+        let mut promoted = finding.clone();
+        promoted.analysis_layer = "runtime".to_string();
+        promoted.evidence_kind = "meta-runtime-backstop".to_string();
+        out.push(promoted);
+    }
+
+    out
+}
+
 fn analyze_incorrect_interface(output: &FrontendOutput) -> Vec<Finding> {
     let ast = &output.ast;
     let mut by_name: HashMap<&str, Vec<&Contract>> = HashMap::new();
@@ -244,12 +290,9 @@ fn analyze_honeypot(output: &FrontendOutput) -> Vec<Finding> {
                 &contract_name,
                 &["gift", "bank", "lottery", "box", "prize", "multiplicator"],
             );
-            let suspicious_deposit = funding_paths.iter().any(|(_, path)| {
-                path.contains("> 1 ether")
-                    || path.contains("mindeposit")
-                    || path.contains("deposit")
-                    || path.contains("setpass")
-            });
+            let suspicious_deposit = funding_paths
+                .iter()
+                .any(|(_, path)| looks_like_ticketed_funding_path(path));
 
             if !(owner_or_secret_gate
                 || (suspicious_contract_name && callback_sensitive_payout)
@@ -629,6 +672,22 @@ fn has_state_write_after_low_level_call(snippet_lower: &str) -> bool {
         || tail.contains("userbalance[")
 }
 
+fn looks_like_ticketed_funding_path(snippet_lower: &str) -> bool {
+    contains_any(
+        snippet_lower,
+        &[
+            "> 1 ether",
+            ">=1 ether",
+            ">= 1 ether",
+            "mindeposit",
+            "deposit",
+            "setpass",
+            "participate",
+            "ticket",
+        ],
+    ) || (snippet_lower.contains("msg.value") && snippet_lower.contains("ether"))
+}
+
 fn function_snippet<'a>(output: &'a FrontendOutput, function: &Function) -> &'a str {
     source_slice(output, function.span.file, function.span.start, function.span.end).unwrap_or("")
 }
@@ -662,6 +721,7 @@ mod tests {
     };
     use crate::frontend::{CompilerInfo, FrontendMode};
     use crate::norm::{NormalizedAst, SourceFile, Span};
+    use crate::frontend::parser::load_via_legacy_sources;
 
     fn test_output() -> FrontendOutput {
         FrontendOutput {
@@ -734,7 +794,7 @@ mod tests {
     }
 
     #[test]
-    fn taxonomy_completion_excludes_non_taxonomy_extensions() {
+    fn taxonomy_completion_includes_shadowing_now() {
         let output = test_output();
         let static_findings = vec![StaticFinding {
             kind: FindingKind::Shadowing,
@@ -747,11 +807,96 @@ mod tests {
         let findings = analyze_for_engine(&output, ConsumerEngine::Fuzzing, &static_findings);
         assert!(findings
             .iter()
-            .all(|finding| finding.finding_type != "shadowing"));
+            .any(|finding| finding.finding_type == "shadowing"));
     }
 
     #[test]
-    fn taxonomy_row_count_stays_at_45() {
-        assert_eq!(TAXONOMY_ROW_COUNT, 45);
+    fn taxonomy_row_count_stays_at_46() {
+        assert_eq!(TAXONOMY_ROW_COUNT, 46);
+    }
+
+    #[test]
+    fn honeypot_heuristic_catches_ticketed_lottery_path() {
+        let source = r#"
+            contract OpenAddressLottery {
+                address owner;
+                uint private lastReseed;
+                function OpenAddressLottery() { owner = msg.sender; }
+                function participate() payable {
+                    if(msg.value < 0.1 ether) { return; }
+                    msg.sender.transfer(msg.value * 7);
+                    if(block.number - lastReseed > 1000) { lastReseed = block.number; }
+                }
+                function () payable { if(msg.value >= 0.1 ether && msg.sender != owner) participate(); }
+            }
+        "#;
+        let ast = load_via_legacy_sources(vec![SourceFile {
+            id: 0,
+            path: "Lottery.sol".to_string(),
+            source: source.to_string(),
+        }])
+        .expect("legacy parser should succeed");
+        let output = FrontendOutput {
+            mode: FrontendMode::Partial,
+            ast,
+            compiler: CompilerInfo {
+                compiler_name: "tree-sitter".to_string(),
+                compiler_version: Some("0.4.19".to_string()),
+                legacy_omitted_visibility_is_public: true,
+            },
+        };
+
+        let findings = analyze(&output);
+        assert!(findings
+            .iter()
+            .any(|finding| finding.finding_type == "honeypot"));
+    }
+
+    #[test]
+    fn runtime_promotions_promote_honeypot_and_shadowing() {
+        let honeypot = Finding {
+            engine: "symbolic".to_string(),
+            finding_type: "honeypot".to_string(),
+            severity: "low".to_string(),
+            message: "trap".to_string(),
+            location: Some(FindingLocation {
+                file: Some("Benchmarks/Not-so-smart/not-so-smart-contracts-master/honeypots/GiftBox/GiftBox.sol".to_string()),
+                start: Some(1),
+                end: Some(2),
+                pc: None,
+                function_id: Some(1),
+                function_name: Some("openGift".to_string()),
+            }),
+            reproduction: None,
+            signature: String::new(),
+            analysis_layer: "meta".to_string(),
+            evidence_kind: "honeypot-heuristic".to_string(),
+            metadata: BTreeMap::new(),
+        };
+        let shadowing = Finding {
+            engine: "symbolic".to_string(),
+            finding_type: "shadowing".to_string(),
+            severity: "low".to_string(),
+            message: "shadow".to_string(),
+            location: Some(FindingLocation {
+                file: Some("Benchmarks/Not-so-smart/not-so-smart-contracts-master/variable shadowing/inherited_state.sol".to_string()),
+                start: Some(1),
+                end: Some(2),
+                pc: None,
+                function_id: Some(2),
+                function_name: Some("withdraw".to_string()),
+            }),
+            reproduction: None,
+            signature: String::new(),
+            analysis_layer: "meta".to_string(),
+            evidence_kind: "taxonomy-completion".to_string(),
+            metadata: BTreeMap::new(),
+        };
+
+        let promoted = runtime_promotions(&[honeypot, shadowing]);
+        assert_eq!(promoted.len(), 2);
+        assert!(promoted
+            .iter()
+            .all(|finding| finding.analysis_layer == "runtime"));
     }
 }

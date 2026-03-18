@@ -32,10 +32,15 @@ impl FunctionAbi {
             FunctionKind::Function => {
                 matches!(self.visibility, Visibility::Public | Visibility::External)
             }
-            FunctionKind::Fallback | FunctionKind::Receive => {
-                self.is_payable && self.params.is_empty()
+            FunctionKind::Fallback => self.params.is_empty(),
+            FunctionKind::Receive => self.is_payable && self.params.is_empty(),
+            FunctionKind::Unknown => {
+                // Be permissive on unknown legacy signatures so the engine can still
+                // exercise candidate entrypoints instead of silently producing corpus:0.
+                self.params.is_empty()
+                    || matches!(self.visibility, Visibility::Public | Visibility::External)
             }
-            FunctionKind::Constructor | FunctionKind::Unknown => false,
+            FunctionKind::Constructor => false,
         }
     }
 }
@@ -54,13 +59,11 @@ pub fn extract_abis(ast: &NormalizedAst, compiler: &CompilerInfo) -> Vec<Contrac
                 continue;
             };
             let name = func.name.clone().unwrap_or_default();
-            if name.is_empty() && func.kind == FunctionKind::Function {
-                continue;
-            }
             let display_name = match func.kind {
                 FunctionKind::Constructor => "<constructor>".to_string(),
                 FunctionKind::Fallback => "<fallback>".to_string(),
                 FunctionKind::Receive => "<receive>".to_string(),
+                FunctionKind::Function if name.is_empty() => "<fallback-legacy>".to_string(),
                 _ => name,
             };
             let params: Vec<ParamInfo> = func
@@ -345,6 +348,7 @@ pub enum TraceEventKind {
         callee: String,
         has_value: bool,
         reentrant_capable: bool,
+        low_level: bool,
     },
     ReentrantCallback {
         into_function_id: u32,
@@ -355,6 +359,8 @@ pub enum TraceEventKind {
     /// Generic condition check (e.g., require/assert)
     ConditionChecked,
     BranchOnTimestamp,
+    /// Arithmetic expression mixes timestamp-derived data into a randomness-style value.
+    TimestampArithmetic,
     ArithmeticOp {
         op: String,
         lhs: u128,
@@ -393,6 +399,8 @@ pub enum TraceEventKind {
     },
     /// block.number or blockhash used (PRNG / randomness source)
     BlockNumberUsed,
+    /// assert/require condition depends on this.balance/address(this).balance
+    BalanceInvariantCheck,
     /// ecrecover called
     EcrecoverCalled,
     /// ecrecover result compared against zero-address sentinel
@@ -404,6 +412,11 @@ pub enum TraceEventKind {
     /// send() return value used directly in require/assert condition.
     UnsafeSendInRequire {
         callee: String,
+    },
+    /// Publicly callable, constructor-like function wrote an authority slot from msg.sender.
+    WrongConstructorCandidate {
+        function_name: String,
+        slot_key: String,
     },
     /// Division followed by multiplication pattern
     DivisionBeforeMultiplication {
@@ -441,6 +454,7 @@ pub struct FuzzFinding {
 pub enum FuzzFindingKind {
     // --- Access Control ---
     Reentrancy,
+    ReentrancyHeuristic,
     UncheckedCall,
     ExceptionDisorder,
     AccessControl,
@@ -449,6 +463,7 @@ pub enum FuzzFindingKind {
     UnsafeDelegatecall,
     DefaultVisibility,
     UninitializedPermissionCheck,
+    WrongConstructorName,
     UnprotectedEtherWithdrawal,
     ArbitraryWrite,
     // --- Arithmetic ---
@@ -464,6 +479,7 @@ pub enum FuzzFindingKind {
     SignatureMalleability,
     // --- Denial of Service ---
     DenialOfService,
+    DosBlockGasLimit,
     HardcodedGas,
     LockedEther,
     UnsafeSendInRequire,
@@ -472,6 +488,7 @@ pub enum FuzzFindingKind {
     StorageMemoryIssue,
     PublicMintBurn,
     // --- Project extensions ---
+    Honeypot,
     Shadowing,
     // --- Other ---
     InvariantViolation,
@@ -481,6 +498,7 @@ impl FuzzFindingKind {
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::Reentrancy => "reentrancy",
+            Self::ReentrancyHeuristic => "reentrancy-heuristic",
             Self::TimestampDependency => "timestamp-dependency",
             Self::UncheckedCall => "unchecked-call",
             Self::ExceptionDisorder => "exception-disorder",
@@ -492,9 +510,11 @@ impl FuzzFindingKind {
             Self::TxOriginAuth => "tx-origin-auth",
             Self::SelfDestruct => "unprotected-selfdestruct",
             Self::DenialOfService => "denial-of-service",
+            Self::DosBlockGasLimit => "dos-block-gas-limit",
             Self::UnsafeDelegatecall => "unsafe-delegatecall",
             Self::DefaultVisibility => "default-visibility",
             Self::UninitializedPermissionCheck => "uninit-permission-check",
+            Self::WrongConstructorName => "wrong-constructor-name",
             Self::UnprotectedEtherWithdrawal => "unprotected-ether-withdrawal",
             Self::ArbitraryWrite => "arbitrary-write",
             Self::WeakPRNG => "weak-prng",
@@ -507,6 +527,7 @@ impl FuzzFindingKind {
             Self::DosWithFailedCall => "dos-with-failed-call",
             Self::StorageMemoryIssue => "storage-memory-issue",
             Self::PublicMintBurn => "public-mint-burn",
+            Self::Honeypot => "honeypot",
             Self::Shadowing => "shadowing",
         }
     }
@@ -517,6 +538,7 @@ impl FuzzFindingKind {
             Self::TxOriginAuth => "tx-origin",
             Self::HardcodedGas => "hardcoded-gas-transfer",
             Self::StorageMemoryIssue => "memory-manipulation",
+            Self::ReentrancyHeuristic => "reentrancy",
             _ => self.as_str(),
         }
     }
@@ -529,6 +551,7 @@ impl FuzzFindingKind {
             | Self::SelfDestruct
             | Self::UnsafeDelegatecall
             | Self::UninitializedPermissionCheck
+            | Self::WrongConstructorName
             | Self::UnprotectedEtherWithdrawal
             | Self::ArbitraryWrite
             | Self::UnsafeSendInRequire => FuzzConfidence::High,
@@ -539,10 +562,12 @@ impl FuzzFindingKind {
             | Self::IntegerOverflow
             | Self::IntegerUnderflow
             | Self::DivisionBeforeMultiplication
+            | Self::DosBlockGasLimit
             | Self::HardcodedGas
             | Self::StorageMemoryIssue
             | Self::DosWithFailedCall
             | Self::PublicMintBurn
+            | Self::Honeypot
             | Self::Shadowing => FuzzConfidence::Medium,
 
             Self::ExceptionDisorder
@@ -552,6 +577,7 @@ impl FuzzFindingKind {
             | Self::LockedEther
             | Self::CryptographicIssue
             | Self::SignatureMalleability
+            | Self::ReentrancyHeuristic
             | Self::InvariantViolation => FuzzConfidence::Low,
         }
     }
@@ -566,6 +592,7 @@ impl FuzzFindingKind {
             | Self::UnsafeDelegatecall
             | Self::DefaultVisibility
             | Self::UninitializedPermissionCheck
+            | Self::WrongConstructorName
             | Self::UnprotectedEtherWithdrawal
             | Self::ArbitraryWrite => "Access Control",
 
@@ -580,15 +607,17 @@ impl FuzzFindingKind {
             Self::CryptographicIssue | Self::SignatureMalleability => "Cryptographic",
 
             Self::DenialOfService
+            | Self::DosBlockGasLimit
             | Self::HardcodedGas
             | Self::LockedEther
             | Self::UnsafeSendInRequire
             | Self::DosWithFailedCall => "Denial of Service",
 
-            Self::Reentrancy => "Reentrancy",
+            Self::Reentrancy | Self::ReentrancyHeuristic => "Reentrancy",
 
             Self::StorageMemoryIssue => "Storage and Memory",
             Self::PublicMintBurn => "Access Control",
+            Self::Honeypot => "Miscellaneous",
             Self::Shadowing => "Storage and Memory",
 
             Self::ExceptionDisorder | Self::InvariantViolation => "Access Control",
@@ -746,6 +775,27 @@ mod tests {
                 legacy_omitted_visibility_is_public: true,
             },
         );
+        assert!(abis[0].functions[0].is_fuzz_callable());
+    }
+
+    #[test]
+    fn legacy_unnamed_payable_function_is_kept_callable() {
+        let mut ast = make_ast();
+        ast.functions[0].name = None;
+        ast.functions[0].kind = FunctionKind::Function;
+        ast.functions[0].mutability = Mutability::Payable;
+        ast.functions[0].params.clear();
+        ast.functions[0].visibility = Visibility::Unknown;
+
+        let abis = extract_abis(
+            &ast,
+            &CompilerInfo {
+                compiler_name: "test".to_string(),
+                compiler_version: Some("0.4.15".to_string()),
+                legacy_omitted_visibility_is_public: true,
+            },
+        );
+        assert_eq!(abis[0].functions[0].name, "<fallback-legacy>");
         assert!(abis[0].functions[0].is_fuzz_callable());
     }
 

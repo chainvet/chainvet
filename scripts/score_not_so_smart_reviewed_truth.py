@@ -90,7 +90,7 @@ def counts_from_static_json(path: Path) -> Counter[str]:
     if not data:
         return Counter()
     out: Counter[str] = Counter()
-    for finding in data.get("findings", []):
+    for finding in data.get("findings_raw", data.get("findings", [])):
         kind = normalize_kind(str(finding.get("kind", "")))
         if kind:
             out[kind] += 1
@@ -103,11 +103,11 @@ def counts_from_symbolic_json(path: Path) -> Tuple[Counter[str], Counter[str]]:
         return Counter(), Counter()
     runtime: Counter[str] = Counter()
     meta: Counter[str] = Counter()
-    for vuln in data.get("vulnerabilities", []):
+    for vuln in data.get("vulnerabilities_raw", data.get("vulnerabilities", [])):
         kind = normalize_kind(str(vuln.get("kind", "")))
         if kind:
             runtime[kind] += 1
-    for finding in data.get("meta_findings", []):
+    for finding in data.get("meta_findings_raw", data.get("meta_findings", [])):
         kind = normalize_kind(str(finding.get("finding_type", "")))
         if kind:
             meta[kind] += 1
@@ -140,6 +140,12 @@ def counts_from_fuzzing_out(path: Path) -> Tuple[Counter[str], Counter[str]]:
     in_meta = False
     for raw_line in path.read_text(encoding="utf-8", errors="replace").splitlines():
         line = raw_line.strip()
+        if line.startswith("runtime_types_raw:"):
+            runtime = parse_counted_types(line.split(":", 1)[1].strip(), ";")
+            continue
+        if line.startswith("meta_types_raw:"):
+            meta = parse_counted_types(line.split(":", 1)[1].strip(), ";")
+            continue
         if "[Meta]" in line:
             in_meta = True
             continue

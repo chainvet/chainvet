@@ -36,15 +36,24 @@ impl SolcManager {
     }
 
     pub fn prepare(&self, sources: &[SourceFile]) -> Result<PathBuf> {
+        let reqs = collect_version_reqs(sources);
+
         if let Ok(path) = env::var(SOLC_PATH_ENV) {
             return Ok(PathBuf::from(path));
         }
 
         if let Some(path) = solc_in_path() {
-            return Ok(path);
+            let path_version = detect_solc_version(&path);
+            let path_satisfies_reqs = reqs.is_empty()
+                || path_version
+                    .as_ref()
+                    .map(|version| reqs.iter().all(|req| req.matches(version)))
+                    .unwrap_or(false);
+            if path_satisfies_reqs {
+                return Ok(path);
+            }
         }
 
-        let reqs = collect_version_reqs(sources);
         if let Some(cached) = self.find_cached_solc(&reqs)? {
             return Ok(cached);
         }
@@ -58,8 +67,15 @@ impl SolcManager {
                 self.ensure_solc(&version, &list)
             }
             Err(err) => {
-                if let Some(local) = find_local_solc_binary(&[], self.platform, Some(&self.cache_dir)) {
+                if let Some(local) = find_local_solc_binary(&reqs, self.platform, Some(&self.cache_dir)) {
                     return Ok(local);
+                }
+                if reqs.is_empty() {
+                    if let Some(local) =
+                        find_local_solc_binary(&[], self.platform, Some(&self.cache_dir))
+                    {
+                        return Ok(local);
+                    }
                 }
                 Err(Error::msg(format!(
                     "{err}; set {SOLC_PATH_ENV}=<solc-binary>, set {SOLC_SEARCH_PATHS_ENV}, or pre-populate cache at {}",
@@ -391,7 +407,35 @@ fn collect_version_reqs(sources: &[SourceFile]) -> Vec<VersionReq> {
             }
         }
     }
+    if reqs.is_empty() && has_legacy_solidity_markers(sources) {
+        // For legacy benchmark contracts with no pragma (0.4-era syntax), defaulting to
+        // latest solc causes parser errors and forces frontend partial mode.
+        // Bound selection to legacy compiler range so full-mode compilation remains possible.
+        if let Some(req) = VersionReq::parse("<=0.4.26") {
+            reqs.push(req);
+        }
+    }
     reqs
+}
+
+fn has_legacy_solidity_markers(sources: &[SourceFile]) -> bool {
+    sources
+        .iter()
+        .any(|source| source_has_legacy_solidity_markers(&source.source))
+}
+
+fn source_has_legacy_solidity_markers(source: &str) -> bool {
+    let lower = source.to_ascii_lowercase();
+    // 0.4-era anonymous fallback syntax:
+    //   function() { ... }
+    if lower.contains("function()") {
+        return true;
+    }
+    // 0.4-era throw statement removed in modern Solidity.
+    if lower.contains("throw;") {
+        return true;
+    }
+    false
 }
 
 fn extract_pragmas(source: &str) -> Vec<String> {
@@ -777,4 +821,60 @@ fn version_hint_components(path: &Path) -> Vec<String> {
         }
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::norm::SourceFile;
+
+    fn mk_source(id: u32, body: &str) -> SourceFile {
+        SourceFile {
+            id,
+            path: format!("C{id}.sol"),
+            source: body.to_string(),
+        }
+    }
+
+    #[test]
+    fn legacy_markers_detect_function_style_fallback_without_pragma() {
+        let src = r#"
+contract C {
+    function() {
+    }
+}
+"#;
+        let reqs = collect_version_reqs(&[mk_source(0, src)]);
+        assert!(!reqs.is_empty());
+        let v = SolcVersion {
+            major: 0,
+            minor: 4,
+            patch: 26,
+        };
+        assert!(reqs.iter().all(|req| req.matches(&v)));
+    }
+
+    #[test]
+    fn pragma_still_controls_version_selection_when_present() {
+        let src = r#"
+pragma solidity ^0.8.20;
+contract C {
+    function f() external {}
+}
+"#;
+        let reqs = collect_version_reqs(&[mk_source(0, src)]);
+        assert!(!reqs.is_empty());
+        let modern = SolcVersion {
+            major: 0,
+            minor: 8,
+            patch: 21,
+        };
+        let legacy = SolcVersion {
+            major: 0,
+            minor: 4,
+            patch: 26,
+        };
+        assert!(reqs.iter().all(|req| req.matches(&modern)));
+        assert!(!reqs.iter().all(|req| req.matches(&legacy)));
+    }
 }

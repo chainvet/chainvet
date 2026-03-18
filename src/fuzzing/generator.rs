@@ -63,7 +63,20 @@ fn random_sender(rng: &mut impl Rng, pool_size: usize) -> usize {
 }
 
 /// Generate a random Ether value for payable functions.
-fn random_value_amount(rng: &mut impl Rng) -> u128 {
+fn random_value_amount_with_dict(rng: &mut impl Rng, dict: Option<&Dictionary>) -> u128 {
+    if let Some(dict) = dict {
+        if !dict.values.is_empty() && rng.gen_bool(0.35) {
+            let candidates = dict
+                .values
+                .iter()
+                .copied()
+                .filter(|v| *v > 0)
+                .collect::<Vec<_>>();
+            if !candidates.is_empty() {
+                return candidates[rng.gen_range(0..candidates.len())];
+            }
+        }
+    }
     let strategy: u32 = rng.gen_range(0..5);
     match strategy {
         0 => 0,
@@ -72,6 +85,17 @@ fn random_value_amount(rng: &mut impl Rng) -> u128 {
         3 => rng.gen_range(1_000_000..1_000_000_000_000_000_000),
         _ => u128::MAX,
     }
+}
+
+fn high_payable_seed_value(dict: Option<&Dictionary>) -> u128 {
+    dict.and_then(|d| d.values.iter().copied().max())
+        .filter(|v| *v > 0)
+        .unwrap_or(u128::MAX)
+}
+
+fn bootstrap_payable_value(rng: &mut impl Rng, dict: Option<&Dictionary>) -> u128 {
+    let value = random_value_amount_with_dict(rng, dict);
+    if value == 0 { 1 } else { value }
 }
 
 /// Generate a single random transaction targeting a function from the ABI.
@@ -107,7 +131,7 @@ pub(crate) fn random_transaction_with_dict(
         .map(|_p| random_value_with_dict(rng, dict))
         .collect();
     let value = if func.is_payable {
-        random_value_amount(rng)
+        random_value_amount_with_dict(rng, dict)
     } else {
         0
     };
@@ -171,7 +195,7 @@ fn dependency_aware_sequence(
                         args,
                         sender: random_sender(rng, config.address_pool_size),
                         value: if func.is_payable {
-                            random_value_amount(rng)
+                            random_value_amount_with_dict(rng, dict)
                         } else {
                             0
                         },
@@ -191,7 +215,7 @@ fn dependency_aware_sequence(
                         args,
                         sender: random_sender(rng, config.address_pool_size),
                         value: if func.is_payable {
-                            random_value_amount(rng)
+                            random_value_amount_with_dict(rng, dict)
                         } else {
                             0
                         },
@@ -307,9 +331,78 @@ pub fn generate_initial_population_with_dict(
         None => <rand::rngs::StdRng as rand::SeedableRng>::from_entropy(),
     };
 
-    let mut population = Vec::with_capacity(config.population_size);
+    let callable_functions: Vec<_> = abi
+        .functions
+        .iter()
+        .filter(|f| f.is_fuzz_callable())
+        .collect();
+    let target_population_size = config.population_size.max(callable_functions.len());
+    let mut population = Vec::with_capacity(target_population_size);
 
-    for i in 0..config.population_size {
+    // Deterministic bootstrap to avoid empty/low-coverage starts on legacy benchmarks.
+    // Guarantee at least one initial seed per callable function before using the
+    // remaining budget for attacker-role and random/dependency-aware seeds.
+    let attacker_sender = if config.address_pool_size > 1 { 1 } else { 0 };
+    for func in &callable_functions {
+        let args: Vec<FuzzValue> = func
+            .params
+            .iter()
+            .map(|_| random_value_with_dict(&mut rng, dict))
+            .collect();
+        let value = if func.is_payable {
+            bootstrap_payable_value(&mut rng, dict)
+        } else {
+            0
+        };
+        population.push(Individual {
+            transactions: vec![Transaction {
+                function_id: func.id,
+                args: args.clone(),
+                sender: 0,
+                value,
+            }],
+            environment: Environment {
+                block_timestamp: rng.gen_range(1_000_000_000..2_000_000_000),
+                block_number: rng.gen_range(1..20_000_000),
+                address_pool_size: config.address_pool_size,
+            },
+            energy: 1.0,
+        });
+    }
+
+    for func in &callable_functions {
+        if population.len() >= target_population_size {
+            break;
+        }
+        let args: Vec<FuzzValue> = func
+            .params
+            .iter()
+            .map(|_| random_value_with_dict(&mut rng, dict))
+            .collect();
+        population.push(Individual {
+            transactions: vec![Transaction {
+                function_id: func.id,
+                args,
+                sender: attacker_sender,
+                value: if func.is_payable {
+                    high_payable_seed_value(dict)
+                } else {
+                    0
+                },
+            }],
+            environment: Environment {
+                block_timestamp: rng.gen_range(1_000_000_000..2_000_000_000),
+                block_number: rng.gen_range(1..20_000_000),
+                address_pool_size: config.address_pool_size,
+            },
+            energy: 1.0,
+        });
+    }
+
+    for i in 0..target_population_size {
+        if population.len() >= target_population_size {
+            break;
+        }
         let seq_len = rng.gen_range(1..=config.max_sequence_length);
         // Half the population is dependency-aware, half is random
         let txs = if i % 2 == 0 {
@@ -437,12 +530,54 @@ mod tests {
             ..Default::default()
         };
         let pop = generate_initial_population(&abi, &deps, &config);
-        // At least some payable transactions should have non-zero value
-        let has_value = pop
+        let first_payable = pop
             .iter()
             .flat_map(|i| &i.transactions)
-            .any(|tx| tx.function_id == 0 && tx.value > 0);
-        assert!(has_value, "expected at least one payable tx with value > 0");
+            .find(|tx| tx.function_id == 0)
+            .expect("payable seed");
+        assert!(
+            first_payable.value > 0,
+            "expected first payable bootstrap tx to carry value"
+        );
+    }
+
+    #[test]
+    fn bootstrap_covers_all_callable_functions_even_when_population_size_is_small() {
+        let abi = ContractAbi {
+            contract_name: "Many".to_string(),
+            functions: (0..4)
+                .map(|id| FunctionAbi {
+                    id,
+                    name: format!("f{id}"),
+                    params: Vec::new(),
+                    visibility: Visibility::External,
+                    mutability: Mutability::NonPayable,
+                    kind: FunctionKind::Function,
+                    is_payable: false,
+                })
+                .collect(),
+        };
+        let deps = DependencyMap::default();
+        let config = FuzzConfig {
+            population_size: 2,
+            seed: Some(11),
+            ..Default::default()
+        };
+
+        let pop = generate_initial_population(&abi, &deps, &config);
+        let covered: std::collections::HashSet<u32> = pop
+            .iter()
+            .flat_map(|ind| ind.transactions.iter().map(|tx| tx.function_id))
+            .collect();
+
+        assert_eq!(covered.len(), 4, "every callable function should be bootstrapped");
+        for expected in 0..4 {
+            assert!(covered.contains(&expected), "missing bootstrap seed for f{expected}");
+        }
+        assert!(
+            pop.len() >= 4,
+            "bootstrap may exceed configured population_size to avoid zero-seed callables"
+        );
     }
 
     #[test]

@@ -135,7 +135,7 @@ def kinds_from_static_json(path: Path) -> Set[str]:
     if not data:
         return set()
     out = set()
-    for finding in data.get("findings", []):
+    for finding in data.get("findings_raw", data.get("findings", [])):
         kind = normalize_kind(str(finding.get("kind", "")))
         if kind:
             out.add(kind)
@@ -148,12 +148,12 @@ def kinds_from_symbolic_json(path: Path) -> Tuple[Set[str], Set[str]]:
         return set(), set()
     runtime = {
         normalize_kind(str(item.get("kind", "")))
-        for item in data.get("vulnerabilities", [])
+        for item in data.get("vulnerabilities_raw", data.get("vulnerabilities", []))
     }
     runtime.discard("")
     meta = {
         normalize_kind(str(item.get("finding_type", "")))
-        for item in data.get("meta_findings", [])
+        for item in data.get("meta_findings_raw", data.get("meta_findings", []))
     }
     meta.discard("")
     return runtime, meta
@@ -185,6 +185,12 @@ def kinds_from_fuzzing_out(path: Path) -> Tuple[Set[str], Set[str]]:
     in_meta = False
     for raw_line in path.read_text(encoding="utf-8", errors="replace").splitlines():
         line = raw_line.strip()
+        if line.startswith("runtime_types_raw:"):
+            runtime = parse_types(line.split(":", 1)[1].strip(), ";")
+            continue
+        if line.startswith("meta_types_raw:"):
+            meta = parse_types(line.split(":", 1)[1].strip(), ";")
+            continue
         if "[Meta]" in line:
             in_meta = True
             continue

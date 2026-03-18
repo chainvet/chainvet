@@ -97,7 +97,7 @@ extract_static_kinds() {
 extract_symbolic_kinds() {
   local out_file="$1"
   RUSTFLAGS="${RUSTFLAGS:--A dead_code -A unused}" cargo run -- --symbolic "$CONTRACT_PATH" --json > "$TMP_DIR/symbolic.json"
-  jq -r '((.vulnerabilities[]?.kind), (.meta_findings[]?.finding_type))' "$TMP_DIR/symbolic.json" \
+  jq -r '(.vulnerabilities[]?.kind)' "$TMP_DIR/symbolic.json" \
     | sort -u > "$out_file"
 }
 
@@ -107,8 +107,6 @@ extract_fuzzing_kinds() {
   {
     rg -o "\[[a-z0-9-]+\] \[[a-z]+\]" "$TMP_DIR/fuzzing.txt" \
       | sed -E 's/^\[([^]]+)\].*/\1/' || true
-    rg -o "kind=[a-z0-9-]+" "$TMP_DIR/fuzzing.txt" \
-      | sed -E 's/^kind=//' || true
   } | sort -u > "$out_file"
 }
 
@@ -127,7 +125,7 @@ extract_hybrid_kinds() {
     exit 1
   fi
 
-  jq -r '.[].finding_type' "$run_dir/findings.json" | sort -u > "$out_file"
+  jq -r '.[] | select((.analysis_layer // "runtime") == "runtime") | .finding_type' "$run_dir/findings.json" | sort -u > "$out_file"
 }
 
 map_kinds_file() {

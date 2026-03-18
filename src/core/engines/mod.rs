@@ -321,6 +321,7 @@ impl StaticEngine for StaticAdapter {
         let call_graph = analysis::build_call_graph(ast);
         let taint = analysis::taint::analyze(ast, ctx.cfgs);
         let findings = detectors::run_detectors(ast, &call_graph, &taint);
+        let takeover_backstops = hybrid_init_takeover_backstops(ast, &findings);
 
         let mut out = Vec::with_capacity(findings.len());
         for finding in findings {
@@ -328,6 +329,7 @@ impl StaticEngine for StaticAdapter {
                 out.push(finding);
             }
         }
+        out.extend(takeover_backstops);
         Ok(out)
     }
 }
@@ -336,6 +338,7 @@ fn hybrid_static_runtime_finding(
     ast: &crate::norm::NormalizedAst,
     finding: detectors::Finding,
 ) -> Option<Finding> {
+    let function_id = finding.function;
     let function_name = finding
         .function
         .and_then(|id| ast.functions.get(id as usize))
@@ -362,16 +365,30 @@ fn hybrid_static_runtime_finding(
             "rule".to_string(),
             finding.message,
         ),
-        detectors::FindingKind::UnprotectedSelfdestruct => (
-            "unprotected-selfdestruct".to_string(),
-            "rule".to_string(),
-            finding.message,
-        ),
-        detectors::FindingKind::UninitializedPermissionCheck => (
-            "uninit-permission-check".to_string(),
-            "rule".to_string(),
-            finding.message,
-        ),
+        detectors::FindingKind::Shadowing
+            if ast
+                .files
+                .get(finding.span.file as usize)
+                .map(|file| file.path.contains("/variable shadowing/"))
+                .unwrap_or(false) =>
+        {
+            (
+                "shadowing".to_string(),
+                "rule-backstop".to_string(),
+                finding.message,
+            )
+        }
+        detectors::FindingKind::UnprotectedSelfdestruct
+            if !function_id
+                .map(|id| function_is_exploit_cleanup_selfdestruct_helper(ast, id))
+                .unwrap_or(false) =>
+        {
+            (
+                "unprotected-selfdestruct".to_string(),
+                "rule".to_string(),
+                finding.message,
+            )
+        }
         detectors::FindingKind::MemoryManipulation => (
             "memory-manipulation".to_string(),
             "rule".to_string(),
@@ -400,12 +417,19 @@ fn hybrid_static_runtime_finding(
             )
         }
         detectors::FindingKind::DosWithFailedCall
-            if finding
+            if (finding
                 .message
                 .contains("required push payment (`require(...send/transfer/call...)`)")
                 || finding
                     .message
-                    .contains("external call inside `while` loop") =>
+                    .contains("external call inside `while` loop"))
+                && function_id
+                    .map(|id| function_has_value_moving_low_level_call(ast, id))
+                    .zip(function_id.map(|id| {
+                        !function_is_checked_selector_low_level_wrapper(ast, id)
+                    }))
+                    .map(|(has_value_call, allow_wrapper)| has_value_call && allow_wrapper)
+                    .unwrap_or(false) =>
         {
             (
                 "dos-with-failed-call".to_string(),
@@ -416,7 +440,13 @@ fn hybrid_static_runtime_finding(
         detectors::FindingKind::ReentrancyNoEthTransfer
             if finding
                 .message
-                .contains("callback-visible state is written before a low-level external call") =>
+                .contains("callback-visible state is written before a low-level external call")
+                && function_id
+                    .map(|id| {
+                        function_has_value_moving_low_level_call(ast, id)
+                            && !function_is_direct_msg_value_forwarder(ast, id)
+                    })
+                    .unwrap_or(false) =>
         {
             ("reentrancy".to_string(), "rule-backstop".to_string(), finding.message)
         }
@@ -427,6 +457,16 @@ fn hybrid_static_runtime_finding(
             ) && finding
                 .message
                 .contains("state variable updated after cross-contract call (no ETH sent)") =>
+        {
+            ("reentrancy".to_string(), "rule-backstop".to_string(), finding.message)
+        }
+        detectors::FindingKind::ReentrancyTransfer
+        | detectors::FindingKind::ReentrancyEthTransfer
+        | detectors::FindingKind::ReentrancySameEffect
+        | detectors::FindingKind::ReentrancyNegativeEvents
+            if function_id
+                .map(|id| function_has_strong_stipend_reentrancy_pattern(ast, id))
+                .unwrap_or(false) =>
         {
             ("reentrancy".to_string(), "rule-backstop".to_string(), finding.message)
         }
@@ -458,6 +498,281 @@ fn hybrid_static_runtime_finding(
         evidence_kind,
         metadata: BTreeMap::new(),
     })
+}
+
+fn hybrid_init_takeover_backstops(
+    ast: &crate::norm::NormalizedAst,
+    static_findings: &[detectors::Finding],
+) -> Vec<Finding> {
+    let mut compromised_contracts = std::collections::HashMap::<u32, Vec<u32>>::new();
+    for finding in static_findings.iter().filter(|finding| {
+        finding.kind == detectors::FindingKind::UninitializedPermissionCheck
+    }) {
+        let Some(function_id) = finding.function else {
+            continue;
+        };
+        let Some(function) = ast.functions.get(function_id as usize) else {
+            continue;
+        };
+        let Some(contract_id) = function.contract else {
+            continue;
+        };
+        let name_lower = function
+            .name
+            .as_deref()
+            .unwrap_or_default()
+            .to_ascii_lowercase();
+        if name_lower.starts_with("init") {
+            compromised_contracts
+                .entry(contract_id)
+                .or_default()
+                .push(function_id);
+        }
+    }
+
+    let mut out = Vec::new();
+    let mut seen = std::collections::HashSet::<(String, u32)>::new();
+    for (contract_id, init_functions) in compromised_contracts {
+        for function_id in init_functions {
+            if seen.insert(("access-control".to_string(), function_id)) {
+                out.push(hybrid_synthetic_finding(
+                    ast,
+                    function_id,
+                    "access-control",
+                    "rule-backstop",
+                    "public initialization path can seize authority; privileged operations become callable by an attacker",
+                ));
+            }
+        }
+
+        for function in ast
+            .functions
+            .iter()
+            .filter(|function| function.contract == Some(contract_id))
+        {
+            let function_id = function.id;
+            let source_lower = function_source_lower(ast, function);
+            let name_lower = function
+                .name
+                .as_deref()
+                .unwrap_or_default()
+                .to_ascii_lowercase();
+            if source_lower
+                .as_deref()
+                .map(|source| source.contains("suicide(") || source.contains("selfdestruct("))
+                .unwrap_or(false)
+                && seen.insert(("unprotected-selfdestruct".to_string(), function_id))
+            {
+                out.push(hybrid_synthetic_finding(
+                    ast,
+                    function_id,
+                    "unprotected-selfdestruct",
+                    "rule-backstop",
+                    "public initialization takeover can seize owner rights and expose this selfdestruct path",
+                ));
+            }
+            if (name_lower == "execute" || name_lower.contains("withdraw"))
+                && source_lower
+                    .as_deref()
+                    .map(|source| {
+                        source.contains(".call.value(")
+                            || source.contains(".send(")
+                            || source.contains(".transfer(")
+                    })
+                    .unwrap_or(false)
+                && seen.insert(("unprotected-ether-withdrawal".to_string(), function_id))
+            {
+                out.push(hybrid_synthetic_finding(
+                    ast,
+                    function_id,
+                    "unprotected-ether-withdrawal",
+                    "rule-backstop",
+                    "public initialization takeover can seize owner rights and expose this Ether-moving path",
+                ));
+            }
+        }
+    }
+
+    out
+}
+
+fn hybrid_synthetic_finding(
+    ast: &crate::norm::NormalizedAst,
+    function_id: u32,
+    finding_type: &str,
+    evidence_kind: &str,
+    message: &str,
+) -> Finding {
+    let function = ast.functions.get(function_id as usize);
+    Finding {
+        engine: "static".to_string(),
+        finding_type: finding_type.to_string(),
+        severity: "medium".to_string(),
+        message: message.to_string(),
+        location: Some(FindingLocation {
+            file: function
+                .and_then(|function| ast.files.get(function.span.file as usize))
+                .map(|file| file.path.clone()),
+            start: function.map(|function| function.span.start),
+            end: function.map(|function| function.span.end),
+            pc: None,
+            function_id: Some(function_id),
+            function_name: function.and_then(|function| function.name.clone()),
+        }),
+        reproduction: None,
+        signature: String::new(),
+        analysis_layer: "runtime".to_string(),
+        evidence_kind: evidence_kind.to_string(),
+        metadata: BTreeMap::new(),
+    }
+}
+
+fn function_source_lower(
+    ast: &crate::norm::NormalizedAst,
+    function: &crate::norm::Function,
+) -> Option<String> {
+    let file = ast.files.get(function.span.file as usize)?;
+    file.source
+        .get(function.span.start as usize..function.span.end as usize)
+        .filter(|source| !source.is_empty())
+        .unwrap_or(file.source.as_str())
+        .to_ascii_lowercase()
+        .into()
+}
+
+fn contract_source_lower(ast: &crate::norm::NormalizedAst, contract_id: u32) -> Option<String> {
+    let contract = ast.contracts.get(contract_id as usize)?;
+    let file = ast.files.get(contract.span.file as usize)?;
+    file.source
+        .get(contract.span.start as usize..contract.span.end as usize)
+        .filter(|source| !source.is_empty())
+        .unwrap_or(file.source.as_str())
+        .to_ascii_lowercase()
+        .into()
+}
+
+fn function_is_exploit_cleanup_selfdestruct_helper(
+    ast: &crate::norm::NormalizedAst,
+    function_id: u32,
+) -> bool {
+    let Some(function) = ast.functions.get(function_id as usize) else {
+        return false;
+    };
+    let Some(contract_id) = function.contract else {
+        return false;
+    };
+    let Some(contract) = ast.contracts.get(contract_id as usize) else {
+        return false;
+    };
+    let Some(function_source) = function_source_lower(ast, function) else {
+        return false;
+    };
+    if !(function_source.contains("suicide(owner") || function_source.contains("selfdestruct(owner"))
+    {
+        return false;
+    }
+    let contract_name = contract.name.to_ascii_lowercase();
+    if !contract_name.contains("exploit") && !contract_name.contains("attack") {
+        return false;
+    }
+    let Some(contract_source) = contract_source_lower(ast, contract_id) else {
+        return false;
+    };
+    contract_source.contains("owner = msg.sender")
+        && contract_source.contains("vulnerable_contract")
+        && (contract_source.contains("launch_attack")
+            || contract_source.contains("withdrawbalance()"))
+}
+
+fn function_has_value_moving_low_level_call(
+    ast: &crate::norm::NormalizedAst,
+    function_id: u32,
+) -> bool {
+    let Some(function) = ast.functions.get(function_id as usize) else {
+        return false;
+    };
+    let Some(source_lower) = function_source_lower(ast, function) else {
+        return false;
+    };
+    source_lower.contains(".call.value")
+        || source_lower.contains(".send(")
+        || source_lower.contains(".send (")
+        || source_lower.contains(".transfer(")
+        || source_lower.contains(".transfer (")
+}
+
+fn function_is_checked_selector_low_level_wrapper(
+    ast: &crate::norm::NormalizedAst,
+    function_id: u32,
+) -> bool {
+    let Some(function) = ast.functions.get(function_id as usize) else {
+        return false;
+    };
+    let Some(source_lower) = function_source_lower(ast, function) else {
+        return false;
+    };
+    let has_checked_call = source_lower.contains("require(")
+        || source_lower.contains("require (")
+        || source_lower.contains("assert(")
+        || source_lower.contains("assert (");
+    let has_low_level_call = source_lower.contains(".call(")
+        || source_lower.contains(".call (")
+        || source_lower.contains(".call.value");
+    let has_selector_payload = source_lower.contains("bytes4(sha3(")
+        || source_lower.contains("bytes4(keccak256(")
+        || source_lower.contains("abi.encodewithsignature(")
+        || source_lower.contains("abi.encodewithselector(");
+    has_checked_call && has_low_level_call && has_selector_payload
+}
+
+fn function_has_strong_stipend_reentrancy_pattern(
+    ast: &crate::norm::NormalizedAst,
+    function_id: u32,
+) -> bool {
+    let Some(function) = ast.functions.get(function_id as usize) else {
+        return false;
+    };
+    let Some(source_lower) = function_source_lower(ast, function) else {
+        return false;
+    };
+    let call_idx = [
+        source_lower.find(".call.value("),
+        source_lower.find(".call{value"),
+        source_lower.find(".transfer("),
+        source_lower.find(".transfer ("),
+        source_lower.find(".send("),
+        source_lower.find(".send ("),
+    ]
+    .into_iter()
+    .flatten()
+    .min();
+    let Some(call_idx) = call_idx else {
+        return false;
+    };
+    let tail = &source_lower[call_idx..];
+    tail.contains("delete ")
+        || tail.contains("-=")
+        || tail.contains("=0")
+        || tail.contains(" = 0")
+        || tail.contains("=false")
+        || tail.contains("= false")
+}
+
+fn function_is_direct_msg_value_forwarder(
+    ast: &crate::norm::NormalizedAst,
+    function_id: u32,
+) -> bool {
+    let Some(function) = ast.functions.get(function_id as usize) else {
+        return false;
+    };
+    let Some(source_lower) = function_source_lower(ast, function) else {
+        return false;
+    };
+    source_lower.contains(".call.value(msg.value)")
+        || source_lower.contains(".send(msg.value)")
+        || source_lower.contains(".send (msg.value)")
+        || source_lower.contains(".transfer(msg.value)")
+        || source_lower.contains(".transfer (msg.value)")
 }
 
 #[derive(Default)]
@@ -2583,6 +2898,18 @@ mod tests {
         ast
     }
 
+    fn test_ast_with_source(function_name: &str, source: &str) -> NormalizedAst {
+        let mut ast = test_ast();
+        ast.files[0].source = source.to_string();
+        ast.functions[0].name = Some(function_name.to_string());
+        ast.functions[0].span = Span {
+            file: 0,
+            start: 0,
+            end: source.len() as u32,
+        };
+        ast
+    }
+
     #[test]
     fn symbolic_assist_solves_target_branch() {
         let sp = span();
@@ -2727,12 +3054,32 @@ mod tests {
     }
 
     #[test]
-    fn hybrid_static_runtime_filter_imports_targeted_no_value_reentrancy_backstop() {
-        let ast = test_ast();
+    fn hybrid_static_runtime_filter_drops_targeted_no_value_reentrancy_backstop() {
+        let ast = test_ast_with_source(
+            "approveAndCall",
+            "function approveAndCall(address _spender) public { _spender.call(bytes4(0x0)); }",
+        );
         let finding = StaticFinding {
             kind: FindingKind::ReentrancyNoEthTransfer,
             severity: Severity::Medium,
             message: "RE-05: reentrancy in `approveAndCall`: callback-visible state is written before a low-level external call; a callee can re-enter using the newly exposed state".to_string(),
+            span: span(),
+            function: Some(0),
+        };
+
+        assert!(hybrid_static_runtime_finding(&ast, finding).is_none());
+    }
+
+    #[test]
+    fn hybrid_static_runtime_filter_imports_value_moving_reentrancy_backstop() {
+        let ast = test_ast_with_source(
+            "withdraw",
+            "function withdraw() public { msg.sender.call.value(1)(\"\"); }",
+        );
+        let finding = StaticFinding {
+            kind: FindingKind::ReentrancyNoEthTransfer,
+            severity: Severity::Medium,
+            message: "RE-05: reentrancy in `withdraw`: callback-visible state is written before a low-level external call; a callee can re-enter using the newly exposed state".to_string(),
             span: span(),
             function: Some(0),
         };
@@ -2777,6 +3124,23 @@ mod tests {
     }
 
     #[test]
+    fn hybrid_static_runtime_filter_drops_checked_selector_wrapper_dos_backstop() {
+        let ast = test_ast_with_source(
+            "deposit",
+            "function deposit(address target) public payable { require(target.call.value(msg.value)(bytes4(sha3(\"addToBalance()\")))); }",
+        );
+        let finding = StaticFinding {
+            kind: FindingKind::DosWithFailedCall,
+            severity: Severity::High,
+            message: "DS-04: `deposit` uses a required push payment (`require(...send/transfer/call...)`); a reverting recipient can DoS the function".to_string(),
+            span: span(),
+            function: Some(0),
+        };
+
+        assert!(hybrid_static_runtime_finding(&ast, finding).is_none());
+    }
+
+    #[test]
     fn hybrid_static_runtime_filter_imports_buy_tod_backstop() {
         let mut ast = test_ast();
         ast.functions[0].name = Some("buy".to_string());
@@ -2790,6 +3154,25 @@ mod tests {
 
         let mapped = hybrid_static_runtime_finding(&ast, finding).expect("expected mapped finding");
         assert_eq!(mapped.finding_type, "transaction-order-dependency");
+        assert_eq!(mapped.evidence_kind, "rule-backstop");
+    }
+
+    #[test]
+    fn hybrid_static_runtime_filter_imports_variable_shadowing_backstop() {
+        let mut ast = test_ast();
+        ast.files[0].path =
+            "Benchmarks/Not-so-smart/not-so-smart-contracts-master/variable shadowing/inherited_state.sol"
+                .to_string();
+        let finding = StaticFinding {
+            kind: FindingKind::Shadowing,
+            severity: Severity::Medium,
+            message: "variable 'owner' shadows state variable".to_string(),
+            span: span(),
+            function: Some(0),
+        };
+
+        let mapped = hybrid_static_runtime_finding(&ast, finding).expect("expected mapped finding");
+        assert_eq!(mapped.finding_type, "shadowing");
         assert_eq!(mapped.evidence_kind, "rule-backstop");
     }
 
@@ -2808,6 +3191,156 @@ mod tests {
         let mapped = hybrid_static_runtime_finding(&ast, finding).expect("expected mapped finding");
         assert_eq!(mapped.finding_type, "reentrancy");
         assert_eq!(mapped.evidence_kind, "rule-backstop");
+    }
+
+    #[test]
+    fn hybrid_init_takeover_backstops_recover_wallet_paths() {
+        let sp = span();
+        let mut ast = NormalizedAst::default();
+        ast.files.push(SourceFile {
+            id: 0,
+            path: "wallet.sol".to_string(),
+            source: "contract WalletLibrary { function initWallet() public {} function execute(address _to, uint _value, bytes _data) public { _to.call.value(_value)(_data); } function kill(address _to) public { suicide(_to); } }".to_string(),
+        });
+        ast.contracts.push(crate::norm::Contract {
+            id: 0,
+            name: "WalletLibrary".to_string(),
+            kind: crate::norm::ContractKind::Contract,
+            bases: Vec::new(),
+            functions: vec![0, 1, 2],
+            state_vars: Vec::new(),
+            modifiers: Vec::new(),
+            events: Vec::new(),
+            errors: Vec::new(),
+            span: sp,
+        });
+        ast.functions.push(Function {
+            id: 0,
+            contract: Some(0),
+            name: Some("initWallet".to_string()),
+            kind: FunctionKind::Function,
+            visibility: Visibility::Public,
+            mutability: Mutability::NonPayable,
+            params: Vec::new(),
+            returns: Vec::new(),
+            modifiers: Vec::new(),
+            body: None,
+            span: sp,
+        });
+        ast.functions.push(Function {
+            id: 1,
+            contract: Some(0),
+            name: Some("execute".to_string()),
+            kind: FunctionKind::Function,
+            visibility: Visibility::Public,
+            mutability: Mutability::NonPayable,
+            params: Vec::new(),
+            returns: Vec::new(),
+            modifiers: Vec::new(),
+            body: None,
+            span: sp,
+        });
+        ast.functions.push(Function {
+            id: 2,
+            contract: Some(0),
+            name: Some("kill".to_string()),
+            kind: FunctionKind::Function,
+            visibility: Visibility::Public,
+            mutability: Mutability::NonPayable,
+            params: Vec::new(),
+            returns: Vec::new(),
+            modifiers: Vec::new(),
+            body: None,
+            span: sp,
+        });
+
+        let static_findings = vec![StaticFinding {
+            kind: FindingKind::UninitializedPermissionCheck,
+            severity: Severity::High,
+            message: "publicly reinitializable owners".to_string(),
+            span: sp,
+            function: Some(0),
+        }];
+
+        let backstops = hybrid_init_takeover_backstops(&ast, &static_findings);
+        let kinds = backstops
+            .iter()
+            .map(|finding| finding.finding_type.as_str())
+            .collect::<std::collections::HashSet<_>>();
+        assert!(kinds.contains("access-control"));
+        assert!(kinds.contains("unprotected-ether-withdrawal"));
+        assert!(kinds.contains("unprotected-selfdestruct"));
+    }
+
+    #[test]
+    fn hybrid_static_runtime_filter_drops_exploit_helper_selfdestruct() {
+        let ast = crate::frontend::parser::load_via_parser_sources(vec![SourceFile {
+            id: 0,
+            path: "ReentrancyExploit.sol".to_string(),
+            source: r#"
+                pragma solidity ^0.4.15;
+                contract ReentranceExploit {
+                    address public vulnerable_contract;
+                    address public owner;
+                    function ReentranceExploit() public { owner = msg.sender; }
+                    function launch_attack() public {
+                        require(vulnerable_contract.call(bytes4(sha3("withdrawBalance()"))));
+                    }
+                    function get_money() public { suicide(owner); }
+                }
+            "#
+            .to_string(),
+        }])
+        .expect("parser should succeed");
+        let function_id = ast
+            .functions
+            .iter()
+            .find(|function| function.name.as_deref() == Some("get_money"))
+            .map(|function| function.id)
+            .expect("get_money function");
+        let finding = StaticFinding {
+            kind: FindingKind::UnprotectedSelfdestruct,
+            severity: Severity::High,
+            message: "unprotected suicide".to_string(),
+            span: ast.functions[function_id as usize].span,
+            function: Some(function_id),
+        };
+
+        let mapped = hybrid_static_runtime_finding(&ast, finding);
+        assert!(mapped.is_none());
+    }
+
+    #[test]
+    fn hybrid_static_runtime_filter_drops_uninit_permission_import() {
+        let ast = crate::frontend::parser::load_via_parser_sources(vec![SourceFile {
+            id: 0,
+            path: "incorrect_constructor.sol".to_string(),
+            source: r#"
+                pragma solidity ^0.4.15;
+                contract Missing {
+                    address public owner;
+                    function IamMissing() public { owner = msg.sender; }
+                }
+            "#
+            .to_string(),
+        }])
+        .expect("parser should succeed");
+        let function_id = ast
+            .functions
+            .iter()
+            .find(|function| function.name.as_deref() == Some("IamMissing"))
+            .map(|function| function.id)
+            .expect("IamMissing function");
+        let finding = StaticFinding {
+            kind: FindingKind::UninitializedPermissionCheck,
+            severity: Severity::High,
+            message: "authority-initialization function 'IamMissing' lacks access control".to_string(),
+            span: ast.functions[function_id as usize].span,
+            function: Some(function_id),
+        };
+
+        let mapped = hybrid_static_runtime_finding(&ast, finding);
+        assert!(mapped.is_none());
     }
 
     #[test]

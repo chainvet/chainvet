@@ -1,76 +1,85 @@
-# Solidity Multi-Modal Analysis Platform (Static / Symbolic / Fuzzing)
+# Solidity Multi-Modal Analysis Platform
 
-This project is a modular analysis platform for Solidity smart contracts, built on a shared foundation of **Frontend (M1/M2)** and **Analysis Model (M3)**. It supports three distinct analysis approaches:
+This project analyzes Solidity smart contracts using four modes over a shared frontend + IR/CFG/SSA pipeline:
 
-1.  **Static Analysis** (Implemented in `src/analysis`)
-2.  **Symbolic Execution** (Skeleton in `src/symbolic`)
-3.  **Fuzzing** (Skeleton in `src/fuzzing`)
+- `--static`
+- `--symbolic`
+- `--fuzzing`
+- `--hybrid`
 
-## Architecture Overview
+## Quick Start
 
-All engines operate on a unified Intermediate Representation (IR), Control Flow Graph (CFG), and Static Single Assignment (SSA) form.
+Prerequisites:
 
-1.  **M1 (Primary Frontend):** Uses `solc` to compile and produce a rich AST.
-2.  **M2 (Fallback Frontend):** Uses `tree-sitter` for error-tolerant parsing when compilation fails.
-3.  **M3 (IR/CFG/SSA):** Lowers the AST into a SlithIR-style IR, builds CFGs, and computes SSA.
+- Rust (stable)
+- `solc` (optional but recommended; the frontend also supports managed/cache resolution)
 
-For deep technical details on M1-M3, see **[M1_M2_M3_DETAILS.md](./M1_M2_M3_DETAILS.md)**.
-For usage examples and integrating new engines, see **[M1_M2_M3_USAGE.md](./M1_M2_M3_USAGE.md)**.
-
-## Project Structure
+Run commands:
 
 ```bash
+# Web UI (rooted at the directory you launch it from)
+cargo run -- --web
+
+# Static (default if no mode flag is passed)
+cargo run -- --static <path-to-solidity-or-project>
+
+# Symbolic
+cargo run -- --symbolic <path-to-solidity-or-project>
+
+# Fuzzing
+cargo run -- --fuzzing <path-to-solidity-or-project>
+
+# Hybrid (P1 scheduler)
+cargo run -- --hybrid <path-to-solidity-or-project>
+```
+
+Useful options:
+
+```bash
+# JSON output
+cargo run -- --static <path> --json
+
+# IR dump
+cargo run -- --static <path> --dump-ir text
+cargo run -- --static <path> --dump-ir json
+```
+
+Output behavior:
+
+- Default CLI text output now shows a low-noise surfaced finding set.
+- Default JSON output also surfaces the cleaned finding set first.
+- Raw findings are still preserved in JSON under `*_raw` fields for benchmarking, debugging, and artifact consumers.
+- Fuzzing text output also emits machine-readable `*_raw` count lines so the benchmark harness can keep using raw data without reintroducing noise into the human-facing sections.
+
+## Code Layout
+
+```text
 src/
-├── analysis/           # Static Analysis Engine (Taint, Call Graph, Detectors)
-│   ├── detectors/      # Security detectors (e.g., tx.origin, reentrancy)
-│   └── ...
-├── symbolic/           # Symbolic Execution Engine (Start implementation here!)
-├── fuzzing/            # Fuzzing Engine (Start implementation here!)
-├── frontend/           # M1/M2 Frontends (solc + parser)
-├── ir/                 # M3 Intermediate Representation definition & lowering
-├── cfg/                # M3 Control Flow Graph construction
-├── ssa/                # M3 SSA construction
-└── main.rs             # CLI Entry point
+  analysis/      static analysis + detectors
+  symbolic/      symbolic engine
+  fuzzing/       fuzzing engine
+  web/           localhost web UI + API
+  frontend/      solc + parser frontend
+  ir/            IR types/lowering/dump
+  cfg/           control-flow graph construction
+  ssa/           SSA construction
+  core/          hybrid scheduler/artifacts/queues/store/triage
+  main.rs        CLI entrypoint
 ```
 
-## Getting Started
+## Documentation
 
-### Prerequisites
-- Rust (latest stable)
-- `solc` (managed automatically, but having it installed helps)
+- Documentation index: `docs/README.md`
+- IR guide: `docs/IR_USAGE.md`
+- Hybrid architecture:
+  - `docs/architecture_current.md`
+  - `docs/architecture_target.md`
+  - `docs/hybrid_handoff_plan.md`
+- Benchmark and scoring:
+  - `docs/evaluation_modes.md`
+  - `docs/not_so_smart_comparison.md`
 
-### Build & Run
+## Notes
 
-```bash
-# Build the project
-cargo build
-
-# Run Static Analysis (default)
-cargo run -- <path-to-solidity-file-or-project>
-
-# Run with JSON output
-cargo run -- <path> --json
-
-# Dump IR for debugging
-cargo run -- <path> --dump-ir text
-cargo run -- <path> --dump-ir tuple
-```
-
-## Contributor Guide
-
-### Static Analysis Team
-- Detectors are located in `src/analysis/detectors/`.
-- Core analysis logic (taint, summaries) is in `src/analysis/`.
-
-### Symbolic Execution Team
-- Your workspace is **`src/symbolic/`**.
-- Refer to **Example B** in `M1_M2_M3_USAGE.md` for how to consume the IR/CFG/SSA.
-- Goal: Implement an interpreter that executes IR instructions over symbolic values.
-
-### Fuzzing Team
-- Your workspace is **`src/fuzzing/`**.
-- Refer to **Example C** in `M1_M2_M3_USAGE.md`.
-- Goal: Use CFG and Call Graph to generate harnesses and guide fuzzer inputs.
-
-## License
-[Add License Here]
+- `runs/` contains generated run artifacts.
+- `Benchmarks/Not-so-smart/` contains the benchmark dataset used for comparison work.

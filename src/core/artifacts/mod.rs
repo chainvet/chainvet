@@ -258,5 +258,7 @@ pub struct HybridReport {
     pub meta_findings_unique: usize,
     pub se_assists: usize,
     pub seeds_injected_by_se: usize,
+    #[serde(default)]
+    pub se_new_edges_from_injected: usize,
     pub time_to_first_finding_ms: Option<u128>,
 }

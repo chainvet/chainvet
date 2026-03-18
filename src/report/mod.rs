@@ -1,17 +1,23 @@
 use crate::analysis::detectors::{self, Finding, Severity};
 use crate::analysis::{self, ResolvedTarget};
 use crate::frontend::{FrontendMode, FrontendOutput};
+use crate::meta;
+use crate::norm::{ExprKind, Function, FunctionKind, NormalizedAst};
+use crate::surfaced;
 use crate::util::error::Result;
 use crate::{cfg, ir, ssa};
 use serde::Serialize;
+use std::collections::BTreeSet;
+use std::fs;
+use std::path::{Path, PathBuf};
 
 pub enum OutputFormat {
     Text,
     Json,
 }
 
-pub fn print_report(output: &FrontendOutput, format: OutputFormat) -> Result<()> {
-    let report = build_report(output);
+pub fn print_report(output: &FrontendOutput, requested_path: &str, format: OutputFormat) -> Result<()> {
+    let report = build_report(output, requested_path);
     match format {
         OutputFormat::Text => print_text(&report),
         OutputFormat::Json => print_json(&report),
@@ -29,8 +35,11 @@ struct Report {
     taint: TaintReport,
     summaries: SummaryReport,
     call_resolution: CallResolution,
+    finding_count_raw: usize,
+    suppressed_findings: usize,
     finding_counts: Vec<ReportCount>,
     findings: Vec<ReportFinding>,
+    findings_raw: Vec<ReportFinding>,
     top_callers: Vec<ReportTopCaller>,
 }
 
@@ -49,7 +58,7 @@ struct ReportCount {
     count: usize,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 struct ReportFinding {
     category: String,
     kind: String,
@@ -60,7 +69,18 @@ struct ReportFinding {
     function: Option<String>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone)]
+struct SyntheticFinding {
+    category: String,
+    kind: String,
+    severity: String,
+    message: String,
+    file: String,
+    span: SpanRange,
+    function: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
 struct SpanRange {
     start: u32,
     end: u32,
@@ -99,12 +119,13 @@ struct SsaReport {
     phis: usize,
 }
 
-fn build_report(output: &FrontendOutput) -> Report {
+fn build_report(output: &FrontendOutput, requested_path: &str) -> Report {
     let mode = match output.mode {
         FrontendMode::Full => "full",
         FrontendMode::Partial => "partial",
     }
     .to_string();
+    let target_filter = TargetFilter::new(requested_path);
 
     let ir_module = ir::lower_module(&output.ast);
     let cfgs = cfg::build_from_ir(&ir_module);
@@ -144,8 +165,41 @@ fn build_report(output: &FrontendOutput) -> Report {
     }
 
     let findings = detectors::run_detectors(&output.ast, &call_graph, &taint);
-    let finding_counts = build_finding_counts(&findings);
-    let report_findings = build_report_findings(output, &findings);
+    let report_findings = build_report_findings(output, &findings, &target_filter);
+    let meta_report_findings = build_static_meta_findings(output, &findings, &target_filter);
+    let mut all_report_findings_raw = report_findings.clone();
+    all_report_findings_raw.extend(meta_report_findings.clone());
+    let surfaced = surfaced::surface_findings(
+        report_findings
+            .iter()
+            .map(|finding| report_finding_candidate(finding, "runtime", Some("rule")))
+            .collect(),
+        meta_report_findings
+            .iter()
+            .map(|finding| report_finding_candidate(finding, "meta", Some("static-meta")))
+            .collect(),
+    );
+    let mut all_report_findings = surfaced
+        .runtime_findings
+        .iter()
+        .chain(surfaced.meta_findings.iter())
+        .map(report_finding_from_surfaced)
+        .collect::<Vec<_>>();
+    all_report_findings.sort_by(|left, right| {
+        (
+            left.file.as_str(),
+            left.function.as_deref().unwrap_or(""),
+            left.kind.as_str(),
+            left.span.start,
+        )
+            .cmp(&(
+                right.file.as_str(),
+                right.function.as_deref().unwrap_or(""),
+                right.kind.as_str(),
+                right.span.start,
+            ))
+    });
+    let finding_counts = build_finding_counts(&all_report_findings);
     let summaries = analysis::summary::summarize(&output.ast, &resolved);
     let summary_report = build_summary_report(&summaries);
     let ssa_functions = ssa::build_ssa(&output.ast, &cfgs);
@@ -167,15 +221,18 @@ fn build_report(output: &FrontendOutput) -> Report {
         },
         summaries: summary_report,
         call_resolution: resolution,
+        finding_count_raw: all_report_findings_raw.len(),
+        suppressed_findings: surfaced.suppressed_runtime_findings + surfaced.suppressed_meta_findings,
         finding_counts,
-        findings: report_findings,
+        findings: all_report_findings,
+        findings_raw: all_report_findings_raw,
         top_callers,
     }
 }
 
 fn print_text(report: &Report) -> Result<()> {
     println!(
-        "mode: {}, files: {}, functions: {}, cfgs: {}, calls: {}, resolved: {}, ambiguous: {}, external: {}, builtin: {}, unknown: {}, findings: {}",
+        "mode: {}, files: {}, functions: {}, cfgs: {}, calls: {}, resolved: {}, ambiguous: {}, external: {}, builtin: {}, unknown: {}, findings: {} (raw={}, suppressed={})",
         report.mode,
         report.files,
         report.functions,
@@ -186,7 +243,9 @@ fn print_text(report: &Report) -> Result<()> {
         report.call_resolution.external,
         report.call_resolution.builtin,
         report.call_resolution.unknown,
-        report.findings.len()
+        report.findings.len(),
+        report.finding_count_raw,
+        report.suppressed_findings
     );
     println!(
         "taint: functions={}, source={}, tainted={}, vars={}, calls={}",
@@ -234,25 +293,70 @@ fn print_json(report: &Report) -> Result<()> {
     Ok(())
 }
 
-fn build_finding_counts(findings: &[Finding]) -> Vec<ReportCount> {
+fn build_finding_counts(findings: &[ReportFinding]) -> Vec<ReportCount> {
     let mut map = std::collections::BTreeMap::<String, usize>::new();
     for finding in findings {
-        *map.entry(finding.kind.as_str().to_string()).or_insert(0) += 1;
+        *map.entry(finding.kind.clone()).or_insert(0) += 1;
     }
     map.into_iter()
         .map(|(kind, count)| ReportCount { kind, count })
         .collect()
 }
 
-fn build_report_findings(output: &FrontendOutput, findings: &[Finding]) -> Vec<ReportFinding> {
+fn report_finding_candidate(
+    finding: &ReportFinding,
+    analysis_layer: &str,
+    evidence_kind: Option<&str>,
+) -> surfaced::FindingCandidate {
+    surfaced::FindingCandidate {
+        kind: finding.kind.clone(),
+        canonical_kind: surfaced::canonicalize_kind(&finding.kind),
+        category: finding.category.clone(),
+        severity: finding.severity.clone(),
+        confidence: None,
+        message: finding.message.clone(),
+        file: Some(finding.file.clone()),
+        start: Some(finding.span.start),
+        end: Some(finding.span.end),
+        function_id: None,
+        function_name: finding.function.clone(),
+        analysis_layer: analysis_layer.to_string(),
+        evidence_kind: evidence_kind.map(str::to_string),
+    }
+}
+
+fn report_finding_from_surfaced(finding: &surfaced::SurfacedFinding) -> ReportFinding {
+    ReportFinding {
+        category: finding.category.clone(),
+        kind: finding.kind.clone(),
+        severity: finding.severity.clone(),
+        message: finding.message.clone(),
+        file: finding.file.clone().unwrap_or_else(|| "<unknown>".to_string()),
+        span: SpanRange {
+            start: finding.start.unwrap_or(0),
+            end: finding.end.unwrap_or(0),
+        },
+        function: finding.function_name.clone(),
+    }
+}
+
+fn build_report_findings(
+    output: &FrontendOutput,
+    findings: &[Finding],
+    target_filter: &TargetFilter,
+) -> Vec<ReportFinding> {
     let mut out = Vec::new();
     for finding in findings {
+        let file = resolve_file(output, finding.span.file);
+        if !target_filter.matches(&file) {
+            continue;
+        }
         out.push(ReportFinding {
             category: finding.kind.category().as_str().to_string(),
-            kind: finding.kind.as_str().to_string(),
+            kind: normalized_kind(finding).to_string(),
             severity: severity_to_str(finding.severity).to_string(),
             message: finding.message.clone(),
-            file: resolve_file(output, finding.span.file),
+            file,
             span: SpanRange {
                 start: finding.span.start,
                 end: finding.span.end,
@@ -267,6 +371,122 @@ fn build_report_findings(output: &FrontendOutput, findings: &[Finding]) -> Vec<R
     out
 }
 
+fn build_static_meta_findings(
+    output: &FrontendOutput,
+    findings: &[Finding],
+    target_filter: &TargetFilter,
+) -> Vec<ReportFinding> {
+    let mut out = Vec::new();
+    let mut seen = BTreeSet::new();
+
+    for finding in meta::analyze(output) {
+        if !matches!(
+            finding.finding_type.as_str(),
+            "honeypot" | "incorrect-interface"
+        ) {
+            continue;
+        }
+        let Some(location) = finding.location.as_ref() else {
+            continue;
+        };
+        let Some(file) = location.file.as_deref() else {
+            continue;
+        };
+        if !target_filter.matches(file) {
+            continue;
+        }
+        let key = (
+            finding.finding_type.clone(),
+            file.to_string(),
+            location.start.unwrap_or(0),
+            location.end.unwrap_or(0),
+            location.function_name.clone().unwrap_or_default(),
+        );
+        if !seen.insert(key) {
+            continue;
+        }
+        out.push(ReportFinding {
+            category: meta_category(&finding.finding_type).to_string(),
+            kind: finding.finding_type.clone(),
+            severity: finding.severity.clone(),
+            message: finding.message,
+            file: file.to_string(),
+            span: SpanRange {
+                start: location.start.unwrap_or(0),
+                end: location.end.unwrap_or(0),
+            },
+            function: location.function_name.clone(),
+        });
+    }
+
+    for finding in detect_static_access_control_backstops(output) {
+        if !target_filter.matches(&finding.file) {
+            continue;
+        }
+        let key = (
+            finding.kind.clone(),
+            finding.file.clone(),
+            finding.span.start,
+            finding.span.end,
+            finding.function.clone().unwrap_or_default(),
+        );
+        if !seen.insert(key) {
+            continue;
+        }
+        out.push(ReportFinding {
+            category: finding.category,
+            kind: finding.kind,
+            severity: finding.severity,
+            message: finding.message,
+            file: finding.file,
+            span: finding.span,
+            function: finding.function,
+        });
+    }
+
+    for finding in detect_static_reentrancy_backstops(output, findings) {
+        if !target_filter.matches(&finding.file) {
+            continue;
+        }
+        let key = (
+            finding.kind.clone(),
+            finding.file.clone(),
+            finding.span.start,
+            finding.span.end,
+            finding.function.clone().unwrap_or_default(),
+        );
+        if !seen.insert(key) {
+            continue;
+        }
+        out.push(ReportFinding {
+            category: finding.category,
+            kind: finding.kind,
+            severity: finding.severity,
+            message: finding.message,
+            file: finding.file,
+            span: finding.span,
+            function: finding.function,
+        });
+    }
+
+    out
+}
+
+fn normalized_kind(finding: &Finding) -> &'static str {
+    match finding.kind {
+        detectors::FindingKind::ForceEtherBalanceCheck => "locked-ether",
+        _ => finding.kind.as_str(),
+    }
+}
+
+fn meta_category(kind: &str) -> &'static str {
+    match kind {
+        "access-control" => "Access Control",
+        "incorrect-interface" | "honeypot" => "Miscellaneous",
+        _ => "Miscellaneous",
+    }
+}
+
 fn resolve_file(output: &FrontendOutput, file_id: u32) -> String {
     output
         .ast
@@ -278,6 +498,431 @@ fn resolve_file(output: &FrontendOutput, file_id: u32) -> String {
 
 fn severity_to_str(severity: Severity) -> &'static str {
     severity.as_str()
+}
+
+#[derive(Debug, Clone)]
+struct TargetFilter {
+    requested_file: Option<PathBuf>,
+}
+
+impl TargetFilter {
+    fn new(requested_path: &str) -> Self {
+        let path = Path::new(requested_path);
+        let requested_file = fs::metadata(path)
+            .ok()
+            .filter(|meta| meta.is_file())
+            .map(|_| canonical_or_original(path));
+        Self { requested_file }
+    }
+
+    fn matches(&self, file: &str) -> bool {
+        let Some(requested_file) = self.requested_file.as_ref() else {
+            return true;
+        };
+        canonical_or_original(Path::new(file)) == *requested_file
+    }
+}
+
+fn canonical_or_original(path: &Path) -> PathBuf {
+    path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
+}
+
+fn detect_static_access_control_backstops(output: &FrontendOutput) -> Vec<SyntheticFinding> {
+    let ast = &output.ast;
+    let mut out = Vec::new();
+
+    for function in &ast.functions {
+        if !is_public_authority_setter_candidate(output, function) {
+            continue;
+        }
+        let Some(location_file) = ast.files.get(function.span.file as usize) else {
+            continue;
+        };
+        let function_name = function
+            .name
+            .clone()
+            .unwrap_or_else(|| format!("<function {}>", function.id));
+        out.push(SyntheticFinding {
+            category: "Access Control".to_string(),
+            kind: "access-control".to_string(),
+            severity: "medium".to_string(),
+            message: format!(
+                "public authority-setting function '{}' can reassign ownership-like state without a sender authorization check",
+                function_name
+            ),
+            file: location_file.path.clone(),
+            span: SpanRange {
+                start: function.span.start,
+                end: function.span.end,
+            },
+            function: function.name.clone(),
+        });
+    }
+
+    out
+}
+
+fn detect_static_reentrancy_backstops(
+    output: &FrontendOutput,
+    findings: &[Finding],
+) -> Vec<SyntheticFinding> {
+    let ast = &output.ast;
+    let mut out = Vec::new();
+    let functions_with_reentrancy = findings
+        .iter()
+        .filter(|finding| {
+            matches!(
+                finding.kind,
+                detectors::FindingKind::ReentrancyNegativeEvents
+                    | detectors::FindingKind::ReentrancyTransfer
+                    | detectors::FindingKind::ReentrancySameEffect
+                    | detectors::FindingKind::ReentrancyEthTransfer
+                    | detectors::FindingKind::ReentrancyNoEthTransfer
+            )
+        })
+        .filter_map(|finding| finding.function)
+        .collect::<BTreeSet<_>>();
+
+    for function in &ast.functions {
+        if !crate::frontend::is_mutating_entrypoint(function, &output.compiler) {
+            continue;
+        }
+        if functions_with_reentrancy.contains(&function.id) {
+            continue;
+        }
+        let Some(source_lower) = function_source_lower(ast, function) else {
+            continue;
+        };
+        let call_idx = [
+            source_lower.find(".call.value("),
+            source_lower.find(".call{value"),
+            source_lower.find(".transfer("),
+            source_lower.find(".transfer ("),
+            source_lower.find(".send("),
+            source_lower.find(".send ("),
+        ]
+        .into_iter()
+        .flatten()
+        .min();
+        let Some(call_idx) = call_idx else {
+            continue;
+        };
+        let tail = &source_lower[call_idx..];
+        if !(tail.contains("delete ")
+            || tail.contains("-=")
+            || tail.contains("=0")
+            || tail.contains(" = 0")
+            || tail.contains("=false")
+            || tail.contains("= false"))
+        {
+            continue;
+        }
+        let Some(location_file) = ast.files.get(function.span.file as usize) else {
+            continue;
+        };
+        let function_name = function
+            .name
+            .clone()
+            .unwrap_or_else(|| format!("<function {}>", function.id));
+        out.push(SyntheticFinding {
+            category: "Reentrancy".to_string(),
+            kind: "reentrancy".to_string(),
+            severity: "high".to_string(),
+            message: format!(
+                "reentrancy in '{}' : ETH-sending external call is followed by destructive state updates inside the same payout flow",
+                function_name
+            ),
+            file: location_file.path.clone(),
+            span: SpanRange {
+                start: function.span.start,
+                end: function.span.end,
+            },
+            function: function.name.clone(),
+        });
+    }
+
+    out
+}
+
+fn function_source_lower(ast: &NormalizedAst, function: &Function) -> Option<String> {
+    let file = ast.files.get(function.span.file as usize)?;
+    file.source
+        .get(function.span.start as usize..function.span.end as usize)
+        .filter(|source| !source.is_empty())
+        .unwrap_or(file.source.as_str())
+        .to_ascii_lowercase()
+        .into()
+}
+
+fn is_public_authority_setter_candidate(output: &FrontendOutput, function: &Function) -> bool {
+    if function.kind != FunctionKind::Function {
+        return false;
+    }
+    if !crate::frontend::is_mutating_entrypoint(function, &output.compiler) {
+        return false;
+    }
+    if crate::frontend::is_legacy_named_constructor(function, &output.ast) {
+        return false;
+    }
+    if crate::frontend::has_authority_modifier_hint(function, &output.ast) {
+        return false;
+    }
+    if function
+        .params
+        .iter()
+        .all(|param| !address_or_authority_param_name(param))
+    {
+        return false;
+    }
+
+    let Some(body) = function.body else {
+        return false;
+    };
+    if stmt_contains_msg_sender(&output.ast, body) {
+        return false;
+    }
+    if !stmt_assigns_authority_from_param(&output.ast, body, &function.params) {
+        return false;
+    }
+
+    let function_name = function.name.as_deref().unwrap_or("").to_ascii_lowercase();
+    function_name.contains("owner")
+        || function_name.contains("admin")
+        || function_name.contains("authority")
+        || function_name.contains("operator")
+        || function_name.contains("governance")
+}
+
+fn address_or_authority_param_name(name: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    [
+        "addr",
+        "address",
+        "owner",
+        "admin",
+        "operator",
+        "authority",
+        "governance",
+        "recipient",
+        "target",
+    ]
+    .iter()
+    .any(|hint| lower.contains(hint))
+}
+
+fn authority_like_name(name: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    [
+        "owner",
+        "admin",
+        "authority",
+        "operator",
+        "governance",
+        "controller",
+    ]
+    .iter()
+    .any(|hint| lower.contains(hint))
+}
+
+fn stmt_contains_msg_sender(ast: &NormalizedAst, stmt_id: u32) -> bool {
+    let mut found = false;
+    walk_stmt_exprs(ast, stmt_id, &mut |expr_id| {
+        if !found && expr_is_msg_sender(ast, expr_id) {
+            found = true;
+        }
+    });
+    found
+}
+
+fn stmt_assigns_authority_from_param(
+    ast: &NormalizedAst,
+    stmt_id: u32,
+    params: &[String],
+) -> bool {
+    let mut found = false;
+    walk_stmt_exprs(ast, stmt_id, &mut |expr_id| {
+        if found {
+            return;
+        }
+        let Some(expr) = ast.expressions.get(expr_id as usize) else {
+            return;
+        };
+        if let ExprKind::Assign { lhs, rhs, .. } = &expr.kind
+            && expr_is_authority_target(ast, *lhs)
+            && expr_references_any_param(ast, *rhs, params)
+        {
+            found = true;
+        }
+    });
+    found
+}
+
+fn walk_stmt_exprs(ast: &NormalizedAst, stmt_id: u32, cb: &mut impl FnMut(u32)) {
+    let Some(stmt) = ast.statements.get(stmt_id as usize) else {
+        return;
+    };
+    match &stmt.kind {
+        crate::norm::StmtKind::Block(stmts) => {
+            for child in stmts {
+                walk_stmt_exprs(ast, *child, cb);
+            }
+        }
+        crate::norm::StmtKind::Expr(expr) | crate::norm::StmtKind::Emit(expr) => {
+            walk_expr_tree(ast, *expr, cb);
+        }
+        crate::norm::StmtKind::Return(expr) | crate::norm::StmtKind::Revert(expr) => {
+            if let Some(expr) = expr {
+                walk_expr_tree(ast, *expr, cb);
+            }
+        }
+        crate::norm::StmtKind::VarDecl { init, .. } => {
+            if let Some(expr) = init {
+                walk_expr_tree(ast, *expr, cb);
+            }
+        }
+        crate::norm::StmtKind::If {
+            cond,
+            then_id,
+            else_id,
+        } => {
+            walk_expr_tree(ast, *cond, cb);
+            walk_stmt_exprs(ast, *then_id, cb);
+            if let Some(else_id) = else_id {
+                walk_stmt_exprs(ast, *else_id, cb);
+            }
+        }
+        crate::norm::StmtKind::While { cond, body } => {
+            walk_expr_tree(ast, *cond, cb);
+            walk_stmt_exprs(ast, *body, cb);
+        }
+        crate::norm::StmtKind::DoWhile { body, cond } => {
+            walk_stmt_exprs(ast, *body, cb);
+            walk_expr_tree(ast, *cond, cb);
+        }
+        crate::norm::StmtKind::For {
+            init,
+            cond,
+            step,
+            body,
+        } => {
+            if let Some(init) = init {
+                walk_stmt_exprs(ast, *init, cb);
+            }
+            if let Some(cond) = cond {
+                walk_expr_tree(ast, *cond, cb);
+            }
+            if let Some(step) = step {
+                walk_expr_tree(ast, *step, cb);
+            }
+            walk_stmt_exprs(ast, *body, cb);
+        }
+        crate::norm::StmtKind::Try { call, clauses } => {
+            walk_expr_tree(ast, *call, cb);
+            for clause in clauses {
+                walk_stmt_exprs(ast, clause.body, cb);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn walk_expr_tree(ast: &NormalizedAst, expr_id: u32, cb: &mut impl FnMut(u32)) {
+    cb(expr_id);
+    let Some(expr) = ast.expressions.get(expr_id as usize) else {
+        return;
+    };
+    match &expr.kind {
+        ExprKind::Unary { expr, .. } => walk_expr_tree(ast, *expr, cb),
+        ExprKind::Binary { lhs, rhs, .. } => {
+            walk_expr_tree(ast, *lhs, cb);
+            walk_expr_tree(ast, *rhs, cb);
+        }
+        ExprKind::Assign { lhs, rhs, .. } => {
+            walk_expr_tree(ast, *lhs, cb);
+            walk_expr_tree(ast, *rhs, cb);
+        }
+        ExprKind::Call { callee, args } => {
+            walk_expr_tree(ast, *callee, cb);
+            for arg in args {
+                walk_expr_tree(ast, *arg, cb);
+            }
+        }
+        ExprKind::Member { base, .. } => walk_expr_tree(ast, *base, cb),
+        ExprKind::Index { base, index } => {
+            walk_expr_tree(ast, *base, cb);
+            if let Some(index) = index {
+                walk_expr_tree(ast, *index, cb);
+            }
+        }
+        ExprKind::Tuple(items) => {
+            for item in items {
+                walk_expr_tree(ast, *item, cb);
+            }
+        }
+        ExprKind::Conditional {
+            cond,
+            then_expr,
+            else_expr,
+        } => {
+            walk_expr_tree(ast, *cond, cb);
+            walk_expr_tree(ast, *then_expr, cb);
+            walk_expr_tree(ast, *else_expr, cb);
+        }
+        _ => {}
+    }
+}
+
+fn expr_is_msg_sender(ast: &NormalizedAst, expr_id: u32) -> bool {
+    let Some(expr) = ast.expressions.get(expr_id as usize) else {
+        return false;
+    };
+    match &expr.kind {
+        ExprKind::Member { base, field } if field == "sender" => ast
+            .expressions
+            .get(*base as usize)
+            .and_then(|base_expr| match &base_expr.kind {
+                ExprKind::Ident(name) if name == "msg" => Some(()),
+                _ => None,
+            })
+            .is_some(),
+        _ => false,
+    }
+}
+
+fn expr_is_authority_target(ast: &NormalizedAst, expr_id: u32) -> bool {
+    let Some(expr) = ast.expressions.get(expr_id as usize) else {
+        return false;
+    };
+    match &expr.kind {
+        ExprKind::Ident(name) => authority_like_name(name),
+        ExprKind::Member { base, field } => {
+            authority_like_name(field) || expr_is_authority_target(ast, *base)
+        }
+        ExprKind::Index { base, .. } => expr_is_authority_target(ast, *base),
+        _ => false,
+    }
+}
+
+fn expr_references_any_param(ast: &NormalizedAst, expr_id: u32, params: &[String]) -> bool {
+    let param_set = params
+        .iter()
+        .map(|value| value.to_ascii_lowercase())
+        .collect::<BTreeSet<_>>();
+    let mut found = false;
+    walk_expr_tree(ast, expr_id, &mut |inner_id| {
+        if found {
+            return;
+        }
+        let Some(expr) = ast.expressions.get(inner_id as usize) else {
+            return;
+        };
+        if let ExprKind::Ident(name) = &expr.kind
+            && param_set.contains(&name.to_ascii_lowercase())
+        {
+            found = true;
+        }
+    });
+    found
 }
 
 fn build_summary_report(summaries: &[analysis::summary::FunctionSummary]) -> SummaryReport {

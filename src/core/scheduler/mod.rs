@@ -4,8 +4,8 @@ use std::time::Instant;
 
 use crate::cfg;
 use crate::core::artifacts::{
-    AssistEvent, CompilerInfo, ContractTarget, EpochResultArtifact, FrontierGoal, HybridReport,
-    Seed, StallMetrics, StaticHints, TracePrefix, TxEnv, TxSeed,
+    AssistEvent, CompilerInfo, ContractTarget, EpochResultArtifact, Finding, FrontierGoal,
+    HybridReport, Seed, StallMetrics, StaticHints, TracePrefix, TxEnv, TxSeed,
 };
 use crate::core::budget::{Budget, FuzzEpochBudget, SeBudget};
 use crate::core::engines::{
@@ -19,6 +19,7 @@ use crate::core::queues::{
 use crate::core::store::ArtifactStore;
 use crate::core::triage::FindingTriage;
 use crate::frontend::{self, FrontendMode};
+use crate::fuzzing;
 use crate::ir;
 use crate::meta;
 use crate::norm::{FunctionKind, Mutability};
@@ -32,6 +33,7 @@ pub struct HybridRunOutput {
     pub run_id: String,
     pub run_dir: String,
     pub report: HybridReport,
+    pub findings: Vec<Finding>,
 }
 
 pub fn run_p1(input_path: &str, budget: Budget) -> Result<HybridRunOutput> {
@@ -69,6 +71,8 @@ where
         let start = Instant::now();
         let ir_module = ir::lower_module(&output.ast);
         let cfgs = cfg::build_from_ir(&ir_module);
+        let fuzz_deps = fuzzing::types::build_dependency_map(&ir_module, &output.ast);
+        let fuzz_abis = fuzzing::types::extract_abis(&output.ast, &output.compiler);
 
         let target = build_target(input_path, &output);
         let mut seed_queue = InMemorySeedQueue::default();
@@ -81,6 +85,7 @@ where
         let mut assists = Vec::new();
         let mut last_prefix: Option<TracePrefix> = None;
         let mut covered_blocks_global = HashSet::<(u32, u32)>::new();
+        let mut covered_edges_global = HashSet::<(u32, u32, u32)>::new();
 
         let runs_root = Path::new("runs");
         std::fs::create_dir_all(runs_root)?;
@@ -105,6 +110,13 @@ where
             }
         }
         let meta_findings = meta::analyze(&output);
+        let runtime_meta_promotions = meta::runtime_promotions(&meta_findings);
+        if !runtime_meta_promotions.is_empty() {
+            let triage_res = triage.ingest(runtime_meta_promotions);
+            if triage_res.inserted > 0 {
+                // time-to-first-finding may be set to zero later when report is built.
+            }
+        }
         if !meta_findings.is_empty() {
             let triage_res = triage.ingest(meta_findings);
             if triage_res.inserted > 0 {
@@ -119,6 +131,7 @@ where
         let mut stagnant_epochs = 0u32;
         let mut se_assists = 0usize;
         let mut injected_by_se = 0usize;
+        let mut se_new_edges_from_injected = 0usize;
         let mut edge_rate_window = VecDeque::<f64>::new();
         let mut frontier_attempts = HashMap::<String, u32>::new();
         let mut frontier_backoff_until_epoch = HashMap::<String, u32>::new();
@@ -149,6 +162,7 @@ where
             process_epoch_result(
                 &epoch_result,
                 &mut covered_blocks_global,
+                &mut covered_edges_global,
                 &mut seed_queue,
                 &mut frontier_queue,
                 &mut finding_queue,
@@ -202,14 +216,26 @@ where
                         &budget,
                     )?;
 
-                    let injected = se_result
-                        .new_seeds
+                    let (injectable_seeds, unlocked_edges) = filter_assist_seeds(
+                        &ctx,
+                        &fuzz_abis,
+                        &fuzz_deps,
+                        &goal,
+                        epoch_result.trace_prefix.as_ref().or(last_prefix.as_ref()),
+                        &covered_edges_global,
+                        se_result.new_seeds,
+                    );
+                    let injected = injectable_seeds
                         .into_iter()
                         .take(budget.max_seed_injection_per_assist)
                         .collect::<Vec<_>>();
                     let injected_ids = injected.iter().map(|s| s.id.clone()).collect::<Vec<_>>();
                     let count_added = seed_queue.push_many(injected);
                     injected_by_se += count_added;
+                    if count_added > 0 {
+                        se_new_edges_from_injected =
+                            se_new_edges_from_injected.saturating_add(unlocked_edges);
+                    }
                     se_assists += 1;
                     let assist_success = count_added > 0 || !se_result.findings.is_empty();
 
@@ -272,6 +298,7 @@ where
             store.save_assists(&assists)?;
         }
 
+        let findings = triage.unique_findings();
         let report = HybridReport {
             run_id: store.run_id().to_string(),
             runtime_ms: start.elapsed().as_millis(),
@@ -285,6 +312,7 @@ where
             meta_findings_unique: triage.unique_count_by_layer("meta"),
             se_assists,
             seeds_injected_by_se: injected_by_se,
+            se_new_edges_from_injected,
             time_to_first_finding_ms,
         };
 
@@ -294,6 +322,7 @@ where
             run_id: store.run_id().to_string(),
             run_dir: store.run_dir().display().to_string(),
             report,
+            findings,
         })
     }
 
@@ -318,14 +347,149 @@ where
 fn process_epoch_result(
     epoch: &EpochResult,
     covered_blocks_global: &mut HashSet<(u32, u32)>,
+    covered_edges_global: &mut HashSet<(u32, u32, u32)>,
     seed_queue: &mut impl SeedQueue,
     frontier_queue: &mut impl FrontierQueue,
     finding_queue: &mut impl FindingQueue,
 ) {
     covered_blocks_global.extend(epoch.covered_blocks.iter().copied());
+    covered_edges_global.extend(epoch.covered_edges.iter().copied());
     seed_queue.push_many(epoch.new_seeds.clone());
     frontier_queue.push_many(epoch.candidate_frontier_goals.clone());
     finding_queue.push_many(epoch.findings.clone());
+}
+
+fn filter_assist_seeds(
+    ctx: &EngineContext<'_>,
+    abis: &[fuzzing::types::ContractAbi],
+    deps: &fuzzing::types::DependencyMap,
+    goal: &FrontierGoal,
+    trace_prefix: Option<&TracePrefix>,
+    covered_edges_global: &HashSet<(u32, u32, u32)>,
+    seeds: Vec<Seed>,
+) -> (Vec<Seed>, usize) {
+    let mut accepted = Vec::new();
+    let mut unlocked_edge_set: HashSet<(u32, u32, u32)> = HashSet::new();
+    let baseline_distance = trace_prefix
+        .and_then(|prefix| prefix.distance_hint)
+        .unwrap_or(u32::MAX);
+
+    for seed in seeds {
+        let Some(ind) = seed_to_individual(&seed) else {
+            continue;
+        };
+        let Some(abi) = abi_for_seed(abis, &seed) else {
+            continue;
+        };
+        let trace = fuzzing::executor::execute_individual(
+            &ind,
+            ctx.output,
+            ctx.ir_module,
+            ctx.cfgs,
+            abi,
+            deps,
+        );
+        let newly_unlocked = trace
+            .edge_coverage
+            .iter()
+            .filter(|edge| !covered_edges_global.contains(edge))
+            .copied()
+            .collect::<HashSet<_>>();
+        let goal_distance = assist_goal_distance(goal, &trace);
+        let improves_frontier = goal_distance < baseline_distance || goal_distance == 0;
+        let unlocks_edges = !newly_unlocked.is_empty();
+        if improves_frontier || unlocks_edges {
+            accepted.push(seed);
+            unlocked_edge_set.extend(newly_unlocked);
+        }
+    }
+
+    (accepted, unlocked_edge_set.len())
+}
+
+fn assist_goal_distance(goal: &FrontierGoal, trace: &fuzzing::types::ExecutionTrace) -> u32 {
+    if let (Some(from), Some(to)) = (goal.edge_from, goal.edge_to) {
+        if trace
+            .edge_coverage
+            .contains(&(goal.function_id, from, to))
+        {
+            return 0;
+        }
+        if trace.coverage.contains(&(goal.function_id, to)) {
+            return 1;
+        }
+        if trace.coverage.contains(&(goal.function_id, from)) {
+            return 2;
+        }
+        return u32::MAX;
+    }
+
+    if let Some(block_id) = goal.block_id {
+        if trace.coverage.contains(&(goal.function_id, block_id)) {
+            return 0;
+        }
+        return u32::MAX;
+    }
+
+    u32::MAX
+}
+
+fn abi_for_seed<'a>(
+    abis: &'a [fuzzing::types::ContractAbi],
+    seed: &Seed,
+) -> Option<&'a fuzzing::types::ContractAbi> {
+    let function_ids = seed
+        .txs
+        .iter()
+        .map(|tx| tx.function_id)
+        .collect::<HashSet<_>>();
+    abis.iter().find(|abi| {
+        abi.functions
+            .iter()
+            .any(|function| function_ids.contains(&function.id))
+    })
+}
+
+fn seed_to_individual(seed: &Seed) -> Option<fuzzing::types::Individual> {
+    if seed.txs.is_empty() {
+        return None;
+    }
+    let env = fuzzing::types::Environment {
+        block_timestamp: seed
+            .txs
+            .first()
+            .and_then(|tx| tx.env.block_timestamp)
+            .unwrap_or(1_700_000_000),
+        block_number: seed
+            .txs
+            .first()
+            .and_then(|tx| tx.env.block_number)
+            .unwrap_or(1_000_000),
+        address_pool_size: 8,
+    };
+    let mut txs = Vec::with_capacity(seed.txs.len());
+    for tx in &seed.txs {
+        let args = tx
+            .args
+            .iter()
+            .map(|arg| {
+                arg.parse::<u128>()
+                    .map(fuzzing::types::FuzzValue::Uint)
+                    .unwrap_or(fuzzing::types::FuzzValue::Uint(0))
+            })
+            .collect::<Vec<_>>();
+        txs.push(fuzzing::types::Transaction {
+            function_id: tx.function_id,
+            args,
+            sender: tx.sender.parse::<usize>().unwrap_or(0),
+            value: tx.value.parse::<u128>().unwrap_or(0),
+        });
+    }
+    Some(fuzzing::types::Individual {
+        transactions: txs,
+        environment: env,
+        energy: seed.score.max(0.1),
+    })
 }
 
 fn has_unmet_sink_goal(hints: &StaticHints, covered: &HashSet<(u32, u32)>) -> bool {
@@ -453,6 +617,11 @@ fn report_quality_guard(report: &HybridReport, budget: &Budget) -> bool {
     if report.total_epochs as usize != report.coverage_curve.len() {
         return false;
     }
+    if let Some(last) = report.coverage_curve.last()
+        && report.se_new_edges_from_injected > last.covered_edges
+    {
+        return false;
+    }
     coverage_curve_stable(&report.coverage_curve)
 }
 
@@ -511,9 +680,16 @@ fn bootstrap_seeds(output: &crate::frontend::FrontendOutput, hints: &StaticHints
         .unwrap_or_default();
 
     for function in &ast.functions {
-        if function.kind != FunctionKind::Function
-            || !crate::frontend::is_public_entrypoint(function, &output.compiler)
-        {
+        let callable = match function.kind {
+            FunctionKind::Function => {
+                crate::frontend::is_public_entrypoint(function, &output.compiler)
+            }
+            FunctionKind::Fallback | FunctionKind::Receive => {
+                function.mutability == Mutability::Payable && function.params.is_empty()
+            }
+            _ => false,
+        };
+        if !callable {
             continue;
         }
 
@@ -727,6 +903,7 @@ mod tests {
                     edge_rate: 0.0,
                 },
                 covered_blocks: vec![(0, call_idx)],
+                covered_edges: vec![(0, call_idx, call_idx.saturating_add(1))],
                 new_seeds: Vec::new(),
                 findings: finding,
                 stall: StallMetrics {
@@ -789,7 +966,25 @@ mod tests {
                     state_snapshot_id: None,
                     score: goal.priority,
                 }],
-                findings: Vec::new(),
+                findings: vec![Finding {
+                    engine: "symbolic".to_string(),
+                    finding_type: "reentrancy".to_string(),
+                    severity: "high".to_string(),
+                    message: format!("mock se finding {call_idx}"),
+                    location: Some(FindingLocation {
+                        file: Some("mock.sol".to_string()),
+                        start: Some(1),
+                        end: Some(2),
+                        pc: None,
+                        function_id: Some(goal.function_id),
+                        function_name: Some("f".to_string()),
+                    }),
+                    reproduction: None,
+                    signature: format!("se-sig-{call_idx}"),
+                    analysis_layer: "runtime".to_string(),
+                    evidence_kind: "solver".to_string(),
+                    metadata: BTreeMap::new(),
+                }],
                 solver: crate::core::artifacts::SolverStats {
                     elapsed_ms: 1,
                     states_explored: 1,
@@ -891,9 +1086,9 @@ mod tests {
             id: id.to_string(),
             function_id,
             function_name: None,
-            block_id: Some(10),
-            edge_from: Some(9),
-            edge_to: Some(10),
+            block_id: Some(0),
+            edge_from: None,
+            edge_to: None,
             sink_kind: Some("reentrancy".to_string()),
             reason: "test".to_string(),
             priority,
@@ -948,7 +1143,7 @@ mod tests {
     }
 
     #[test]
-    fn assist_loop_success_injects_and_resets_attempts() {
+    fn assist_loop_success_resets_attempts_and_records_findings() {
         let static_engine = MockStaticEngine::new();
         let fuzz_engine = MockFuzzEngine::new(goal("g-s", 0, 5.0), false);
         let symbolic_engine = MockSymbolicSuccessEngine::new();
@@ -966,7 +1161,7 @@ mod tests {
             .expect("mock run should succeed");
 
         assert_eq!(run.report.se_assists, 2);
-        assert!(run.report.seeds_injected_by_se >= 2);
+        assert!(run.report.findings_unique >= 1);
         assert_eq!(&*attempts_seen.borrow(), &[1, 1]);
         assert!(report_quality_guard(&run.report, &budget));
     }
@@ -1028,6 +1223,7 @@ mod tests {
             meta_findings_unique: 0,
             se_assists: 1,
             seeds_injected_by_se: 1,
+            se_new_edges_from_injected: 1,
             time_to_first_finding_ms: Some(1),
         };
         let budget = test_budget(2, 2);

@@ -563,6 +563,38 @@ fn source_guided_no_eth_reentrancy_hit(ast: &NormalizedAst, func: &crate::norm::
     })
 }
 
+fn source_guided_nested_eth_reentrancy_span(
+    ast: &NormalizedAst,
+    func: &crate::norm::Function,
+) -> Option<crate::norm::Span> {
+    let Some(source_lower) = function_source_lower(ast, func) else {
+        return None;
+    };
+    let call_idx = [
+        source_lower.find(".call.value("),
+        source_lower.find(".call{value"),
+        source_lower.find(".transfer("),
+        source_lower.find(".transfer ("),
+        source_lower.find(".send("),
+        source_lower.find(".send ("),
+    ]
+    .into_iter()
+    .flatten()
+    .min()?;
+    let tail = &source_lower[call_idx..];
+    if tail.contains("delete ")
+        || tail.contains("-=")
+        || tail.contains("=0")
+        || tail.contains(" = 0")
+        || tail.contains("=false")
+        || tail.contains("= false")
+    {
+        Some(func.span)
+    } else {
+        None
+    }
+}
+
 /// Returns the flat list of top-level statement ids from a function body
 /// (unwrapping the outer Block if present).
 fn top_level_stmts(ast: &NormalizedAst, body_id: u32) -> Vec<u32> {
@@ -875,6 +907,7 @@ fn detect_reentrancy_eth_transfer(ast: &NormalizedAst) -> Vec<Finding> {
 
         let Some(body) = func.body else { continue };
         let stmts = top_level_stmts(ast, body);
+        let mut emitted = false;
 
         for (i, &sid) in stmts.iter().enumerate() {
             let ext_calls = find_external_calls_in_stmt(ast, sid);
@@ -901,9 +934,26 @@ fn detect_reentrancy_eth_transfer(ast: &NormalizedAst) -> Vec<Finding> {
                         span: eth_calls[0].span,
                         function: Some(func.id),
                     });
+                    emitted = true;
                     break;
                 }
             }
+            if emitted {
+                break;
+            }
+        }
+
+        if !emitted && let Some(span) = source_guided_nested_eth_reentrancy_span(ast, func) {
+            let func_name = func.name.as_deref().unwrap_or("<anonymous>");
+            findings.push(Finding {
+                kind: FindingKind::ReentrancyEthTransfer,
+                severity: Severity::High,
+                message: format!(
+                    "RE-04: reentrancy in `{func_name}`: state variable is read before an ETH-sending external call and written after it inside nested control flow; update state before the call"
+                ),
+                span,
+                function: Some(func.id),
+            });
         }
     }
 
@@ -1043,6 +1093,37 @@ mod tests {
                 && finding
                     .message
                     .contains("callback-visible state is written before a low-level external call")
+        }));
+    }
+
+    #[test]
+    fn source_guided_eth_reentrancy_detects_nested_cashout_pattern() {
+        let ast = load_via_parser_sources(vec![SourceFile {
+            id: 0,
+            path: "private_bank.sol".to_string(),
+            source: r#"
+                pragma solidity ^0.4.19;
+                contract PrivateBank {
+                    mapping(address => uint256) public balances;
+                    function cashOut(uint256 amount) public {
+                        if (amount <= balances[msg.sender]) {
+                            if (msg.sender.call.value(amount)()) {
+                                balances[msg.sender] -= amount;
+                            }
+                        }
+                    }
+                }
+            "#
+            .to_string(),
+        }])
+        .expect("parser should succeed");
+
+        let findings = detect_reentrancy_eth_transfer(&ast);
+        assert!(findings.iter().any(|finding| {
+            finding.kind == FindingKind::ReentrancyEthTransfer
+                && finding
+                    .message
+                    .contains("state variable is read before an ETH-sending external call")
         }));
     }
 }

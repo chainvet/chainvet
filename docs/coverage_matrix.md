@@ -44,6 +44,17 @@ Confidence legend:
 - Keep `docs/taxonomy_engine_mapping.md` as policy/reference text.
 - Keep this matrix as the operational view for implementation status.
 
+## Runtime vs Meta Channel Policy
+
+- `runtime_primary`: findings directly produced by symbolic/fuzzing execution logic.
+- `meta_secondary`: taxonomy-completion/static-lifted rows surfaced for parity.
+- `surfaced_output`: union of runtime + meta.
+
+Scoring policy for accuracy work:
+
+- TP/FP/FN primary KPI is `runtime_primary`.
+- `meta_secondary` remains reported, but does not define runtime maturity.
+
 ## Full Taxonomy Audit (45 Rows)
 
 Audit date: `2026-03-11`

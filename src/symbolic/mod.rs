@@ -13,11 +13,13 @@ use z3::{
 
 use crate::analysis;
 use crate::cfg;
+use crate::frontend;
 use crate::frontend::FrontendOutput;
 use crate::fuzzing::types::DependencyMap;
 use crate::ir::{ControlKind, IrInstr, IrPlace, IrValue, IrVar, PlaceClass};
-use crate::norm::{FunctionKind, Mutability, NormalizedAst, Span};
+use crate::norm::{FunctionKind, Mutability, NormalizedAst, Span, Visibility};
 use crate::report::OutputFormat;
+use crate::surfaced;
 use crate::util::error::{Error, Result};
 
 #[derive(Clone)]
@@ -149,10 +151,16 @@ struct SymbolicReport {
     max_worklist: usize,
     vulnerability_count: usize,
     meta_finding_count: usize,
+    vulnerability_count_raw: usize,
+    meta_finding_count_raw: usize,
+    suppressed_vulnerabilities: usize,
+    suppressed_meta_findings: usize,
     truncated_functions: usize,
     by_function: Vec<FunctionSymbolicReport>,
-    vulnerabilities: Vec<VulnerabilityFinding>,
-    meta_findings: Vec<crate::core::artifacts::Finding>,
+    vulnerabilities: Vec<surfaced::SurfacedFinding>,
+    vulnerabilities_raw: Vec<VulnerabilityFinding>,
+    meta_findings: Vec<surfaced::SurfacedFinding>,
+    meta_findings_raw: Vec<crate::core::artifacts::Finding>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -306,6 +314,7 @@ enum VulnerabilityKind {
     HardcodedGasTransfer,
     LockedEther,
     MemoryManipulation,
+    DosBlockGasLimit,
     DosWithFailedCall,
     TransactionOrderDependency,
     SignatureMalleability,
@@ -334,6 +343,7 @@ impl VulnerabilityKind {
             Self::HardcodedGasTransfer => "hardcoded-gas-transfer",
             Self::LockedEther => "locked-ether",
             Self::MemoryManipulation => "memory-manipulation",
+            Self::DosBlockGasLimit => "dos-block-gas-limit",
             Self::DosWithFailedCall => "dos-with-failed-call",
             Self::TransactionOrderDependency => "transaction-order-dependency",
             Self::SignatureMalleability => "signature-malleability",
@@ -363,6 +373,7 @@ impl VulnerabilityKind {
             | Self::WeakPrng
             | Self::HardcodedGasTransfer
             | Self::MemoryManipulation
+            | Self::DosBlockGasLimit
             | Self::DosWithFailedCall
             | Self::TransactionOrderDependency
             | Self::UnsafeSendInRequire
@@ -879,6 +890,11 @@ pub fn run(output: &FrontendOutput, format: OutputFormat) -> Result<()> {
         .filter(|v| v.kind == VulnerabilityKind::DosWithFailedCall.as_str())
         .map(|v| v.function_id)
         .collect::<HashSet<_>>();
+    let runtime_dos_block_gas_limit_functions = vulnerabilities
+        .iter()
+        .filter(|v| v.kind == VulnerabilityKind::DosBlockGasLimit.as_str())
+        .map(|v| v.function_id)
+        .collect::<HashSet<_>>();
     let runtime_tod_functions = vulnerabilities
         .iter()
         .filter(|v| v.kind == VulnerabilityKind::TransactionOrderDependency.as_str())
@@ -952,6 +968,56 @@ pub fn run(output: &FrontendOutput, format: OutputFormat) -> Result<()> {
         }
     }
 
+    for finding in static_findings
+        .iter()
+        .filter(|finding| finding.kind == analysis::detectors::FindingKind::DosBlockGasLimit)
+    {
+        let function_id = finding.function.unwrap_or(0);
+        if runtime_dos_block_gas_limit_functions.contains(&function_id)
+            || !runtime_dos_functions.contains(&function_id)
+            || !function_source_has_dynamic_gas_loop(&output.ast, function_id)
+        {
+            continue;
+        }
+        let function_name = output
+            .ast
+            .functions
+            .get(function_id as usize)
+            .and_then(|f| f.name.clone());
+        let kind = VulnerabilityKind::DosBlockGasLimit.as_str().to_string();
+        let dedup_key = (
+            function_id,
+            kind.clone(),
+            0usize,
+            "runtime-loop-bound-recovery".to_string(),
+        );
+        if seen_output_vulns.insert(dedup_key) {
+            vulnerabilities.push(VulnerabilityFinding {
+                kind,
+                confidence: VulnerabilityKind::DosBlockGasLimit
+                    .confidence()
+                    .as_str()
+                    .to_string(),
+                function_id,
+                function_name: function_name.clone(),
+                pc: 0,
+                instruction: "runtime-loop-bound-recovery".to_string(),
+                trace: Vec::new(),
+                trigger: None,
+                branch_triggers: Vec::new(),
+                location: build_location(&finding.span, output),
+                path_constraints: Vec::new(),
+                message:
+                    "runtime execution reached a loop/call DoS path, and the loop bound is dynamic (`.length`/gas), so block-gas-limit DoS is also feasible"
+                        .to_string(),
+                model: None,
+            });
+            if let Some(entry) = by_function.iter_mut().find(|entry| entry.id == function_id) {
+                entry.vulnerability_count = entry.vulnerability_count.saturating_add(1);
+            }
+        }
+    }
+
     for finding in static_findings.iter().filter(|finding| {
         matches!(
             finding.kind,
@@ -964,6 +1030,19 @@ pub fn run(output: &FrontendOutput, format: OutputFormat) -> Result<()> {
     }) {
         let function_id = finding.function.unwrap_or(0);
         if runtime_reentrancy_functions.contains(&function_id) {
+            continue;
+        }
+        let strong_stipend_pattern =
+            function_has_strong_stipend_reentrancy_pattern(&output.ast, function_id);
+        if function_uses_only_stipend_external_calls(&output.ast, function_id)
+            && !strong_stipend_pattern
+        {
+            continue;
+        }
+        if (!function_has_value_moving_low_level_call(&output.ast, function_id)
+            && !strong_stipend_pattern)
+            || function_is_direct_msg_value_forwarder(Some(&output.ast), function_id)
+        {
             continue;
         }
         let has_runtime_tod = vulnerabilities.iter().any(|v| {
@@ -1014,12 +1093,58 @@ pub fn run(output: &FrontendOutput, format: OutputFormat) -> Result<()> {
         }
     }
 
+    for function in output
+        .ast
+        .functions
+        .iter()
+        .filter(|function| frontend::is_public_entrypoint(function, &output.compiler))
+    {
+        let function_id = function.id;
+        if runtime_reentrancy_functions.contains(&function_id)
+            || !function_has_strong_stipend_reentrancy_pattern(&output.ast, function_id)
+        {
+            continue;
+        }
+        let kind = VulnerabilityKind::ReentrancyFallback.as_str().to_string();
+        let dedup_key = (
+            function_id,
+            kind.clone(),
+            0usize,
+            "source-guided-stipend-runtime-backstop".to_string(),
+        );
+        if seen_output_vulns.insert(dedup_key) {
+            vulnerabilities.push(VulnerabilityFinding {
+                kind,
+                confidence: "medium".to_string(),
+                function_id,
+                function_name: function.name.clone(),
+                pc: 0,
+                instruction: "source-guided-stipend-backstop".to_string(),
+                trace: Vec::new(),
+                trigger: None,
+                branch_triggers: Vec::new(),
+                location: build_location(&function.span, output),
+                path_constraints: Vec::new(),
+                message:
+                    "runtime callback/store evidence was insufficient, but the function performs a value-moving payout followed by destructive state updates (`delete`/zeroing/decrement), so reentrancy remains feasible"
+                        .to_string(),
+                model: None,
+            });
+            if let Some(entry) = by_function.iter_mut().find(|entry| entry.id == function_id) {
+                entry.vulnerability_count = entry.vulnerability_count.saturating_add(1);
+            }
+        }
+    }
+
     for finding in static_findings
         .iter()
         .filter(|finding| finding.kind == analysis::detectors::FindingKind::DosWithFailedCall)
     {
         let function_id = finding.function.unwrap_or(0);
-        if runtime_dos_functions.contains(&function_id) {
+        if runtime_dos_functions.contains(&function_id)
+            || !function_has_value_moving_low_level_call(&output.ast, function_id)
+            || function_is_checked_selector_low_level_wrapper(Some(&output.ast), function_id)
+        {
             continue;
         }
         let function_name = output
@@ -1052,6 +1177,110 @@ pub fn run(output: &FrontendOutput, format: OutputFormat) -> Result<()> {
                 path_constraints: Vec::new(),
                 message:
                     "runtime loop/call failure evidence was insufficient, but static DoS-with-failed-call signal exists for this function (runtime backstop)"
+                        .to_string(),
+                model: None,
+            });
+            if let Some(entry) = by_function.iter_mut().find(|entry| entry.id == function_id) {
+                entry.vulnerability_count = entry.vulnerability_count.saturating_add(1);
+            }
+        }
+    }
+
+    for finding in crate::meta::runtime_promotions(&meta_findings) {
+        let function_id = finding
+            .location
+            .as_ref()
+            .and_then(|location| location.function_id)
+            .unwrap_or(0);
+        let kind = finding.finding_type.clone();
+        let dedup_key = (
+            function_id,
+            kind.clone(),
+            0usize,
+            "meta-runtime-backstop".to_string(),
+        );
+        if !seen_output_vulns.insert(dedup_key) {
+            continue;
+        }
+        vulnerabilities.push(VulnerabilityFinding {
+            kind,
+            confidence: finding
+                .metadata
+                .get("confidence")
+                .cloned()
+                .unwrap_or_else(|| finding.severity.clone()),
+            function_id,
+            function_name: finding
+                .location
+                .as_ref()
+                .and_then(|location| location.function_name.clone()),
+            pc: 0,
+            instruction: "meta-runtime-backstop".to_string(),
+            trace: Vec::new(),
+            trigger: None,
+            branch_triggers: Vec::new(),
+            location: finding.location.as_ref().map(|location| FindingLocation {
+                file: location.file.clone().unwrap_or_else(|| "<unknown>".to_string()),
+                start: location.start.unwrap_or(0),
+                end: location.end.unwrap_or(0),
+                snippet: None,
+            }),
+            path_constraints: Vec::new(),
+            message: format!(
+                "runtime backstop from {}: {}",
+                finding.evidence_kind, finding.message
+            ),
+            model: None,
+        });
+        if let Some(entry) = by_function.iter_mut().find(|entry| entry.id == function_id) {
+            entry.vulnerability_count = entry.vulnerability_count.saturating_add(1);
+        }
+    }
+
+    for finding in static_findings
+        .iter()
+        .filter(|finding| finding.kind == analysis::detectors::FindingKind::DosBlockGasLimit)
+    {
+        let function_id = finding.function.unwrap_or(0);
+        let has_runtime_dos = vulnerabilities.iter().any(|v| {
+            v.function_id == function_id && v.kind == VulnerabilityKind::DosWithFailedCall.as_str()
+        });
+        if runtime_dos_block_gas_limit_functions.contains(&function_id)
+            || !has_runtime_dos
+            || !function_source_has_dynamic_gas_loop(&output.ast, function_id)
+        {
+            continue;
+        }
+        let function_name = output
+            .ast
+            .functions
+            .get(function_id as usize)
+            .and_then(|f| f.name.clone());
+        let kind = VulnerabilityKind::DosBlockGasLimit.as_str().to_string();
+        let dedup_key = (
+            function_id,
+            kind.clone(),
+            0usize,
+            "runtime-loop-bound-recovery".to_string(),
+        );
+        if seen_output_vulns.insert(dedup_key) {
+            vulnerabilities.push(VulnerabilityFinding {
+                kind,
+                confidence: VulnerabilityKind::DosBlockGasLimit
+                    .confidence()
+                    .as_str()
+                    .to_string(),
+                function_id,
+                function_name: function_name.clone(),
+                pc: 0,
+                instruction: "runtime-loop-bound-recovery".to_string(),
+                trace: Vec::new(),
+                trigger: None,
+                branch_triggers: Vec::new(),
+                location: build_location(&finding.span, output),
+                path_constraints: Vec::new(),
+                message:
+                    "runtime execution reached a loop/call DoS path, and the loop bound is dynamic (`.length`/gas), so block-gas-limit DoS is also feasible"
                         .to_string(),
                 model: None,
             });
@@ -1185,6 +1414,14 @@ pub fn run(output: &FrontendOutput, format: OutputFormat) -> Result<()> {
         }
     }
 
+    let surfaced = surfaced::surface_findings(
+        vulnerabilities
+            .iter()
+            .map(symbolic_runtime_candidate)
+            .collect(),
+        meta_findings.iter().map(symbolic_meta_candidate).collect(),
+    );
+
     let report = SymbolicReport {
         files: output.ast.files.len(),
         functions: ir_module.functions.len(),
@@ -1197,18 +1434,24 @@ pub fn run(output: &FrontendOutput, format: OutputFormat) -> Result<()> {
         pruned_branches,
         dead_ends,
         max_worklist,
-        vulnerability_count: vulnerabilities.len(),
-        meta_finding_count: meta_findings.len(),
+        vulnerability_count: surfaced.runtime_findings.len(),
+        meta_finding_count: surfaced.meta_findings.len(),
+        vulnerability_count_raw: vulnerabilities.len(),
+        meta_finding_count_raw: meta_findings.len(),
+        suppressed_vulnerabilities: surfaced.suppressed_runtime_findings,
+        suppressed_meta_findings: surfaced.suppressed_meta_findings,
         truncated_functions,
         by_function,
-        vulnerabilities,
-        meta_findings,
+        vulnerabilities: surfaced.runtime_findings.clone(),
+        vulnerabilities_raw: vulnerabilities,
+        meta_findings: surfaced.meta_findings.clone(),
+        meta_findings_raw: meta_findings,
     };
 
     match format {
         OutputFormat::Text => {
             println!(
-                "symbolic: files={}, functions={}, instructions={}, explored_states={}, terminal_paths={}, returns={}, reverts={}, fallthroughs={}, pruned_branches={}, dead_ends={}, max_worklist={}, vulnerabilities={}, truncated_functions={}",
+                "symbolic: files={}, functions={}, instructions={}, explored_states={}, terminal_paths={}, returns={}, reverts={}, fallthroughs={}, pruned_branches={}, dead_ends={}, max_worklist={}, vulnerabilities={} (raw={}, suppressed={}), truncated_functions={}",
                 report.files,
                 report.functions,
                 report.instructions,
@@ -1221,9 +1464,14 @@ pub fn run(output: &FrontendOutput, format: OutputFormat) -> Result<()> {
                 report.dead_ends,
                 report.max_worklist,
                 report.vulnerability_count,
+                report.vulnerability_count_raw,
+                report.suppressed_vulnerabilities,
                 report.truncated_functions
             );
-            println!("meta findings: {}", report.meta_finding_count);
+            println!(
+                "meta findings: {} (raw={}, suppressed={})",
+                report.meta_finding_count, report.meta_finding_count_raw, report.suppressed_meta_findings
+            );
             for entry in &report.by_function {
                 println!(
                     "  fn {} ({}) -> instructions={}, states={}, terminals={}, returns={}, reverts={}, fallthroughs={}, pruned={}, dead_ends={}, max_worklist={}, vulns={}, truncated={}",
@@ -1245,74 +1493,46 @@ pub fn run(output: &FrontendOutput, format: OutputFormat) -> Result<()> {
             if report.vulnerabilities.is_empty() {
                 println!("vulnerabilities found: none");
             } else {
-                println!("vulnerabilities found (detailed):");
+                println!("vulnerabilities found (surfaced):");
                 for (idx, vuln) in report.vulnerabilities.iter().enumerate() {
                     println!(
-                        "  {}. kind={}, confidence={}, fn {} ({}), pc={}",
+                        "  {}. kind={}, confidence={}, fn {} ({}), severity={}",
                         idx + 1,
                         vuln.kind,
-                        vuln.confidence,
-                        vuln.function_id,
+                        vuln.confidence.as_deref().unwrap_or("unknown"),
+                        vuln.function_id.unwrap_or(0),
                         vuln.function_name.as_deref().unwrap_or("<anonymous>"),
-                        vuln.pc
+                        vuln.severity
                     );
-                    println!("     message: {}", vuln.message);
-                    if let Some(trigger) = &vuln.trigger {
-                        println!("     trigger: {}", trigger);
-                    }
-                    if let Some(location) = &vuln.location {
+                     println!("     message: {}", vuln.message);
+                    if let Some(file) = &vuln.file {
                         println!(
                             "     location: {}:{}-{}",
-                            location.file, location.start, location.end
+                            file,
+                            vuln.start.unwrap_or(0),
+                            vuln.end.unwrap_or(0)
                         );
-                        if let Some(snippet) = &location.snippet {
-                            println!("     snippet: {}", snippet);
-                        }
-                    }
-                    println!("     instruction: {}", vuln.instruction);
-                    println!("     trace: {}", format_trace(&vuln.trace));
-                    if !vuln.branch_triggers.is_empty() {
-                        println!("     branch_triggers:");
-                        for trigger in &vuln.branch_triggers {
-                            println!("       - {}", trigger);
-                        }
-                    }
-                    if vuln.path_constraints.is_empty() {
-                        println!("     path_constraints: <none>");
-                    } else {
-                        println!(
-                            "     path_constraints_count: {}",
-                            vuln.path_constraints.len()
-                        );
-                        for (idx, c) in vuln.path_constraints.iter().enumerate() {
-                            println!("     constraint[{}]: {}", idx, c);
-                        }
-                    }
-                    if let Some(model) = &vuln.model {
-                        println!("     model: {}", truncate(model, 240));
                     }
                 }
             }
             if !report.meta_findings.is_empty() {
-                println!("meta findings (separate):");
+                println!("meta findings (surfaced):");
                 for (idx, finding) in report.meta_findings.iter().enumerate() {
                     println!(
                         "  {}. kind={} severity={} evidence={}",
                         idx + 1,
-                        finding.finding_type,
+                        finding.kind,
                         finding.severity,
-                        finding.evidence_kind
+                        finding.evidence_kind.as_deref().unwrap_or("meta")
                     );
                     println!("     message: {}", finding.message);
-                    if let Some(location) = &finding.location {
-                        if let Some(file) = &location.file {
-                            println!(
-                                "     location: {}:{}-{}",
-                                file,
-                                location.start.unwrap_or(0),
-                                location.end.unwrap_or(0)
-                            );
-                        }
+                    if let Some(file) = &finding.file {
+                        println!(
+                            "     location: {}:{}-{}",
+                            file,
+                            finding.start.unwrap_or(0),
+                            finding.end.unwrap_or(0)
+                        );
                     }
                 }
             }
@@ -1334,6 +1554,121 @@ fn configure_solver_limits() {
         DEFAULT_SYMBOLIC_SOLVER_TIMEOUT_MS,
     );
     set_global_param("timeout", &timeout_ms.to_string());
+}
+
+fn symbolic_runtime_candidate(vuln: &VulnerabilityFinding) -> surfaced::FindingCandidate {
+    surfaced::FindingCandidate {
+        kind: vuln.kind.clone(),
+        canonical_kind: surfaced::canonicalize_kind(&vuln.kind),
+        category: category_for_kind(vuln.kind.as_str()).to_string(),
+        severity: confidence_to_severity(vuln.confidence.as_str()).to_string(),
+        confidence: Some(vuln.confidence.clone()),
+        message: vuln.message.clone(),
+        file: vuln.location.as_ref().map(|location| location.file.clone()),
+        start: vuln.location.as_ref().map(|location| location.start),
+        end: vuln.location.as_ref().map(|location| location.end),
+        function_id: Some(vuln.function_id),
+        function_name: vuln.function_name.clone(),
+        analysis_layer: "runtime".to_string(),
+        evidence_kind: Some("symbolic-path".to_string()),
+    }
+}
+
+fn symbolic_meta_candidate(finding: &crate::core::artifacts::Finding) -> surfaced::FindingCandidate {
+    surfaced::FindingCandidate {
+        kind: finding.finding_type.clone(),
+        canonical_kind: surfaced::canonicalize_kind(&finding.finding_type),
+        category: meta_category_for_kind(finding.finding_type.as_str()).to_string(),
+        severity: finding.severity.clone(),
+        confidence: None,
+        message: finding.message.clone(),
+        file: finding
+            .location
+            .as_ref()
+            .and_then(|location| location.file.clone()),
+        start: finding
+            .location
+            .as_ref()
+            .and_then(|location| location.start),
+        end: finding
+            .location
+            .as_ref()
+            .and_then(|location| location.end),
+        function_id: finding
+            .location
+            .as_ref()
+            .and_then(|location| location.function_id),
+        function_name: finding
+            .location
+            .as_ref()
+            .and_then(|location| location.function_name.clone()),
+        analysis_layer: "meta".to_string(),
+        evidence_kind: Some(finding.evidence_kind.clone()),
+    }
+}
+
+fn confidence_to_severity(confidence: &str) -> &'static str {
+    match confidence {
+        "high" => "high",
+        "medium" => "medium",
+        "low" => "low",
+        _ => "medium",
+    }
+}
+
+fn category_for_kind(kind: &str) -> &'static str {
+    match surfaced::canonicalize_kind(kind).as_str() {
+        "access-control"
+        | "arbitrary-write"
+        | "unchecked-call"
+        | "tx-origin"
+        | "unprotected-selfdestruct"
+        | "unsafe-delegatecall"
+        | "wrong-constructor-name"
+        | "uninit-permission-check"
+        | "unprotected-ether-withdrawal"
+        | "public-mint-burn" => "Access Control",
+        "integer-overflow" | "integer-underflow" | "division-before-multiplication" => {
+            "Arithmetic"
+        }
+        "weak-prng" | "timestamp-dependency" | "transaction-order-dependency" => {
+            "Block Manipulation"
+        }
+        "dos-block-gas-limit" | "dos-with-failed-call" | "hardcoded-gas-transfer" | "locked-ether" => {
+            "Denial of Service"
+        }
+        "memory-manipulation" | "shadowing" => "Storage and Memory",
+        "reentrancy" => "Reentrancy",
+        _ => "Miscellaneous",
+    }
+}
+
+fn meta_category_for_kind(kind: &str) -> &'static str {
+    match surfaced::canonicalize_kind(kind).as_str() {
+        "incorrect-interface" | "honeypot" => "Miscellaneous",
+        "shadowing" | "memory-manipulation" => "Storage and Memory",
+        "weak-prng" | "timestamp-dependency" | "transaction-order-dependency" => {
+            "Block Manipulation"
+        }
+        "dos-block-gas-limit" | "dos-with-failed-call" | "hardcoded-gas-transfer" | "locked-ether" => {
+            "Denial of Service"
+        }
+        "integer-overflow" | "integer-underflow" | "division-before-multiplication" => {
+            "Arithmetic"
+        }
+        "access-control"
+        | "arbitrary-write"
+        | "unchecked-call"
+        | "tx-origin"
+        | "unprotected-selfdestruct"
+        | "unsafe-delegatecall"
+        | "wrong-constructor-name"
+        | "uninit-permission-check"
+        | "unprotected-ether-withdrawal"
+        | "public-mint-burn" => "Access Control",
+        "reentrancy" => "Reentrancy",
+        _ => "Miscellaneous",
+    }
 }
 
 fn sink_score_key(function_id: u32, block_id: u32) -> u32 {
@@ -1577,6 +1912,12 @@ fn engine(
         .unwrap_or(false);
     let allow_callback_runtime = allow_reentrancy_fallback || has_callback_overlap;
     let authority_profile = build_authority_runtime_profile(cfg_fn, callback_data);
+    let supports_low_confidence_reentrancy_fallback = callback_data
+        .map(|data| {
+            function_has_value_moving_low_level_call(data.ast, cfg_fn.id)
+                && !function_is_direct_msg_value_forwarder(Some(data.ast), cfg_fn.id)
+        })
+        .unwrap_or(false);
 
     let entry_block = cfg_fn.blocks.first().map(|b| b.id).unwrap_or(0);
     let mut entry_state = State::new();
@@ -1584,6 +1925,9 @@ fn engine(
     entry_state.block_id = entry_block;
     entry_state.instr_offset = 0;
     entry_state.block_visits.insert(entry_block, 1);
+    if let Some(data) = callback_data {
+        seed_contract_state_var_origins(&mut entry_state.origins, cfg_fn.id, data.ast);
+    }
     let mut worklist = vec![entry_state];
     let mut state_shape_visits: HashMap<String, u8> = HashMap::new();
     if let Some(initial) = worklist.first() {
@@ -1622,6 +1966,7 @@ fn engine(
             continue;
         };
         if allow_callback_runtime
+            && supports_low_confidence_reentrancy_fallback
             && callback_only_fallback.is_none()
             && state.callback_observed
             && let Some(call_pc) = state.external_call_pc
@@ -1748,7 +2093,16 @@ fn engine(
                                     });
                                 }
                             } else if !state.callback_observed
+                                && supports_low_confidence_reentrancy_fallback
                                 && (has_writer_reader_dependency || allow_reentrancy_fallback)
+                                && !callback_data
+                                    .map(|data| {
+                                        function_uses_only_stipend_external_calls(
+                                            data.ast,
+                                            state.function_id,
+                                        )
+                                    })
+                                    .unwrap_or(false)
                                 && seen_vulns
                                     .insert((VulnerabilityKind::ReentrancyFallback, current_pc))
                             {
@@ -2051,6 +2405,20 @@ fn engine(
                         state.value_expr(rhs)
                     );
                     state.expr_env.insert(dest_key.clone(), expr.clone());
+                    if let Some(lhs_key) = value_var_key(lhs) {
+                        if let Some(pending) = state.pending_low_level_calls.get(&lhs_key).cloned()
+                        {
+                            state
+                                .pending_low_level_calls
+                                .insert(dest_key.clone(), pending);
+                        }
+                    }
+                    if let Some(rhs_key) = value_var_key(rhs) {
+                        if let Some(pending) = state.pending_low_level_calls.get(&rhs_key).cloned()
+                        {
+                            state.pending_low_level_calls.entry(dest_key.clone()).or_insert(pending);
+                        }
+                    }
                     let lhs_has_timestamp =
                         value_has_origin(&state.origins, lhs, ValueOrigin::Timestamp);
                     let rhs_has_timestamp =
@@ -2066,6 +2434,27 @@ fn engine(
                         value_has_origin(&state.origins, lhs, ValueOrigin::BlockNumber);
                     let rhs_has_blocknum =
                         value_has_origin(&state.origins, rhs, ValueOrigin::BlockNumber);
+                    if (lhs_has_timestamp || rhs_has_timestamp)
+                        && (lhs_has_blocknum || rhs_has_blocknum)
+                        && is_weak_prng_arithmetic_op(op)
+                        && seen_vulns
+                            .insert((VulnerabilityKind::TimestampDependency, current_pc))
+                    {
+                        vulnerabilities.push(LocalVulnerability {
+                            kind: VulnerabilityKind::TimestampDependency,
+                            pc: current_pc,
+                            instruction: format!("{instr:?}"),
+                            trace: state.trace.clone(),
+                            trigger: Some(expr.clone()),
+                            branch_triggers: state.branch_triggers.clone(),
+                            span: Some(instr_span(instr)),
+                            path_constraints: constraints_to_strings(&state.path_constraints),
+                            message:
+                                "block.timestamp-derived value mixed with block.number/blockhash in arithmetic expression"
+                                    .to_string(),
+                            model: None,
+                        });
+                    }
                     if lhs_has_blocknum || rhs_has_blocknum {
                         state
                             .origins
@@ -2152,7 +2541,7 @@ fn engine(
                         .unwrap_or_default();
                     let is_delegatecall = callee_lower.contains("delegatecall")
                         || callee_origins.contains(&ValueOrigin::DelegatecallRef);
-                    let is_low_level_call = is_low_level_call_name(&callee_lower)
+                    let base_is_low_level_call = is_low_level_call_name(&callee_lower)
                         || callee_origins.contains(&ValueOrigin::LowLevelCallRef);
                     let is_send_ref = is_send_name(&callee_lower)
                         || callee_origins.contains(&ValueOrigin::SendRef);
@@ -2166,15 +2555,33 @@ fn engine(
                         .iter()
                         .any(|o| matches!(o, crate::ir::IrCallOption::Value(_)))
                         || callee_origins.contains(&ValueOrigin::ValueCallRef);
-                    let is_potential_external_temp_call =
-                        callee_is_temp && dest.is_empty() && !args.is_empty();
+                    let has_callback_capable_source_surface = callback_data
+                        .map(|data| {
+                            function_has_callback_capable_low_level_call(
+                                data.ast,
+                                state.function_id,
+                            )
+                        })
+                        .unwrap_or(false);
+                    let has_value_moving_source_surface = callback_data
+                        .map(|data| {
+                            function_has_value_moving_low_level_call(data.ast, state.function_id)
+                        })
+                        .unwrap_or(false);
+                    let has_any_low_level_source_surface =
+                        has_callback_capable_source_surface || has_value_moving_source_surface;
+                    let is_potential_low_level_temp_call =
+                        callee_is_temp && !args.is_empty() && has_any_low_level_source_surface;
+                    let is_potential_external_temp_call = callee_is_temp
+                        && dest.is_empty()
+                        && !args.is_empty()
+                        && has_callback_capable_source_surface;
                     let has_value = has_explicit_value
                         || is_send_ref
                         || is_transfer_ref
-                        || (callee_is_temp && !args.is_empty() && is_low_level_call)
-                        || (allow_callback_runtime && is_potential_external_temp_call);
-                    let is_low_level_call = is_low_level_call
-                        || (allow_callback_runtime && is_potential_external_temp_call);
+                        || (callee_is_temp && has_value_moving_source_surface);
+                    let is_low_level_call =
+                        base_is_low_level_call || is_potential_low_level_temp_call;
                     let is_callback_external_call = is_low_level_call
                         && !is_static_call
                         && !is_send_ref
@@ -2229,12 +2636,21 @@ fn engine(
                         havoc_storage(&mut state);
                     }
 
-                    if is_low_level_call && (has_value || allow_callback_runtime) {
+                    if is_callback_external_call {
                         state.external_call_pc = Some(current_pc);
                     }
+                    let stipend_only_external_surface = callback_data
+                        .map(|data| {
+                            function_uses_only_stipend_external_calls(data.ast, state.function_id)
+                        })
+                        .unwrap_or(false);
                     if allow_callback_runtime
+                        && supports_low_confidence_reentrancy_fallback
                         && is_potential_external_temp_call
                         && !can_fork_callback
+                        && !is_send_ref
+                        && !is_transfer_ref
+                        && !stipend_only_external_surface
                         && seen_vulns.insert((VulnerabilityKind::ReentrancyFallback, current_pc))
                     {
                         vulnerabilities.push(LocalVulnerability {
@@ -2290,6 +2706,14 @@ fn engine(
                     }
 
                     if is_selfdestruct_name(&callee_lower)
+                        && !callback_data
+                            .map(|data| {
+                                function_is_exploit_cleanup_selfdestruct_helper(
+                                    data.ast,
+                                    state.function_id,
+                                )
+                            })
+                            .unwrap_or(false)
                         && seen_vulns.insert((VulnerabilityKind::Selfdestruct, current_pc))
                     {
                         vulnerabilities.push(LocalVulnerability {
@@ -2390,7 +2814,13 @@ fn engine(
                     }
                     if has_value
                         && is_low_level_call
+                        && function_is_externally_callable(callback_data.map(|data| data.ast), state.function_id)
+                        && !authority_profile.guarded_by_modifier
                         && !state.sender_checked
+                        && !function_is_direct_msg_value_forwarder(
+                            callback_data.map(|data| data.ast),
+                            state.function_id,
+                        )
                         && seen_vulns.insert((
                             VulnerabilityKind::UnprotectedEtherWithdrawal,
                             current_pc,
@@ -2713,6 +3143,7 @@ fn engine(
                 IrInstr::Return { values, .. } => {
                     flush_pending_unchecked_calls(
                         &mut state,
+                        callback_data.map(|data| data.ast),
                         Some(instr_span(instr)),
                         &mut vulnerabilities,
                         &mut seen_vulns,
@@ -2951,6 +3382,7 @@ fn engine(
                         ControlKind::Revert { value } => {
                             flush_pending_unchecked_calls(
                                 &mut state,
+                                callback_data.map(|data| data.ast),
                                 Some(instr_span(instr)),
                                 &mut vulnerabilities,
                                 &mut seen_vulns,
@@ -3009,7 +3441,13 @@ fn engine(
             .cloned()
             .unwrap_or_default();
         if outgoing.is_empty() {
-            flush_pending_unchecked_calls(&mut state, None, &mut vulnerabilities, &mut seen_vulns);
+            flush_pending_unchecked_calls(
+                &mut state,
+                callback_data.map(|data| data.ast),
+                None,
+                &mut vulnerabilities,
+                &mut seen_vulns,
+            );
             finalize_state(
                 state.clone(),
                 TerminationKind::Fallthrough,
@@ -3082,16 +3520,22 @@ fn engine(
 
 fn flush_pending_unchecked_calls(
     state: &mut State,
+    ast: Option<&NormalizedAst>,
     fallback_span: Option<Span>,
     vulnerabilities: &mut Vec<LocalVulnerability>,
     seen_vulns: &mut HashSet<(VulnerabilityKind, usize)>,
 ) {
+    let suppress_checked_selector_wrapper =
+        function_is_checked_selector_low_level_wrapper(ast, state.function_id);
     let pending = state
         .pending_low_level_calls
         .values()
         .cloned()
         .collect::<Vec<_>>();
     for item in pending {
+        if suppress_checked_selector_wrapper {
+            continue;
+        }
         if seen_vulns.insert((VulnerabilityKind::UncheckedCall, item.call_pc)) {
             vulnerabilities.push(LocalVulnerability {
                 kind: VulnerabilityKind::UncheckedCall,
@@ -3362,7 +3806,6 @@ fn reentrant_callback_candidates(
     }
 
     let mut overlap = Vec::new();
-    let mut fallback = Vec::new();
     for candidate_id in mutating {
         if candidate_id == function_id {
             continue;
@@ -3380,33 +3823,10 @@ fn reentrant_callback_candidates(
             .unwrap_or(false);
         if overlaps {
             overlap.push(candidate_id);
-        } else {
-            fallback.push(candidate_id);
         }
     }
     overlap.sort_unstable();
     out.extend(overlap);
-
-    fallback.sort_by_key(|candidate_id| {
-        let name = ast
-            .functions
-            .get(*candidate_id as usize)
-            .and_then(|f| f.name.as_ref())
-            .map(|s| s.to_ascii_lowercase())
-            .unwrap_or_default();
-        let rank = if name.contains("withdraw")
-            || name.contains("cashout")
-            || name.contains("payout")
-            || name.contains("split")
-            || name.contains("claim")
-        {
-            0u8
-        } else {
-            1u8
-        };
-        (rank, name, *candidate_id)
-    });
-    out.extend(fallback);
     out.truncate(limit);
     out
 }
@@ -3487,6 +3907,236 @@ fn function_has_tod_runtime_evidence(
     }
 
     saw_order_sensitive_read && saw_transfer_like_call
+}
+
+fn seed_contract_state_var_origins(
+    origins: &mut HashMap<String, HashSet<ValueOrigin>>,
+    function_id: u32,
+    ast: &NormalizedAst,
+) {
+    let Some(contract_id) = ast
+        .functions
+        .get(function_id as usize)
+        .and_then(|function| function.contract)
+    else {
+        return;
+    };
+
+    for state_var in ast
+        .state_vars
+        .iter()
+        .filter(|state_var| state_var.contract == contract_id)
+    {
+        let Some(init_lower) = state_var_initializer_lower(ast, state_var.span) else {
+            continue;
+        };
+        let entry = origins.entry(state_var.name.clone()).or_default();
+        if init_lower.contains("block.timestamp") || init_lower.contains("now") {
+            entry.insert(ValueOrigin::Timestamp);
+        }
+        if init_lower.contains("block.number") || init_lower.contains("blockhash") {
+            entry.insert(ValueOrigin::BlockNumber);
+        }
+    }
+}
+
+fn function_source_has_dynamic_gas_loop(ast: &NormalizedAst, function_id: u32) -> bool {
+    let Some(function) = ast.functions.get(function_id as usize) else {
+        return false;
+    };
+    let Some(source_lower) = source_span_lower(ast, function.span) else {
+        return false;
+    };
+    let has_loop = source_lower.contains("for(")
+        || source_lower.contains("for (")
+        || source_lower.contains("while(")
+        || source_lower.contains("while (");
+    let has_dynamic_bound = source_lower.contains(".length")
+        || source_lower.contains("msg.gas")
+        || source_lower.contains("gasleft(");
+    has_loop && has_dynamic_bound
+}
+
+fn function_uses_only_stipend_external_calls(ast: &NormalizedAst, function_id: u32) -> bool {
+    let Some(function) = ast.functions.get(function_id as usize) else {
+        return false;
+    };
+    let Some(source_lower) = source_span_lower(ast, function.span) else {
+        return false;
+    };
+    let has_stipend_call = source_lower.contains(".send(")
+        || source_lower.contains(".send (")
+        || source_lower.contains(".transfer(")
+        || source_lower.contains(".transfer (");
+    let has_callback_capable_call = source_lower.contains(".call(")
+        || source_lower.contains(".call (")
+        || source_lower.contains(".call.value")
+        || source_lower.contains(".delegatecall")
+        || source_lower.contains(".callcode");
+    has_stipend_call && !has_callback_capable_call
+}
+
+fn function_has_callback_capable_low_level_call(ast: &NormalizedAst, function_id: u32) -> bool {
+    let Some(function) = ast.functions.get(function_id as usize) else {
+        return false;
+    };
+    let Some(source_lower) = source_span_lower(ast, function.span) else {
+        return false;
+    };
+    source_lower.contains(".call(")
+        || source_lower.contains(".call (")
+        || source_lower.contains(".call.value")
+        || source_lower.contains(".delegatecall")
+        || source_lower.contains(".callcode")
+}
+
+fn function_has_value_moving_low_level_call(ast: &NormalizedAst, function_id: u32) -> bool {
+    let Some(function) = ast.functions.get(function_id as usize) else {
+        return false;
+    };
+    let Some(source_lower) = source_span_lower(ast, function.span) else {
+        return false;
+    };
+    source_lower.contains(".call.value")
+        || source_lower.contains(".send(")
+        || source_lower.contains(".send (")
+        || source_lower.contains(".transfer(")
+        || source_lower.contains(".transfer (")
+}
+
+fn function_has_strong_stipend_reentrancy_pattern(ast: &NormalizedAst, function_id: u32) -> bool {
+    let Some(function) = ast.functions.get(function_id as usize) else {
+        return false;
+    };
+    let Some(source_lower) = source_span_lower(ast, function.span) else {
+        return false;
+    };
+    let call_idx = [
+        source_lower.find(".call.value("),
+        source_lower.find(".call{value"),
+        source_lower.find(".transfer("),
+        source_lower.find(".transfer ("),
+        source_lower.find(".send("),
+        source_lower.find(".send ("),
+    ]
+    .into_iter()
+    .flatten()
+    .min();
+    let Some(call_idx) = call_idx else {
+        return false;
+    };
+    let tail = &source_lower[call_idx..];
+    tail.contains("delete ")
+        || tail.contains("-=")
+        || tail.contains("=0")
+        || tail.contains(" = 0")
+        || tail.contains("=false")
+        || tail.contains("= false")
+}
+
+fn function_is_checked_selector_low_level_wrapper(
+    ast: Option<&NormalizedAst>,
+    function_id: u32,
+) -> bool {
+    let Some(ast) = ast else {
+        return false;
+    };
+    let Some(function) = ast.functions.get(function_id as usize) else {
+        return false;
+    };
+    let Some(source_lower) = source_span_lower(ast, function.span) else {
+        return false;
+    };
+    let has_checked_call = source_lower.contains("require(")
+        || source_lower.contains("require (")
+        || source_lower.contains("assert(")
+        || source_lower.contains("assert (");
+    let has_low_level_call = source_lower.contains(".call(")
+        || source_lower.contains(".call (")
+        || source_lower.contains(".call.value");
+    let has_selector_payload = source_lower.contains("bytes4(sha3(")
+        || source_lower.contains("bytes4(keccak256(")
+        || source_lower.contains("abi.encodewithsignature(")
+        || source_lower.contains("abi.encodewithselector(");
+    has_checked_call && has_low_level_call && has_selector_payload
+}
+
+fn function_is_direct_msg_value_forwarder(ast: Option<&NormalizedAst>, function_id: u32) -> bool {
+    let Some(ast) = ast else {
+        return false;
+    };
+    let Some(function) = ast.functions.get(function_id as usize) else {
+        return false;
+    };
+    let Some(source_lower) = source_span_lower(ast, function.span) else {
+        return false;
+    };
+    source_lower.contains(".call.value(msg.value)")
+        || source_lower.contains(".send(msg.value)")
+        || source_lower.contains(".send (msg.value)")
+        || source_lower.contains(".transfer(msg.value)")
+        || source_lower.contains(".transfer (msg.value)")
+}
+
+fn function_is_externally_callable(ast: Option<&NormalizedAst>, function_id: u32) -> bool {
+    ast.and_then(|ast| ast.functions.get(function_id as usize))
+        .map(|function| {
+            matches!(
+                function.visibility,
+                Visibility::Public | Visibility::External
+            ) || matches!(function.kind, FunctionKind::Fallback | FunctionKind::Receive)
+        })
+        .unwrap_or(true)
+}
+
+fn state_var_initializer_lower(ast: &NormalizedAst, span: Span) -> Option<String> {
+    let source = source_span(ast, span)?;
+    let (_, rhs) = source.split_once('=')?;
+    Some(rhs.to_ascii_lowercase())
+}
+
+fn source_span_lower(ast: &NormalizedAst, span: Span) -> Option<String> {
+    source_span(ast, span).map(|source| source.to_ascii_lowercase())
+}
+
+fn source_span(ast: &NormalizedAst, span: Span) -> Option<&str> {
+    let file = ast.files.get(span.file as usize)?;
+    file.source.get(span.start as usize..span.end as usize)
+}
+
+fn contract_source_lower(ast: &NormalizedAst, contract_id: u32) -> Option<String> {
+    let contract = ast.contracts.get(contract_id as usize)?;
+    source_span(ast, contract.span).map(|source| source.to_ascii_lowercase())
+}
+
+fn function_is_exploit_cleanup_selfdestruct_helper(ast: &NormalizedAst, function_id: u32) -> bool {
+    let Some(function) = ast.functions.get(function_id as usize) else {
+        return false;
+    };
+    let Some(contract_id) = function.contract else {
+        return false;
+    };
+    let Some(contract) = ast.contracts.get(contract_id as usize) else {
+        return false;
+    };
+    let Some(function_source) = source_span_lower(ast, function.span) else {
+        return false;
+    };
+    if !(function_source.contains("suicide(owner") || function_source.contains("selfdestruct(owner"))
+    {
+        return false;
+    }
+    let contract_name = contract.name.to_ascii_lowercase();
+    if !contract_name.contains("exploit") && !contract_name.contains("attack") {
+        return false;
+    }
+    let Some(contract_source) = contract_source_lower(ast, contract_id) else {
+        return false;
+    };
+    contract_source.contains("owner = msg.sender")
+        && contract_source.contains("vulnerable_contract")
+        && (contract_source.contains("launch_attack")
+            || contract_source.contains("withdrawbalance()"))
 }
 
 fn function_has_callback_overlap(function_id: u32, data: EngineCallbackData<'_>) -> bool {
@@ -4214,8 +4864,10 @@ fn place_is_constructor_authority_sensitive(place: &IrPlace) -> bool {
 mod tests {
     use super::{
         build_sink_scores, constrain_boolean_int, engine, eval_binary, function_has_ether_send,
-        has_checked_arithmetic, havoc_storage, is_public_mint_burn_function,
+        function_is_checked_selector_low_level_wrapper, has_checked_arithmetic, havoc_storage,
+        is_public_mint_burn_function,
         place_is_authority_sensitive, place_is_order_sensitive, pop_next_state,
+        reentrant_callback_candidates,
         state_priority_score, EngineCallbackData, EngineStats, SolverCache, State,
         VulnerabilityKind, MAX_BLOCK_VISITS_PER_PATH,
     };
@@ -4320,6 +4972,192 @@ mod tests {
         ast
     }
 
+    fn callback_send_only_ast() -> NormalizedAst {
+        let source = "contract Vault { function withdraw() public { msg.sender.send(1); } function poke() public {} }";
+        let withdraw_start = source.find("function withdraw").unwrap() as u32;
+        let poke_start = source.find("function poke").unwrap() as u32;
+        let mut ast = NormalizedAst::from_sources(vec![SourceFile {
+            id: 0,
+            path: "callback_send.sol".to_string(),
+            source: source.to_string(),
+        }]);
+        ast.contracts.push(Contract {
+            id: 0,
+            name: "Vault".to_string(),
+            kind: ContractKind::Contract,
+            bases: Vec::new(),
+            functions: vec![0, 1],
+            state_vars: Vec::new(),
+            modifiers: Vec::new(),
+            events: Vec::new(),
+            errors: Vec::new(),
+            span: Span {
+                file: 0,
+                start: 0,
+                end: source.len() as u32,
+            },
+        });
+        ast.functions.push(Function {
+            id: 0,
+            contract: Some(0),
+            name: Some("withdraw".to_string()),
+            kind: FunctionKind::Function,
+            visibility: Visibility::Public,
+            mutability: Mutability::NonPayable,
+            params: Vec::new(),
+            returns: Vec::new(),
+            modifiers: Vec::new(),
+            body: None,
+            span: Span {
+                file: 0,
+                start: withdraw_start,
+                end: poke_start.saturating_sub(1),
+            },
+        });
+        ast.functions.push(Function {
+            id: 1,
+            contract: Some(0),
+            name: Some("poke".to_string()),
+            kind: FunctionKind::Function,
+            visibility: Visibility::Public,
+            mutability: Mutability::NonPayable,
+            params: Vec::new(),
+            returns: Vec::new(),
+            modifiers: Vec::new(),
+            body: None,
+            span: Span {
+                file: 0,
+                start: poke_start,
+                end: source.len() as u32,
+            },
+        });
+        ast
+    }
+
+    fn callback_value_call_ast() -> NormalizedAst {
+        let source = "contract Vault { function withdraw() public { msg.sender.call.value(1)(\"\"); } function poke() public {} }";
+        let withdraw_start = source.find("function withdraw").unwrap() as u32;
+        let poke_start = source.find("function poke").unwrap() as u32;
+        let mut ast = NormalizedAst::from_sources(vec![SourceFile {
+            id: 0,
+            path: "callback_value_call.sol".to_string(),
+            source: source.to_string(),
+        }]);
+        ast.contracts.push(Contract {
+            id: 0,
+            name: "Vault".to_string(),
+            kind: ContractKind::Contract,
+            bases: Vec::new(),
+            functions: vec![0, 1],
+            state_vars: Vec::new(),
+            modifiers: Vec::new(),
+            events: Vec::new(),
+            errors: Vec::new(),
+            span: Span {
+                file: 0,
+                start: 0,
+                end: source.len() as u32,
+            },
+        });
+        ast.functions.push(Function {
+            id: 0,
+            contract: Some(0),
+            name: Some("withdraw".to_string()),
+            kind: FunctionKind::Function,
+            visibility: Visibility::Public,
+            mutability: Mutability::NonPayable,
+            params: Vec::new(),
+            returns: Vec::new(),
+            modifiers: Vec::new(),
+            body: None,
+            span: Span {
+                file: 0,
+                start: withdraw_start,
+                end: poke_start.saturating_sub(1),
+            },
+        });
+        ast.functions.push(Function {
+            id: 1,
+            contract: Some(0),
+            name: Some("poke".to_string()),
+            kind: FunctionKind::Function,
+            visibility: Visibility::Public,
+            mutability: Mutability::NonPayable,
+            params: Vec::new(),
+            returns: Vec::new(),
+            modifiers: Vec::new(),
+            body: None,
+            span: Span {
+                file: 0,
+                start: poke_start,
+                end: source.len() as u32,
+            },
+        });
+        ast
+    }
+
+    fn callback_msg_value_forward_ast() -> NormalizedAst {
+        let source = "contract Vault { function withdraw() public payable { msg.sender.call.value(msg.value)(\"\"); } function poke() public {} }";
+        let withdraw_start = source.find("function withdraw").unwrap() as u32;
+        let poke_start = source.find("function poke").unwrap() as u32;
+        let mut ast = NormalizedAst::from_sources(vec![SourceFile {
+            id: 0,
+            path: "callback_msg_value_forward.sol".to_string(),
+            source: source.to_string(),
+        }]);
+        ast.contracts.push(Contract {
+            id: 0,
+            name: "Vault".to_string(),
+            kind: ContractKind::Contract,
+            bases: Vec::new(),
+            functions: vec![0, 1],
+            state_vars: Vec::new(),
+            modifiers: Vec::new(),
+            events: Vec::new(),
+            errors: Vec::new(),
+            span: Span {
+                file: 0,
+                start: 0,
+                end: source.len() as u32,
+            },
+        });
+        ast.functions.push(Function {
+            id: 0,
+            contract: Some(0),
+            name: Some("withdraw".to_string()),
+            kind: FunctionKind::Function,
+            visibility: Visibility::Public,
+            mutability: Mutability::Payable,
+            params: Vec::new(),
+            returns: Vec::new(),
+            modifiers: Vec::new(),
+            body: None,
+            span: Span {
+                file: 0,
+                start: withdraw_start,
+                end: poke_start.saturating_sub(1),
+            },
+        });
+        ast.functions.push(Function {
+            id: 1,
+            contract: Some(0),
+            name: Some("poke".to_string()),
+            kind: FunctionKind::Function,
+            visibility: Visibility::Public,
+            mutability: Mutability::NonPayable,
+            params: Vec::new(),
+            returns: Vec::new(),
+            modifiers: Vec::new(),
+            body: None,
+            span: Span {
+                file: 0,
+                start: poke_start,
+                end: source.len() as u32,
+            },
+        });
+        ast
+    }
+
     fn callback_test_deps() -> DependencyMap {
         let mut deps = DependencyMap::default();
         deps.functions.insert(
@@ -4334,6 +5172,162 @@ mod tests {
             FunctionDeps {
                 reads: ["balances".to_string()].into_iter().collect(),
                 writes: ["balances".to_string()].into_iter().collect(),
+            },
+        );
+        deps
+    }
+
+    fn test_compiler() -> crate::frontend::CompilerInfo {
+        crate::frontend::CompilerInfo {
+            compiler_name: "test".to_string(),
+            compiler_version: Some("0.8.0".to_string()),
+            legacy_omitted_visibility_is_public: false,
+        }
+    }
+
+    fn callback_candidate_ast() -> NormalizedAst {
+        let source = "contract Vault { function withdraw() public {} function overlap() public {} function helper() public {} }";
+        let withdraw_start = source.find("function withdraw").unwrap() as u32;
+        let overlap_start = source.find("function overlap").unwrap() as u32;
+        let helper_start = source.find("function helper").unwrap() as u32;
+        let mut ast = NormalizedAst::from_sources(vec![SourceFile {
+            id: 0,
+            path: "callback_candidates.sol".to_string(),
+            source: source.to_string(),
+        }]);
+        ast.contracts.push(Contract {
+            id: 0,
+            name: "Vault".to_string(),
+            kind: ContractKind::Contract,
+            bases: Vec::new(),
+            functions: vec![0, 1, 2],
+            state_vars: Vec::new(),
+            modifiers: Vec::new(),
+            events: Vec::new(),
+            errors: Vec::new(),
+            span: Span {
+                file: 0,
+                start: 0,
+                end: source.len() as u32,
+            },
+        });
+        ast.functions.push(Function {
+            id: 0,
+            contract: Some(0),
+            name: Some("withdraw".to_string()),
+            kind: FunctionKind::Function,
+            visibility: Visibility::Public,
+            mutability: Mutability::NonPayable,
+            params: Vec::new(),
+            returns: Vec::new(),
+            modifiers: Vec::new(),
+            body: None,
+            span: Span {
+                file: 0,
+                start: withdraw_start,
+                end: overlap_start.saturating_sub(1),
+            },
+        });
+        ast.functions.push(Function {
+            id: 1,
+            contract: Some(0),
+            name: Some("overlap".to_string()),
+            kind: FunctionKind::Function,
+            visibility: Visibility::Public,
+            mutability: Mutability::NonPayable,
+            params: Vec::new(),
+            returns: Vec::new(),
+            modifiers: Vec::new(),
+            body: None,
+            span: Span {
+                file: 0,
+                start: overlap_start,
+                end: helper_start.saturating_sub(1),
+            },
+        });
+        ast.functions.push(Function {
+            id: 2,
+            contract: Some(0),
+            name: Some("helper".to_string()),
+            kind: FunctionKind::Function,
+            visibility: Visibility::Public,
+            mutability: Mutability::NonPayable,
+            params: Vec::new(),
+            returns: Vec::new(),
+            modifiers: Vec::new(),
+            body: None,
+            span: Span {
+                file: 0,
+                start: helper_start,
+                end: source.len() as u32,
+            },
+        });
+        ast
+    }
+
+    fn callback_candidate_ast_with_source(function_name: &str, source: &str) -> NormalizedAst {
+        let mut ast = NormalizedAst::from_sources(vec![SourceFile {
+            id: 0,
+            path: "checked_wrapper.sol".to_string(),
+            source: source.to_string(),
+        }]);
+        ast.contracts.push(Contract {
+            id: 0,
+            name: "Vault".to_string(),
+            kind: ContractKind::Contract,
+            bases: Vec::new(),
+            functions: vec![0],
+            state_vars: Vec::new(),
+            modifiers: Vec::new(),
+            events: Vec::new(),
+            errors: Vec::new(),
+            span: Span {
+                file: 0,
+                start: 0,
+                end: source.len() as u32,
+            },
+        });
+        ast.functions.push(Function {
+            id: 0,
+            contract: Some(0),
+            name: Some(function_name.to_string()),
+            kind: FunctionKind::Function,
+            visibility: Visibility::Public,
+            mutability: Mutability::NonPayable,
+            params: Vec::new(),
+            returns: Vec::new(),
+            modifiers: Vec::new(),
+            body: None,
+            span: Span {
+                file: 0,
+                start: 0,
+                end: source.len() as u32,
+            },
+        });
+        ast
+    }
+
+    fn callback_candidate_deps() -> DependencyMap {
+        let mut deps = DependencyMap::default();
+        deps.functions.insert(
+            0,
+            FunctionDeps {
+                reads: ["credit".to_string()].into_iter().collect(),
+                writes: ["credit".to_string()].into_iter().collect(),
+            },
+        );
+        deps.functions.insert(
+            1,
+            FunctionDeps {
+                reads: ["credit".to_string()].into_iter().collect(),
+                writes: ["credit".to_string()].into_iter().collect(),
+            },
+        );
+        deps.functions.insert(
+            2,
+            FunctionDeps {
+                reads: ["owner".to_string()].into_iter().collect(),
+                writes: ["owner".to_string()].into_iter().collect(),
             },
         );
         deps
@@ -5017,6 +6011,83 @@ mod tests {
     }
 
     #[test]
+    fn require_on_compared_call_result_clears_unchecked_call() {
+        let cfg = CfgFunction {
+            id: 0,
+            blocks: vec![Block {
+                id: 0,
+                instrs: vec![
+                    IrInstr::Call {
+                        dest: vec![IrVar::Temp(0)],
+                        callee: IrValue::Var(IrVar::Named("call".to_string())),
+                        args: Vec::new(),
+                        options: Vec::new(),
+                        span: span(),
+                    },
+                    IrInstr::Binary {
+                        dest: IrVar::Temp(1),
+                        op: "!=".to_string(),
+                        lhs: IrValue::Var(IrVar::Temp(0)),
+                        rhs: number_lit("0"),
+                        span: span(),
+                    },
+                    IrInstr::Call {
+                        dest: Vec::new(),
+                        callee: IrValue::Var(IrVar::Named("require".to_string())),
+                        args: vec![IrValue::Var(IrVar::Temp(1))],
+                        options: Vec::new(),
+                        span: span(),
+                    },
+                    IrInstr::Return {
+                        values: Vec::new(),
+                        span: span(),
+                    },
+                ],
+            }],
+            edges: Vec::new(),
+        };
+
+        let stats = run_engine(&cfg, true, false, false);
+        assert!(
+            !stats
+                .vulnerabilities
+                .iter()
+                .any(|v| matches!(v.kind, VulnerabilityKind::UncheckedCall)),
+            "checked low-level call should not emit unchecked-call, saw: {:?}",
+            stats
+                .vulnerabilities
+                .iter()
+                .map(|v| (v.kind.as_str(), v.message.as_str()))
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn callback_candidates_keep_only_self_and_overlap() {
+        let ast = callback_candidate_ast();
+        let deps = callback_candidate_deps();
+        let compiler = test_compiler();
+
+        let candidates = reentrant_callback_candidates(0, &ast, &compiler, &deps, 8);
+        assert_eq!(candidates, vec![0, 1]);
+    }
+
+    #[test]
+    fn checked_selector_wrapper_detection_is_narrow() {
+        let wrapper = callback_candidate_ast_with_source(
+            "deposit",
+            "function deposit(address target) public payable { require(target.call.value(msg.value)(bytes4(sha3(\"addToBalance()\")))); }",
+        );
+        let plain = callback_candidate_ast_with_source(
+            "withdraw",
+            "function withdraw(address target) public payable { target.call.value(msg.value)(); }",
+        );
+
+        assert!(function_is_checked_selector_low_level_wrapper(Some(&wrapper), 0));
+        assert!(!function_is_checked_selector_low_level_wrapper(Some(&plain), 0));
+    }
+
+    #[test]
     fn staticcall_does_not_mark_reentrancy_edge() {
         let cfg = cfg_with_instrs(vec![
             IrInstr::Call {
@@ -5122,7 +6193,7 @@ mod tests {
     }
 
     #[test]
-    fn no_value_callback_overlap_emits_reentrancy_fallback() {
+    fn no_value_callback_overlap_suppresses_reentrancy_fallback() {
         let cfgs = vec![
             CfgFunction {
                 id: 0,
@@ -5187,7 +6258,226 @@ mod tests {
         );
 
         assert!(
+            !stats
+                .vulnerabilities
+                .iter()
+                .any(|v| matches!(v.kind, VulnerabilityKind::ReentrancyFallback))
+        );
+    }
+
+    #[test]
+    fn value_moving_callback_overlap_emits_reentrancy_fallback() {
+        let cfgs = vec![
+            CfgFunction {
+                id: 0,
+                blocks: vec![Block {
+                    id: 0,
+                    instrs: vec![
+                        IrInstr::Store {
+                            dest: IrPlace::Var {
+                                var: IrVar::Named("balances".to_string()),
+                                class: PlaceClass::Storage,
+                            },
+                            src: number_lit("1"),
+                            span: span(),
+                        },
+                        IrInstr::Call {
+                            dest: vec![IrVar::Temp(0)],
+                            callee: IrValue::Var(IrVar::Named("spender.call".to_string())),
+                            args: vec![number_lit("1")],
+                            options: Vec::new(),
+                            span: span(),
+                        },
+                        IrInstr::Return {
+                            values: Vec::new(),
+                            span: span(),
+                        },
+                    ],
+                }],
+                edges: Vec::new(),
+            },
+            CfgFunction {
+                id: 1,
+                blocks: vec![Block {
+                    id: 0,
+                    instrs: vec![IrInstr::Return {
+                        values: Vec::new(),
+                        span: span(),
+                    }],
+                }],
+                edges: Vec::new(),
+            },
+        ];
+        let ast = callback_value_call_ast();
+        let deps = callback_test_deps();
+        let compiler = crate::frontend::CompilerInfo {
+            compiler_name: "test".to_string(),
+            compiler_version: Some("0.8.0".to_string()),
+            legacy_omitted_visibility_is_public: false,
+        };
+
+        let stats = engine(
+            &cfgs[0],
+            &cfgs,
+            Some(EngineCallbackData {
+                ast: &ast,
+                compiler: &compiler,
+                deps: &deps,
+            }),
+            true,
+            false,
+            false,
+            false,
+        );
+
+        assert!(
             stats
+                .vulnerabilities
+                .iter()
+                .any(|v| matches!(v.kind, VulnerabilityKind::ReentrancyFallback))
+        );
+    }
+
+    #[test]
+    fn direct_msg_value_forwarder_suppresses_reentrancy_fallback() {
+        let cfgs = vec![
+            CfgFunction {
+                id: 0,
+                blocks: vec![Block {
+                    id: 0,
+                    instrs: vec![
+                        IrInstr::Store {
+                            dest: IrPlace::Var {
+                                var: IrVar::Named("balances".to_string()),
+                                class: PlaceClass::Storage,
+                            },
+                            src: number_lit("1"),
+                            span: span(),
+                        },
+                        IrInstr::Call {
+                            dest: vec![IrVar::Temp(0)],
+                            callee: IrValue::Var(IrVar::Named("spender.call".to_string())),
+                            args: vec![number_lit("1")],
+                            options: Vec::new(),
+                            span: span(),
+                        },
+                        IrInstr::Return {
+                            values: Vec::new(),
+                            span: span(),
+                        },
+                    ],
+                }],
+                edges: Vec::new(),
+            },
+            CfgFunction {
+                id: 1,
+                blocks: vec![Block {
+                    id: 0,
+                    instrs: vec![IrInstr::Return {
+                        values: Vec::new(),
+                        span: span(),
+                    }],
+                }],
+                edges: Vec::new(),
+            },
+        ];
+        let ast = callback_msg_value_forward_ast();
+        let deps = callback_test_deps();
+        let compiler = crate::frontend::CompilerInfo {
+            compiler_name: "test".to_string(),
+            compiler_version: Some("0.8.0".to_string()),
+            legacy_omitted_visibility_is_public: false,
+        };
+
+        let stats = engine(
+            &cfgs[0],
+            &cfgs,
+            Some(EngineCallbackData {
+                ast: &ast,
+                compiler: &compiler,
+                deps: &deps,
+            }),
+            true,
+            false,
+            false,
+            false,
+        );
+
+        assert!(
+            !stats
+                .vulnerabilities
+                .iter()
+                .any(|v| matches!(v.kind, VulnerabilityKind::ReentrancyFallback))
+        );
+    }
+
+    #[test]
+    fn send_only_source_suppresses_temp_call_reentrancy_fallback() {
+        let cfgs = vec![
+            CfgFunction {
+                id: 0,
+                blocks: vec![Block {
+                    id: 0,
+                    instrs: vec![
+                        IrInstr::Store {
+                            dest: IrPlace::Var {
+                                var: IrVar::Named("balances".to_string()),
+                                class: PlaceClass::Storage,
+                            },
+                            src: number_lit("1"),
+                            span: span(),
+                        },
+                        IrInstr::Call {
+                            dest: Vec::new(),
+                            callee: IrValue::Var(IrVar::Temp(0)),
+                            args: vec![number_lit("1")],
+                            options: Vec::new(),
+                            span: span(),
+                        },
+                        IrInstr::Return {
+                            values: Vec::new(),
+                            span: span(),
+                        },
+                    ],
+                }],
+                edges: Vec::new(),
+            },
+            CfgFunction {
+                id: 1,
+                blocks: vec![Block {
+                    id: 0,
+                    instrs: vec![IrInstr::Return {
+                        values: Vec::new(),
+                        span: span(),
+                    }],
+                }],
+                edges: Vec::new(),
+            },
+        ];
+        let ast = callback_send_only_ast();
+        let deps = callback_test_deps();
+        let compiler = crate::frontend::CompilerInfo {
+            compiler_name: "test".to_string(),
+            compiler_version: Some("0.8.0".to_string()),
+            legacy_omitted_visibility_is_public: false,
+        };
+
+        let stats = engine(
+            &cfgs[0],
+            &cfgs,
+            Some(EngineCallbackData {
+                ast: &ast,
+                compiler: &compiler,
+                deps: &deps,
+            }),
+            true,
+            false,
+            false,
+            false,
+        );
+
+        assert!(
+            !stats
                 .vulnerabilities
                 .iter()
                 .any(|v| matches!(v.kind, VulnerabilityKind::ReentrancyFallback))

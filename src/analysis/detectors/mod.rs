@@ -117,7 +117,7 @@ pub enum FindingKind {
     TaintedCall, // MI-02
 }
 
-pub const TAXONOMY_FINDING_KINDS: [FindingKind; 45] = [
+pub const TAXONOMY_FINDING_KINDS: [FindingKind; 46] = [
     FindingKind::ArbitraryTransferFrom,
     FindingKind::ArbitraryCalldata,
     FindingKind::CallerNotChecked,
@@ -163,6 +163,7 @@ pub const TAXONOMY_FINDING_KINDS: [FindingKind; 45] = [
     FindingKind::MemoryManipulation,
     FindingKind::StorageArrayByValue,
     FindingKind::DelegatecallInLoop,
+    FindingKind::Shadowing,
 ];
 
 pub const TAXONOMY_ROW_COUNT: usize = TAXONOMY_FINDING_KINDS.len();

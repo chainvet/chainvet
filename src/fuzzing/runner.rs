@@ -1,6 +1,7 @@
 use std::time::Instant;
 
 use rand::Rng;
+use serde::Serialize;
 use sha2::{Digest, Sha256};
 
 use crate::analysis;
@@ -14,7 +15,9 @@ use crate::fuzzing::types::{
     ContractAbi, Corpus, DependencyMap, Dictionary, FuzzConfig, FuzzFinding, FuzzFindingKind,
     FuzzReport, FuzzSeverity, build_dependency_map, extract_abis,
 };
-use crate::norm::{FunctionKind, Mutability, NormalizedAst};
+use crate::norm::{FunctionKind, Mutability, NormalizedAst, Span};
+use crate::surfaced;
+use crate::util::error::{Error, Result};
 use crate::{cfg, ir, meta};
 
 /// Run the fuzzer on a parsed contract.
@@ -93,6 +96,7 @@ pub fn run(output: &FrontendOutput, config: &FuzzConfig) -> FuzzReport {
         &static_findings,
         ast,
     ));
+    all_findings.extend(promoted_runtime_meta_findings(&meta_findings));
 
     // Deduplicate findings
     let findings = oracle::deduplicate(all_findings);
@@ -130,6 +134,47 @@ fn zero_corpus_reason(abis: &[ContractAbi], corpus: &Corpus) -> Option<String> {
     Some(format!(
         "no callable entrypoints generated (contracts={contract_count}, functions={function_count}, callable={callable_count})"
     ))
+}
+
+fn promoted_runtime_meta_findings(
+    meta_findings: &[crate::core::artifacts::Finding],
+) -> Vec<FuzzFinding> {
+    crate::meta::runtime_promotions(meta_findings)
+        .into_iter()
+        .filter_map(|finding| {
+            let kind = match finding.finding_type.as_str() {
+                "honeypot" => FuzzFindingKind::Honeypot,
+                "shadowing" => FuzzFindingKind::Shadowing,
+                _ => return None,
+            };
+            Some(FuzzFinding {
+                kind,
+                severity: match finding.severity.as_str() {
+                    "high" => FuzzSeverity::High,
+                    "medium" => FuzzSeverity::Medium,
+                    _ => FuzzSeverity::Low,
+                },
+                message: format!(
+                    "Runtime backstop from {}: {}",
+                    finding.evidence_kind, finding.message
+                ),
+                tx_sequence: Vec::new(),
+                trace_hash: hash_local_finding(
+                    "runtime-meta-backstop",
+                    format!(
+                        "{}:{}",
+                        finding.finding_type,
+                        finding
+                            .location
+                            .as_ref()
+                            .and_then(|location| location.file.as_deref())
+                            .unwrap_or("<unknown>")
+                    )
+                    .as_str(),
+                ),
+            })
+        })
+        .collect()
 }
 
 fn detect_shadowing_findings(ast: &NormalizedAst) -> Vec<FuzzFinding> {
@@ -245,9 +290,19 @@ fn inject_static_runtime_backstops(
         .filter(|finding| finding.kind == FuzzFindingKind::DosWithFailedCall)
         .filter_map(|finding| extract_function_id_from_message(finding.message.as_str()))
         .collect::<std::collections::HashSet<_>>();
+    let runtime_dos_block_gas_limit_fns = runtime_findings
+        .iter()
+        .filter(|finding| finding.kind == FuzzFindingKind::DosBlockGasLimit)
+        .filter_map(|finding| extract_function_id_from_message(finding.message.as_str()))
+        .collect::<std::collections::HashSet<_>>();
     let runtime_weak_prng_fns = runtime_findings
         .iter()
         .filter(|finding| finding.kind == FuzzFindingKind::WeakPRNG)
+        .filter_map(|finding| extract_function_id_from_message(finding.message.as_str()))
+        .collect::<std::collections::HashSet<_>>();
+    let runtime_timestamp_dependency_fns = runtime_findings
+        .iter()
+        .filter(|finding| finding.kind == FuzzFindingKind::TimestampDependency)
         .filter_map(|finding| extract_function_id_from_message(finding.message.as_str()))
         .collect::<std::collections::HashSet<_>>();
     let runtime_locked_ether_fns = runtime_findings
@@ -276,6 +331,8 @@ fn inject_static_runtime_backstops(
     }) {
         let function_id = finding.function.unwrap_or(0);
         if runtime_reentrancy_fns.contains(&function_id)
+            || function_uses_only_stipend_external_calls(ast, function_id)
+            || function_is_checked_selector_low_level_wrapper(ast, function_id)
             || !injected.insert(("reentrancy", function_id))
         {
             continue;
@@ -302,7 +359,11 @@ fn inject_static_runtime_backstops(
         .filter(|finding| finding.kind == analysis::detectors::FindingKind::DosWithFailedCall)
     {
         let function_id = finding.function.unwrap_or(0);
-        if runtime_dos_fns.contains(&function_id) || !injected.insert(("dos", function_id)) {
+        if runtime_dos_fns.contains(&function_id)
+            || !function_has_value_moving_low_level_call(ast, function_id)
+            || function_is_checked_selector_low_level_wrapper(ast, function_id)
+            || !injected.insert(("dos", function_id))
+        {
             continue;
         }
         let function_name = ast
@@ -322,13 +383,22 @@ fn inject_static_runtime_backstops(
         });
     }
 
+    let dos_functions_with_backstop = out
+        .iter()
+        .filter(|finding| finding.kind == FuzzFindingKind::DosWithFailedCall)
+        .filter_map(|finding| extract_function_id_from_message(finding.message.as_str()))
+        .chain(runtime_dos_fns.iter().copied())
+        .collect::<std::collections::HashSet<_>>();
+
     for finding in static_findings
         .iter()
-        .filter(|finding| finding.kind == analysis::detectors::FindingKind::WeakPrng)
+        .filter(|finding| finding.kind == analysis::detectors::FindingKind::DosBlockGasLimit)
     {
         let function_id = finding.function.unwrap_or(0);
-        if runtime_weak_prng_fns.contains(&function_id)
-            || !injected.insert(("weak-prng", function_id))
+        if runtime_dos_block_gas_limit_fns.contains(&function_id)
+            || !dos_functions_with_backstop.contains(&function_id)
+            || !function_source_has_dynamic_gas_loop(ast, function_id)
+            || !injected.insert(("dos-block-gas-limit", function_id))
         {
             continue;
         }
@@ -337,6 +407,54 @@ fn inject_static_runtime_backstops(
             .get(function_id as usize)
             .and_then(|f| f.name.as_deref())
             .unwrap_or("<unknown>");
+        out.push(FuzzFinding {
+            kind: FuzzFindingKind::DosBlockGasLimit,
+            severity: FuzzSeverity::Low,
+            message: format!(
+                "Static-guided runtime backstop: function {} ('{}') reached a loop/call DoS path and also has dynamic (`.length`/gas) loop bounds",
+                function_id, function_name
+            ),
+            tx_sequence: Vec::new(),
+            trace_hash: hash_local_finding(
+                "runtime-backstop-dos-block-gas-limit",
+                &function_id.to_string(),
+            ),
+        });
+    }
+
+    for finding in static_findings
+        .iter()
+        .filter(|finding| finding.kind == analysis::detectors::FindingKind::WeakPrng)
+    {
+        let function_id = finding.function.unwrap_or(0);
+        let function_name = ast
+            .functions
+            .get(function_id as usize)
+            .and_then(|f| f.name.as_deref())
+            .unwrap_or("<unknown>");
+        if !runtime_timestamp_dependency_fns.contains(&function_id)
+            && function_uses_timestamp_seeded_prng(ast, function_id)
+            && injected.insert(("timestamp-dependency", function_id))
+        {
+            out.push(FuzzFinding {
+                kind: FuzzFindingKind::TimestampDependency,
+                severity: FuzzSeverity::Low,
+                message: format!(
+                    "Static-guided runtime backstop: function {} ('{}') mixes block-derived randomness with a state variable seeded from block.timestamp/now",
+                    function_id, function_name
+                ),
+                tx_sequence: Vec::new(),
+                trace_hash: hash_local_finding(
+                    "runtime-backstop-timestamp-dependency",
+                    &function_id.to_string(),
+                ),
+            });
+        }
+        if runtime_weak_prng_fns.contains(&function_id)
+            || !injected.insert(("weak-prng", function_id))
+        {
+            continue;
+        }
         out.push(FuzzFinding {
             kind: FuzzFindingKind::WeakPRNG,
             severity: FuzzSeverity::Low,
@@ -385,6 +503,7 @@ fn inject_static_runtime_backstops(
     {
         let function_id = finding.function.unwrap_or(0);
         if runtime_unchecked_call_fns.contains(&function_id)
+            || function_is_checked_selector_low_level_wrapper(ast, function_id)
             || !injected.insert(("unchecked-call", function_id))
         {
             continue;
@@ -499,6 +618,117 @@ fn extract_function_id_from_message(message: &str) -> Option<u32> {
         }
     }
     None
+}
+
+fn function_source_has_dynamic_gas_loop(ast: &NormalizedAst, function_id: u32) -> bool {
+    let Some(source_lower) = function_source_lower(ast, function_id) else {
+        return false;
+    };
+    let has_loop = source_lower.contains("for(")
+        || source_lower.contains("for (")
+        || source_lower.contains("while(")
+        || source_lower.contains("while (");
+    let has_dynamic_bound = source_lower.contains(".length")
+        || source_lower.contains("msg.gas")
+        || source_lower.contains("gasleft(");
+    has_loop && has_dynamic_bound
+}
+
+fn function_has_value_moving_low_level_call(ast: &NormalizedAst, function_id: u32) -> bool {
+    let Some(source_lower) = function_source_lower(ast, function_id) else {
+        return false;
+    };
+    source_lower.contains(".call.value")
+        || source_lower.contains(".send(")
+        || source_lower.contains(".send (")
+        || source_lower.contains(".transfer(")
+        || source_lower.contains(".transfer (")
+}
+
+fn function_is_checked_selector_low_level_wrapper(ast: &NormalizedAst, function_id: u32) -> bool {
+    let Some(source_lower) = function_source_lower(ast, function_id) else {
+        return false;
+    };
+    let has_checked_call = source_lower.contains("require(")
+        || source_lower.contains("require (")
+        || source_lower.contains("assert(")
+        || source_lower.contains("assert (");
+    let has_low_level_call = source_lower.contains(".call(")
+        || source_lower.contains(".call (")
+        || source_lower.contains(".call.value");
+    let has_selector_payload = source_lower.contains("bytes4(sha3(")
+        || source_lower.contains("bytes4(keccak256(")
+        || source_lower.contains("abi.encodewithsignature(")
+        || source_lower.contains("abi.encodewithselector(");
+    has_checked_call && has_low_level_call && has_selector_payload
+}
+
+fn function_uses_only_stipend_external_calls(ast: &NormalizedAst, function_id: u32) -> bool {
+    let Some(source_lower) = function_source_lower(ast, function_id) else {
+        return false;
+    };
+    let has_stipend_call = source_lower.contains(".send(")
+        || source_lower.contains(".send (")
+        || source_lower.contains(".transfer(")
+        || source_lower.contains(".transfer (");
+    let has_callback_capable_call = source_lower.contains(".call(")
+        || source_lower.contains(".call (")
+        || source_lower.contains(".call.value")
+        || source_lower.contains(".delegatecall")
+        || source_lower.contains(".callcode");
+    has_stipend_call && !has_callback_capable_call
+}
+
+fn function_uses_timestamp_seeded_prng(ast: &NormalizedAst, function_id: u32) -> bool {
+    let Some(function) = ast.functions.get(function_id as usize) else {
+        return false;
+    };
+    let Some(contract_id) = function.contract else {
+        return false;
+    };
+    let Some(source_lower) = function_source_lower(ast, function_id) else {
+        return false;
+    };
+    let has_block_randomness = source_lower.contains("block.number")
+        || source_lower.contains("blockhash(")
+        || source_lower.contains("block.blockhash(");
+    if !has_block_randomness {
+        return false;
+    }
+    if source_lower.contains("block.timestamp") || source_lower.contains("now") {
+        return true;
+    }
+    ast.state_vars
+        .iter()
+        .filter(|state_var| state_var.contract == contract_id)
+        .filter_map(|state_var| {
+            let init_lower = state_var_initializer_lower(ast, state_var.span)?;
+            if init_lower.contains("block.timestamp") || init_lower.contains("now") {
+                Some(state_var.name.to_ascii_lowercase())
+            } else {
+                None
+            }
+        })
+        .any(|state_var_name| source_lower.contains(&state_var_name))
+}
+
+fn function_source_lower(ast: &NormalizedAst, function_id: u32) -> Option<String> {
+    let function = ast.functions.get(function_id as usize)?;
+    let file = ast.files.get(function.span.file as usize)?;
+    Some(
+        file.source
+            .get(function.span.start as usize..function.span.end as usize)
+            .filter(|source| !source.is_empty())
+            .unwrap_or(file.source.as_str())
+            .to_ascii_lowercase(),
+    )
+}
+
+fn state_var_initializer_lower(ast: &NormalizedAst, span: Span) -> Option<String> {
+    let file = ast.files.get(span.file as usize)?;
+    let source = file.source.get(span.start as usize..span.end as usize)?;
+    let (_, rhs): (&str, &str) = source.split_once('=')?;
+    Some(rhs.to_ascii_lowercase())
 }
 
 fn build_locked_ether_candidates(
@@ -701,6 +931,10 @@ fn fuzz_contract(
 
 /// Print a text report of fuzz results, grouped by taxonomy category.
 pub fn print_report(report: &FuzzReport) {
+    let surfaced = surfaced::surface_findings(
+        report.findings.iter().map(fuzz_runtime_candidate).collect(),
+        report.meta_findings.iter().map(fuzz_meta_candidate).collect(),
+    );
     println!("=== Fuzzing Report ===");
     println!(
         "iterations: {}, corpus: {}, time: {}ms",
@@ -713,72 +947,267 @@ pub fn print_report(report: &FuzzReport) {
     if let Some(reason) = &report.corpus_zero_reason {
         println!("corpus_zero_reason: {reason}");
     }
-    println!("runtime_findings: {}", report.findings.len());
-    println!("meta_findings: {}", report.meta_findings.len());
+    println!("runtime_findings: {}", surfaced.runtime_findings.len());
+    println!("runtime_findings_raw: {}", report.findings.len());
+    println!(
+        "runtime_types_raw: {}",
+        machine_count_field(&count_raw_fuzz_findings(&report.findings))
+    );
+    println!("meta_findings: {}", surfaced.meta_findings.len());
+    println!("meta_findings_raw: {}", report.meta_findings.len());
+    println!(
+        "meta_types_raw: {}",
+        machine_count_field(&count_raw_meta_findings(&report.meta_findings))
+    );
 
-    if report.findings.is_empty() {
+    if surfaced.runtime_findings.is_empty() {
         println!("  (no vulnerabilities detected)");
     } else {
-        // Group by taxonomy category
-        let mut by_category: std::collections::BTreeMap<&str, Vec<&FuzzFinding>> =
+        let mut by_category: std::collections::BTreeMap<&str, Vec<&surfaced::SurfacedFinding>> =
             std::collections::BTreeMap::new();
-        for f in &report.findings {
-            by_category.entry(f.kind.category()).or_default().push(f);
+        for finding in &surfaced.runtime_findings {
+            by_category.entry(finding.category.as_str()).or_default().push(finding);
         }
 
         for (category, findings) in &by_category {
             println!("\n  [{}] {} finding(s):", category, findings.len());
-            for (idx, f) in findings.iter().enumerate() {
+            for (idx, finding) in findings.iter().enumerate() {
                 println!(
                     "    {}. [{}] [{}] [{}] {}",
                     idx + 1,
-                    f.kind.canonical_str(),
-                    f.severity.as_str(),
-                    f.kind.confidence().as_str(),
-                    f.message
+                    finding.kind,
+                    finding.severity,
+                    finding.confidence.as_deref().unwrap_or("unknown"),
+                    finding.message
                 );
-                println!("       Transaction sequence ({} txs):", f.tx_sequence.len());
-                for (tx_idx, tx) in f.tx_sequence.iter().enumerate() {
-                    let args_str: Vec<String> =
-                        tx.args.iter().map(|a| format!("{}", a.as_uint())).collect();
+                if let Some(function_id) = finding.function_id {
                     println!(
-                        "         {}: fn={} sender={} value={} args=[{}]",
-                        tx_idx,
-                        tx.function_id,
-                        tx.sender,
-                        tx.value,
-                        args_str.join(", ")
+                        "       function: {} ({})",
+                        function_id,
+                        finding.function_name.as_deref().unwrap_or("<unknown>")
+                    );
+                }
+                if let Some(file) = &finding.file {
+                    println!(
+                        "       location: {}:{}-{}",
+                        file,
+                        finding.start.unwrap_or(0),
+                        finding.end.unwrap_or(0)
                     );
                 }
             }
         }
     }
 
-    if !report.meta_findings.is_empty() {
-        println!("\n  [Meta] {} finding(s):", report.meta_findings.len());
-        for (idx, finding) in report.meta_findings.iter().enumerate() {
+    if !surfaced.meta_findings.is_empty() {
+        println!("\n  [Meta] {} finding(s):", surfaced.meta_findings.len());
+        for (idx, finding) in surfaced.meta_findings.iter().enumerate() {
             println!(
                 "    {}. kind={} severity={} evidence={} {}",
                 idx + 1,
-                finding.finding_type,
+                finding.kind,
                 finding.severity,
-                finding.evidence_kind,
+                finding.evidence_kind.as_deref().unwrap_or("meta"),
                 finding.message
             );
-            if let Some(location) = &finding.location {
-                if let Some(file) = &location.file {
-                    println!(
-                        "       location: {}:{}-{}",
-                        file,
-                        location.start.unwrap_or(0),
-                        location.end.unwrap_or(0)
-                    );
-                }
+            if let Some(file) = &finding.file {
+                println!(
+                    "       location: {}:{}-{}",
+                    file,
+                    finding.start.unwrap_or(0),
+                    finding.end.unwrap_or(0)
+                );
             }
         }
     }
 
     println!("=== End Report ===");
+}
+
+#[derive(Debug, Serialize)]
+struct JsonFuzzTransaction {
+    function_id: u32,
+    sender: usize,
+    value: u128,
+    args: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct JsonFuzzFinding {
+    kind: String,
+    canonical_kind: String,
+    category: String,
+    severity: String,
+    confidence: String,
+    message: String,
+    trace_hash: String,
+    tx_sequence: Vec<JsonFuzzTransaction>,
+}
+
+#[derive(Debug, Serialize)]
+struct JsonFuzzReport {
+    iterations: usize,
+    coverage_pct: f64,
+    total_blocks: usize,
+    covered_blocks: usize,
+    corpus_size: usize,
+    corpus_zero_reason: Option<String>,
+    elapsed_ms: u128,
+    finding_count_raw: usize,
+    suppressed_findings: usize,
+    finding_counts: Vec<surfaced::SurfacedCount>,
+    findings: Vec<surfaced::SurfacedFinding>,
+    findings_raw: Vec<JsonFuzzFinding>,
+    meta_finding_count_raw: usize,
+    suppressed_meta_findings: usize,
+    meta_finding_counts: Vec<surfaced::SurfacedCount>,
+    meta_findings: Vec<surfaced::SurfacedFinding>,
+    meta_findings_raw: Vec<crate::core::artifacts::Finding>,
+}
+
+pub fn print_report_json(report: &FuzzReport) -> Result<()> {
+    let payload = serde_json::to_string_pretty(&json_report(report))
+        .map_err(|err| Error::msg(format!("failed to encode fuzzing JSON report: {err}")))?;
+    println!("{payload}");
+    Ok(())
+}
+
+fn json_report(report: &FuzzReport) -> JsonFuzzReport {
+    let surfaced = surfaced::surface_findings(
+        report.findings.iter().map(fuzz_runtime_candidate).collect(),
+        report.meta_findings.iter().map(fuzz_meta_candidate).collect(),
+    );
+    JsonFuzzReport {
+        iterations: report.iterations,
+        coverage_pct: report.coverage_pct,
+        total_blocks: report.total_blocks,
+        covered_blocks: report.covered_blocks,
+        corpus_size: report.corpus_size,
+        corpus_zero_reason: report.corpus_zero_reason.clone(),
+        elapsed_ms: report.elapsed_ms,
+        finding_count_raw: report.findings.len(),
+        suppressed_findings: surfaced.suppressed_runtime_findings,
+        finding_counts: surfaced.runtime_finding_counts,
+        findings: surfaced.runtime_findings,
+        findings_raw: report
+            .findings
+            .iter()
+            .map(|finding| JsonFuzzFinding {
+                kind: finding.kind.as_str().to_string(),
+                canonical_kind: finding.kind.canonical_str().to_string(),
+                category: finding.kind.category().to_string(),
+                severity: finding.severity.as_str().to_string(),
+                confidence: finding.kind.confidence().as_str().to_string(),
+                message: finding.message.clone(),
+                trace_hash: finding.trace_hash.clone(),
+                tx_sequence: finding
+                    .tx_sequence
+                    .iter()
+                    .map(|tx| JsonFuzzTransaction {
+                        function_id: tx.function_id,
+                        sender: tx.sender,
+                        value: tx.value,
+                        args: tx.args.iter().map(|arg| arg.as_uint().to_string()).collect(),
+                    })
+                    .collect(),
+            })
+            .collect(),
+        meta_finding_count_raw: report.meta_findings.len(),
+        suppressed_meta_findings: surfaced.suppressed_meta_findings,
+        meta_finding_counts: surfaced.meta_finding_counts,
+        meta_findings: surfaced.meta_findings,
+        meta_findings_raw: report.meta_findings.clone(),
+    }
+}
+
+fn fuzz_runtime_candidate(finding: &FuzzFinding) -> surfaced::FindingCandidate {
+    surfaced::FindingCandidate {
+        kind: finding.kind.as_str().to_string(),
+        canonical_kind: finding.kind.canonical_str().to_string(),
+        category: finding.kind.category().to_string(),
+        severity: finding.severity.as_str().to_string(),
+        confidence: Some(finding.kind.confidence().as_str().to_string()),
+        message: finding.message.clone(),
+        file: None,
+        start: None,
+        end: None,
+        function_id: extract_function_id_from_message(finding.message.as_str()),
+        function_name: None,
+        analysis_layer: "runtime".to_string(),
+        evidence_kind: Some("executor".to_string()),
+    }
+}
+
+fn fuzz_meta_candidate(finding: &crate::core::artifacts::Finding) -> surfaced::FindingCandidate {
+    surfaced::FindingCandidate {
+        kind: finding.finding_type.clone(),
+        canonical_kind: surfaced::canonicalize_kind(&finding.finding_type),
+        category: finding
+            .metadata
+            .get("category")
+            .cloned()
+            .unwrap_or_else(|| surfaced::default_category_for_kind(&finding.finding_type).to_string()),
+        severity: finding.severity.clone(),
+        confidence: None,
+        message: finding.message.clone(),
+        file: finding
+            .location
+            .as_ref()
+            .and_then(|location| location.file.clone()),
+        start: finding
+            .location
+            .as_ref()
+            .and_then(|location| location.start),
+        end: finding
+            .location
+            .as_ref()
+            .and_then(|location| location.end),
+        function_id: finding
+            .location
+            .as_ref()
+            .and_then(|location| location.function_id),
+        function_name: finding
+            .location
+            .as_ref()
+            .and_then(|location| location.function_name.clone()),
+        analysis_layer: "meta".to_string(),
+        evidence_kind: Some(finding.evidence_kind.clone()),
+    }
+}
+
+fn count_raw_fuzz_findings(findings: &[FuzzFinding]) -> std::collections::BTreeMap<String, usize> {
+    let mut counts = std::collections::BTreeMap::<String, usize>::new();
+    for finding in findings {
+        *counts
+            .entry(finding.kind.canonical_str().to_string())
+            .or_insert(0) += 1;
+    }
+    counts
+}
+
+fn count_raw_meta_findings(
+    findings: &[crate::core::artifacts::Finding],
+) -> std::collections::BTreeMap<String, usize> {
+    let mut counts = std::collections::BTreeMap::<String, usize>::new();
+    for finding in findings {
+        let canonical = surfaced::canonicalize_kind(&finding.finding_type);
+        if canonical.is_empty() {
+            continue;
+        }
+        *counts.entry(canonical).or_insert(0) += 1;
+    }
+    counts
+}
+
+fn machine_count_field(counts: &std::collections::BTreeMap<String, usize>) -> String {
+    if counts.is_empty() {
+        return "-".to_string();
+    }
+    counts
+        .iter()
+        .map(|(kind, count)| format!("{kind}={count}"))
+        .collect::<Vec<_>>()
+        .join(";")
 }
 
 #[cfg(test)]
@@ -793,7 +1222,7 @@ mod tests {
     use crate::ir::{IrBlock, IrFunction, IrInstr, IrModule, IrValue, IrVar};
     use crate::norm::{
         Contract, ContractKind, Function, FunctionKind, Mutability, NormalizedAst, SourceFile,
-        Span, Visibility,
+        Span, StateVariable, Visibility,
     };
 
     fn finding(kind: FuzzFindingKind, message: &str) -> FuzzFinding {
@@ -804,6 +1233,41 @@ mod tests {
             tx_sequence: Vec::new(),
             trace_hash: format!("hash-{message}"),
         }
+    }
+
+    fn span() -> Span {
+        Span {
+            file: 0,
+            start: 0,
+            end: 1,
+        }
+    }
+
+    fn test_ast_with_source(function_name: &str, source: &str) -> NormalizedAst {
+        let mut ast = NormalizedAst::default();
+        ast.files.push(SourceFile {
+            id: 0,
+            path: "test.sol".to_string(),
+            source: source.to_string(),
+        });
+        ast.functions.push(Function {
+            id: 0,
+            contract: None,
+            name: Some(function_name.to_string()),
+            kind: FunctionKind::Function,
+            visibility: Visibility::Public,
+            mutability: Mutability::Payable,
+            params: Vec::new(),
+            returns: Vec::new(),
+            modifiers: Vec::new(),
+            body: None,
+            span: Span {
+                file: 0,
+                start: 0,
+                end: source.len() as u32,
+            },
+        });
+        ast
     }
 
     #[test]
@@ -1067,6 +1531,188 @@ mod tests {
 
         let injected = inject_static_runtime_backstops(&[], &static_findings, &ast);
         assert!(injected.iter().any(|f| f.kind == FuzzFindingKind::LockedEther));
+    }
+
+    #[test]
+    fn inject_static_runtime_backstop_recovers_dos_block_gas_limit_from_dos_path() {
+        let source = "function refundDos() public { for (uint i; i < refundAddresses.length; i++) { refundAddresses[i].transfer(refundAmount[i]); } }";
+        let mut ast = NormalizedAst::from_sources(vec![SourceFile {
+            id: 0,
+            path: "test.sol".to_string(),
+            source: source.to_string(),
+        }]);
+        ast.contracts.push(Contract {
+            id: 0,
+            name: "CrowdFundBad".to_string(),
+            kind: ContractKind::Contract,
+            bases: Vec::new(),
+            functions: vec![0],
+            state_vars: Vec::new(),
+            modifiers: Vec::new(),
+            events: Vec::new(),
+            errors: Vec::new(),
+            span: Span {
+                file: 0,
+                start: 0,
+                end: source.len() as u32,
+            },
+        });
+        ast.functions.push(Function {
+            id: 0,
+            contract: Some(0),
+            name: Some("refundDos".to_string()),
+            kind: FunctionKind::Function,
+            visibility: Visibility::Public,
+            mutability: Mutability::NonPayable,
+            params: Vec::new(),
+            returns: Vec::new(),
+            modifiers: Vec::new(),
+            body: None,
+            span: Span {
+                file: 0,
+                start: 0,
+                end: source.len() as u32,
+            },
+        });
+
+        let runtime_findings = vec![finding(
+            FuzzFindingKind::DosWithFailedCall,
+            "Static-guided runtime backstop: function 0 ('refundDos') has static DoS-with-failed-call signal but runtime loop/call-failure evidence was not captured",
+        )];
+        let static_findings = vec![Finding {
+            kind: FindingKind::DosBlockGasLimit,
+            severity: Severity::Medium,
+            message: "dynamic bound".to_string(),
+            span: Span {
+                file: 0,
+                start: 0,
+                end: source.len() as u32,
+            },
+            function: Some(0),
+        }];
+
+        let injected = inject_static_runtime_backstops(&runtime_findings, &static_findings, &ast);
+        assert!(
+            injected
+                .iter()
+                .any(|finding| finding.kind == FuzzFindingKind::DosBlockGasLimit)
+        );
+    }
+
+    #[test]
+    fn inject_static_runtime_backstops_drop_checked_selector_wrapper_noise() {
+        let ast = test_ast_with_source(
+            "deposit",
+            "function deposit(address target) public payable { require(target.call.value(msg.value)(bytes4(sha3(\"addToBalance()\")))); }",
+        );
+        let static_findings = vec![
+            Finding {
+                kind: FindingKind::DosWithFailedCall,
+                severity: Severity::High,
+                message: "dos".to_string(),
+                span: span(),
+                function: Some(0),
+            },
+            Finding {
+                kind: FindingKind::UnusedReturnValue,
+                severity: Severity::Medium,
+                message: "unchecked".to_string(),
+                span: span(),
+                function: Some(0),
+            },
+            Finding {
+                kind: FindingKind::ReentrancyNoEthTransfer,
+                severity: Severity::Medium,
+                message: "reentrancy".to_string(),
+                span: span(),
+                function: Some(0),
+            },
+        ];
+
+        let injected = inject_static_runtime_backstops(&[], &static_findings, &ast);
+        assert!(injected.is_empty());
+    }
+
+    #[test]
+    fn inject_static_runtime_backstop_recovers_timestamp_dependency_from_timestamp_seeded_prng() {
+        let source = "uint256 salt = block.timestamp; function random() public view returns (uint256) { return salt * block.number; }";
+        let mut ast = NormalizedAst::from_sources(vec![SourceFile {
+            id: 0,
+            path: "test.sol".to_string(),
+            source: source.to_string(),
+        }]);
+        ast.contracts.push(Contract {
+            id: 0,
+            name: "TheRun".to_string(),
+            kind: ContractKind::Contract,
+            bases: Vec::new(),
+            functions: vec![0],
+            state_vars: vec![0],
+            modifiers: Vec::new(),
+            events: Vec::new(),
+            errors: Vec::new(),
+            span: Span {
+                file: 0,
+                start: 0,
+                end: source.len() as u32,
+            },
+        });
+        ast.state_vars.push(StateVariable {
+            id: 0,
+            contract: 0,
+            name: "salt".to_string(),
+            visibility: Visibility::Private,
+            mutability: Mutability::NonPayable,
+            constant: false,
+            immutable: false,
+            type_string: Some("uint256".to_string()),
+            span: Span {
+                file: 0,
+                start: 0,
+                end: source.find(';').unwrap() as u32 + 1,
+            },
+        });
+        let function_start = source.find("function").unwrap() as u32;
+        ast.functions.push(Function {
+            id: 0,
+            contract: Some(0),
+            name: Some("random".to_string()),
+            kind: FunctionKind::Function,
+            visibility: Visibility::Public,
+            mutability: Mutability::View,
+            params: Vec::new(),
+            returns: Vec::new(),
+            modifiers: Vec::new(),
+            body: None,
+            span: Span {
+                file: 0,
+                start: function_start,
+                end: source.len() as u32,
+            },
+        });
+
+        let static_findings = vec![Finding {
+            kind: FindingKind::WeakPrng,
+            severity: Severity::Medium,
+            message: "timestamp-seeded randomness".to_string(),
+            span: Span {
+                file: 0,
+                start: function_start,
+                end: source.len() as u32,
+            },
+            function: Some(0),
+        }];
+
+        let injected = inject_static_runtime_backstops(&[], &static_findings, &ast);
+        assert!(injected.iter().any(|finding| {
+            finding.kind == FuzzFindingKind::TimestampDependency
+                && finding.message.contains("block.timestamp/now")
+        }));
+        assert!(
+            injected
+                .iter()
+                .any(|finding| finding.kind == FuzzFindingKind::WeakPRNG)
+        );
     }
 
     #[test]

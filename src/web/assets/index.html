@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Hybrid Smart Contracts Analyzer</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Solidity Analysis</p>
+          <h1>Hybrid Smart Contracts Analyzer</h1>
+        </div>
+        <div class="root-pill">
+          <span>Rooted At</span>
+          <strong id="rootDirLabel">loading...</strong>
+        </div>
+      </header>
+
+      <main class="workspace">
+        <aside class="panel sidebar">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Workspace</p>
+              <h2>File Browser</h2>
+            </div>
+            <button id="selectCurrentDirBtn" class="ghost-button">Analyze This Folder</button>
+          </div>
+
+          <nav id="breadcrumbs" class="breadcrumbs"></nav>
+          <p class="browser-hint">Open a folder to browse it. The folder you are viewing is the current analysis target until you pick a single Solidity file.</p>
+          <div id="fileList" class="file-list"></div>
+        </aside>
+
+        <section class="main-column">
+          <section class="panel controls-panel">
+            <div class="section-head">
+              <div>
+                <p class="eyebrow">Run Setup</p>
+                <h2>Analyzer Controls</h2>
+              </div>
+            </div>
+
+            <div class="controls-grid">
+              <label class="control">
+                <span>Selected Target</span>
+                <input id="selectedTarget" type="text" readonly value="No target selected">
+              </label>
+
+              <label class="control">
+                <span>Mode</span>
+                <select id="modeSelect">
+                  <option value="static">static</option>
+                  <option value="symbolic">symbolic</option>
+                  <option value="fuzzing">fuzzing</option>
+                  <option value="hybrid">hybrid</option>
+                </select>
+              </label>
+            </div>
+
+            <div class="action-row">
+              <button id="runButton" class="primary-button">Run Analysis</button>
+              <button id="cancelButton" class="danger-button" disabled>Cancel Analysis</button>
+              <p id="statusLine" class="status-line">Browse to a folder or pick a Solidity file to begin.</p>
+            </div>
+          </section>
+
+          <section class="inspector-grid">
+            <section class="panel">
+              <div class="section-head">
+                <div>
+                  <p class="eyebrow">Preview</p>
+                  <h2>Target Content</h2>
+                </div>
+              </div>
+              <pre id="filePreview" class="code-block">Select a Solidity file to preview it here.</pre>
+            </section>
+
+            <section class="panel">
+              <div class="section-head">
+                <div>
+                  <p class="eyebrow">Summary</p>
+                  <h2>Run Snapshot</h2>
+                </div>
+              </div>
+              <div id="summaryGrid" class="summary-grid"></div>
+              <div id="warningBox" class="warning-box hidden"></div>
+              <div id="artifactBox" class="artifact-box hidden"></div>
+            </section>
+          </section>
+
+          <section class="panel">
+            <div class="section-head">
+              <div>
+                <p class="eyebrow">Results</p>
+                <h2>Findings</h2>
+              </div>
+              <span id="findingsCount" class="count-pill">0</span>
+            </div>
+            <div id="findingList" class="finding-list">
+              <p class="empty-state">Run an analysis to see findings here.</p>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="section-head">
+              <div>
+                <p class="eyebrow">Report</p>
+                <h2>Raw JSON</h2>
+              </div>
+            </div>
+            <pre id="rawJson" class="code-block">The analyzer JSON output will appear here.</pre>
+          </section>
+        </section>
+      </main>
+    </div>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

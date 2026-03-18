@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::env;
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::{Command, Output, Stdio};
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -117,22 +117,49 @@ fn run_solc(
     allow_paths: &[PathBuf],
     input: &SolcInput,
 ) -> Result<SolcOutput> {
+    let output = run_solc_once(solc_path, base_path, include_paths, allow_paths, input, true)?;
+    match parse_solc_output(&output) {
+        Ok(parsed) => Ok(parsed),
+        Err(err) if should_retry_without_path_flags(&output) => {
+            let fallback =
+                run_solc_once(solc_path, base_path, include_paths, allow_paths, input, false)?;
+            parse_solc_output(&fallback)
+        }
+        Err(err) => Err(err),
+    }
+}
+
+fn run_solc_once(
+    solc_path: &Path,
+    base_path: &Path,
+    include_paths: &[PathBuf],
+    allow_paths: &[PathBuf],
+    input: &SolcInput,
+    with_path_flags: bool,
+) -> Result<Output> {
     let mut cmd = Command::new(solc_path);
+    cmd.current_dir(base_path);
     cmd.arg("--standard-json");
-    cmd.arg("--base-path");
-    cmd.arg(path_to_arg(base_path)?);
+    if with_path_flags {
+        cmd.arg("--base-path");
+        cmd.arg(path_to_arg(base_path)?);
 
-    for include in include_paths {
-        cmd.arg("--include-path");
-        cmd.arg(path_to_arg(include)?);
+        for include in include_paths {
+            cmd.arg("--include-path");
+            cmd.arg(path_to_arg(include)?);
+        }
+
+        if !allow_paths.is_empty() {
+            cmd.arg("--allow-paths");
+            cmd.arg(join_paths(allow_paths)?);
+        }
     }
 
-    if !allow_paths.is_empty() {
-        cmd.arg("--allow-paths");
-        cmd.arg(join_paths(allow_paths)?);
-    }
-
-    let mut child = cmd.stdin(Stdio::piped()).stdout(Stdio::piped()).spawn()?;
+    let mut child = cmd
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()?;
 
     let stdin = child
         .stdin
@@ -142,7 +169,10 @@ fn run_solc(
         .map_err(|err| Error::msg(format!("solc input serialization failed: {err}")))?;
     stdin.write_all(&payload)?;
 
-    let output = child.wait_with_output()?;
+    child.wait_with_output().map_err(Into::into)
+}
+
+fn parse_solc_output(output: &Output) -> Result<SolcOutput> {
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         if !stderr.trim().is_empty() {
@@ -154,6 +184,25 @@ fn run_solc(
         .map_err(|err| Error::msg(format!("solc output parse error: {err}")))?;
     check_solc_errors(&parsed)?;
     Ok(parsed)
+}
+
+fn should_retry_without_path_flags(output: &Output) -> bool {
+    let mut combined = String::from_utf8_lossy(&output.stderr).to_ascii_lowercase();
+    if !combined.is_empty() {
+        combined.push('\n');
+    }
+    combined.push_str(&String::from_utf8_lossy(&output.stdout).to_ascii_lowercase());
+
+    [
+        "unrecognised option '--base-path'",
+        "unrecognized option '--base-path'",
+        "unrecognised option '--include-path'",
+        "unrecognized option '--include-path'",
+        "unrecognised option '--allow-paths'",
+        "unrecognized option '--allow-paths'",
+    ]
+    .iter()
+    .any(|needle| combined.contains(needle))
 }
 
 fn load_remappings(root: &Path) -> Result<Vec<String>> {
@@ -601,10 +650,20 @@ fn parse_function_kind(node: &Value) -> FunctionKind {
         "fallback" => FunctionKind::Fallback,
         "receive" => FunctionKind::Receive,
         _ => {
-            if read_attr_bool(node, "isConstructor") == Some(true) {
+            let is_constructor = read_attr_bool(node, "isConstructor").unwrap_or(false)
+                || read_bool(node, "isConstructor").unwrap_or(false);
+            if is_constructor {
                 FunctionKind::Constructor
+            } else if read_string(node, "name")
+                .or_else(|| read_attr_string(node, "name"))
+                .is_none_or(|name| name.is_empty())
+            {
+                // Legacy fallback form: `function() external/payable { ... }`
+                // appears without a `kind` field in old AST shapes.
+                FunctionKind::Fallback
             } else {
-                FunctionKind::Unknown
+                // Old solc ASTs may omit `kind`; default to normal function.
+                FunctionKind::Function
             }
         }
     }

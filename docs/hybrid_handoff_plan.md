@@ -234,6 +234,44 @@ Started Phase A with concrete fixes already merged:
     - `src/fuzzing/executor.rs`
     - `src/fuzzing/oracle.rs`
     - `src/fuzzing/runner.rs`
+- Engine maturity Step 17 (runtime-primary accuracy control pass) landed.
+  - Scoring channel split implemented:
+    - `runtime_primary`, `meta_secondary`, `surfaced_output`
+    - primary benchmark TP/FP/FN now runtime-first.
+  - Per-issue matrix artifacts now emitted by both benchmark scorers.
+  - Hybrid SE injection gating improved:
+    - accept SE seeds only if they improve frontier distance or unlock uncovered edges.
+    - new report metric: `se_new_edges_from_injected`.
+  - Symbolic reentrancy evidence tightened:
+    - callback changed-storage and stale-read evidence modeled.
+    - low-confidence fallback kept as separate heuristic variant.
+  - Fuzzing callback/reentrancy improved:
+    - deterministic callback target set (same function first, then overlaps up to cap).
+    - callback-backed reentrancy elevated; heuristic fallback retained at low confidence.
+  - Bootstrap seeds now include payable `fallback`/`receive` entrypoints.
+  - Files:
+    - `src/symbolic/mod.rs`
+    - `src/fuzzing/executor.rs`
+    - `src/fuzzing/oracle.rs`
+    - `src/fuzzing/types.rs`
+    - `src/core/scheduler/mod.rs`
+    - `src/core/engines/mod.rs`
+    - `src/core/artifacts/mod.rs`
+    - `scripts/score_not_so_smart_run.py`
+    - `scripts/score_not_so_smart_reviewed_truth.py`
+- Engine maturity Step 18 (fuzzing runtime recovery follow-up) landed.
+  - TOD oracle now has writer->reader dependency mode (in addition to value-transfer mode):
+    - keeps multi-sender requirement,
+    - triggers when order-sensitive read slots overlap writer-function slots.
+  - Fuzz initial population now bootstraps callable entrypoints deterministically:
+    - owner + attacker sender variants,
+    - payable high-value seed candidate (dictionary max or `u128::MAX`).
+  - Payable transaction value generation now consumes dictionary constants to improve threshold crossing.
+  - Added oracle regression test:
+    - `detect_tod_writer_reader_dependency_without_value_transfer`
+  - Files:
+    - `src/fuzzing/oracle.rs`
+    - `src/fuzzing/generator.rs`
 
 Focus note:
 

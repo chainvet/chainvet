@@ -9,11 +9,14 @@ mod meta;
 mod norm;
 mod report;
 mod ssa;
+mod surfaced;
 mod symbolic;
 mod util;
+mod web;
 
 use crate::util::error::Error;
 use crate::util::error::Result;
+use serde::Serialize;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum AnalysisMode {
@@ -35,6 +38,20 @@ impl AnalysisMode {
     }
 }
 
+#[derive(Debug, Serialize)]
+struct HybridCliReport {
+    #[serde(flatten)]
+    report: core::artifacts::HybridReport,
+    finding_count_raw: usize,
+    suppressed_findings: usize,
+    findings: Vec<surfaced::SurfacedFinding>,
+    findings_raw: Vec<core::artifacts::Finding>,
+    meta_finding_count_raw: usize,
+    suppressed_meta_findings: usize,
+    meta_findings: Vec<surfaced::SurfacedFinding>,
+    meta_findings_raw: Vec<core::artifacts::Finding>,
+}
+
 fn main() {
     if let Err(err) = run() {
         eprintln!("error: {err}");
@@ -44,7 +61,7 @@ fn main() {
 
 fn print_usage() {
     eprintln!(
-        "usage: static-analyzer [--static|--symbolic|--fuzzing|--hybrid] <path> [--json|--text|--format <json|text>] [--dump-ir <text|json|tuple>]"
+        "usage: static-analyzer --web | [--static|--symbolic|--fuzzing|--hybrid] <path> [--json|--text|--format <json|text>] [--dump-ir <text|json|tuple>]"
     );
 }
 
@@ -54,6 +71,7 @@ fn run() -> Result<()> {
     let mut dump_ir = None;
     let mut mode = AnalysisMode::Static;
     let mut mode_flag = None::<&'static str>;
+    let mut web_mode = false;
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         if let Some(next_mode) = AnalysisMode::from_flag(&arg) {
@@ -76,6 +94,7 @@ fn run() -> Result<()> {
         }
 
         match arg.as_str() {
+            "--web" => web_mode = true,
             "--json" => format = report::OutputFormat::Json,
             "--text" => format = report::OutputFormat::Text,
             "--help" | "-h" => {
@@ -129,6 +148,15 @@ fn run() -> Result<()> {
         }
     }
 
+    if web_mode {
+        if input.is_some() || mode_flag.is_some() || dump_ir.is_some() {
+            return Err(Error::msg(
+                "--web cannot be combined with an input path, analysis mode, or --dump-ir",
+            ));
+        }
+        return web::serve(std::env::current_dir()?);
+    }
+
     let Some(input) = input else {
         print_usage();
         return Ok(());
@@ -147,7 +175,7 @@ fn run() -> Result<()> {
                 println!("{payload}");
                 return Ok(());
             }
-            report::print_report(&output, format)?;
+            report::print_report(&output, &input, format)?;
         }
         AnalysisMode::Symbolic => {
             let output = frontend::load_project(&input)?;
@@ -156,30 +184,100 @@ fn run() -> Result<()> {
         AnalysisMode::Fuzzing => {
             let output = frontend::load_project(&input)?;
             let config = fuzzing::types::FuzzConfig::default();
-            fuzzing::run_fuzzer(&output, &config);
+            fuzzing::run_fuzzer(&output, &config, format)?;
         }
         AnalysisMode::Hybrid => {
             let output = core::scheduler::run_p1(&input, core::budget::Budget::default())?;
+            let runtime_findings_raw = output
+                .findings
+                .iter()
+                .filter(|finding| finding.analysis_layer != "meta")
+                .cloned()
+                .collect::<Vec<_>>();
+            let meta_findings_raw = output
+                .findings
+                .iter()
+                .filter(|finding| finding.analysis_layer == "meta")
+                .cloned()
+                .collect::<Vec<_>>();
+            let surfaced = surfaced::surface_findings(
+                runtime_findings_raw
+                    .iter()
+                    .map(hybrid_finding_candidate)
+                    .collect(),
+                meta_findings_raw.iter().map(hybrid_finding_candidate).collect(),
+            );
             match format {
                 report::OutputFormat::Text => {
                     println!(
-                        "hybrid: run_id={}, run_dir={}, runtime_ms={}, epochs={}, findings_total={}, findings_unique={}, runtime_findings_total={}, runtime_findings_unique={}, meta_findings_total={}, meta_findings_unique={}, se_assists={}, se_seeds_injected={}",
+                        "hybrid: run_id={}, run_dir={}, runtime_ms={}, epochs={}, findings_total={}, findings_unique={}, runtime_findings_total={} (raw={}, suppressed={}), meta_findings_total={} (raw={}, suppressed={}), se_assists={}, se_seeds_injected={}, se_new_edges_from_injected={}",
                         output.run_id,
                         output.run_dir,
                         output.report.runtime_ms,
                         output.report.total_epochs,
                         output.report.findings_total,
                         output.report.findings_unique,
-                        output.report.runtime_findings_total,
-                        output.report.runtime_findings_unique,
-                        output.report.meta_findings_total,
-                        output.report.meta_findings_unique,
+                        surfaced.runtime_findings.len(),
+                        runtime_findings_raw.len(),
+                        surfaced.suppressed_runtime_findings,
+                        surfaced.meta_findings.len(),
+                        meta_findings_raw.len(),
+                        surfaced.suppressed_meta_findings,
                         output.report.se_assists,
-                        output.report.seeds_injected_by_se
+                        output.report.seeds_injected_by_se,
+                        output.report.se_new_edges_from_injected
                     );
+                    if surfaced.runtime_findings.is_empty() {
+                        println!("runtime findings: none");
+                    } else {
+                        println!("runtime findings (surfaced):");
+                        for (idx, finding) in surfaced.runtime_findings.iter().enumerate() {
+                            println!(
+                                "  {}. kind={} severity={} confidence={} evidence={}",
+                                idx + 1,
+                                finding.kind,
+                                finding.severity,
+                                finding.confidence.as_deref().unwrap_or("unknown"),
+                                finding.evidence_kind.as_deref().unwrap_or("runtime")
+                            );
+                            println!("     message: {}", finding.message);
+                            if let Some(file) = &finding.file {
+                                println!(
+                                    "     location: {}:{}-{}",
+                                    file,
+                                    finding.start.unwrap_or(0),
+                                    finding.end.unwrap_or(0)
+                                );
+                            }
+                        }
+                    }
+                    if !surfaced.meta_findings.is_empty() {
+                        println!("meta findings (surfaced):");
+                        for (idx, finding) in surfaced.meta_findings.iter().enumerate() {
+                            println!(
+                                "  {}. kind={} severity={} evidence={}",
+                                idx + 1,
+                                finding.kind,
+                                finding.severity,
+                                finding.evidence_kind.as_deref().unwrap_or("meta")
+                            );
+                            println!("     message: {}", finding.message);
+                        }
+                    }
                 }
                 report::OutputFormat::Json => {
-                    let payload = serde_json::to_string_pretty(&output.report).map_err(|err| {
+                    let cli_report = HybridCliReport {
+                        report: output.report,
+                        finding_count_raw: runtime_findings_raw.len(),
+                        suppressed_findings: surfaced.suppressed_runtime_findings,
+                        findings: surfaced.runtime_findings,
+                        findings_raw: runtime_findings_raw,
+                        meta_finding_count_raw: meta_findings_raw.len(),
+                        suppressed_meta_findings: surfaced.suppressed_meta_findings,
+                        meta_findings: surfaced.meta_findings,
+                        meta_findings_raw,
+                    };
+                    let payload = serde_json::to_string_pretty(&cli_report).map_err(|err| {
                         Error::msg(format!("failed to encode hybrid JSON report: {err}"))
                     })?;
                     println!("{payload}");
@@ -189,4 +287,41 @@ fn run() -> Result<()> {
     }
 
     Ok(())
+}
+
+fn hybrid_finding_candidate(finding: &core::artifacts::Finding) -> surfaced::FindingCandidate {
+    surfaced::FindingCandidate {
+        kind: finding.finding_type.clone(),
+        canonical_kind: surfaced::canonicalize_kind(&finding.finding_type),
+        category: finding
+            .metadata
+            .get("category")
+            .cloned()
+            .unwrap_or_else(|| surfaced::default_category_for_kind(&finding.finding_type).to_string()),
+        severity: finding.severity.clone(),
+        confidence: None,
+        message: finding.message.clone(),
+        file: finding
+            .location
+            .as_ref()
+            .and_then(|location| location.file.clone()),
+        start: finding
+            .location
+            .as_ref()
+            .and_then(|location| location.start),
+        end: finding
+            .location
+            .as_ref()
+            .and_then(|location| location.end),
+        function_id: finding
+            .location
+            .as_ref()
+            .and_then(|location| location.function_id),
+        function_name: finding
+            .location
+            .as_ref()
+            .and_then(|location| location.function_name.clone()),
+        analysis_layer: finding.analysis_layer.clone(),
+        evidence_kind: Some(finding.evidence_kind.clone()),
+    }
 }

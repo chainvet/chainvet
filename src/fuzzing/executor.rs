@@ -65,6 +65,44 @@ fn init_state(ast: &NormalizedAst) -> SimState {
     state
 }
 
+fn seed_contract_state_var_origins(
+    temp_origins: &mut HashMap<String, HashSet<TempOrigin>>,
+    function_id: u32,
+    ast: &NormalizedAst,
+) {
+    let Some(contract_id) = ast
+        .functions
+        .get(function_id as usize)
+        .and_then(|function| function.contract)
+    else {
+        return;
+    };
+
+    for state_var in ast
+        .state_vars
+        .iter()
+        .filter(|state_var| state_var.contract == contract_id)
+    {
+        let Some(init_lower) = state_var_initializer_lower(ast, state_var.span) else {
+            continue;
+        };
+        let entry = temp_origins.entry(state_var.name.clone()).or_default();
+        if init_lower.contains("block.timestamp") || init_lower.contains("now") {
+            entry.insert(TempOrigin::TimestampDerived);
+        }
+        if init_lower.contains("block.number") || init_lower.contains("blockhash") {
+            entry.insert(TempOrigin::BlockNumberDerived);
+        }
+    }
+}
+
+fn state_var_initializer_lower(ast: &NormalizedAst, span: crate::norm::Span) -> Option<String> {
+    let file = ast.files.get(span.file as usize)?;
+    let source = file.source.get(span.start as usize..span.end as usize)?;
+    let (_, rhs) = source.split_once('=')?;
+    Some(rhs.to_ascii_lowercase())
+}
+
 /// Track which temp vars originate from special sources.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 enum TempOrigin {
@@ -167,6 +205,7 @@ fn execute_transaction(
         .entry("block.timestamp".to_string())
         .or_default()
         .insert(TempOrigin::Timestamp);
+    seed_contract_state_var_origins(&mut temp_origins, tx.function_id, ast);
 
     // If we have a CFG, execute along chosen control-flow edges (path-sensitive).
     if let Some(cfg) = cfg {
@@ -345,9 +384,18 @@ fn execute_transaction(
             continue;
         }
         match &event.kind {
-            TraceEventKind::ExternalCall { callee, .. } => {
-                last_ext_call = Some(callee.clone());
-                ext_call_checked = false;
+            TraceEventKind::ExternalCall {
+                callee,
+                low_level,
+                ..
+            } => {
+                if *low_level {
+                    last_ext_call = Some(callee.clone());
+                    ext_call_checked = false;
+                } else {
+                    last_ext_call = None;
+                    ext_call_checked = false;
+                }
             }
             TraceEventKind::ConditionChecked => {
                 // Any explicit condition check (require/assert/if) after the call marks it checked.
@@ -742,6 +790,23 @@ fn execute_instr(
                     .or_default()
                     .insert(TempOrigin::TimestampDerived);
             }
+            let lhs_blocknum = temp_origins
+                .get(&lhs_key)
+                .map(|o| o.contains(&TempOrigin::BlockNumberDerived))
+                .unwrap_or(false);
+            let rhs_blocknum = temp_origins
+                .get(&rhs_key)
+                .map(|o| o.contains(&TempOrigin::BlockNumberDerived))
+                .unwrap_or(false);
+            if (lhs_has_ts || rhs_has_ts)
+                && (lhs_blocknum || rhs_blocknum)
+                && matches!(op.as_str(), "%" | "*" | "+" | "-" | "^" | "|" | "&" | "<<" | ">>")
+            {
+                trace.events.push(TraceEvent {
+                    function_id,
+                    kind: TraceEventKind::TimestampArithmetic,
+                });
+            }
 
             // Propagate StorageDerived through comparisons (for loop conditions like `i < arr.length`)
             let lhs_storage = temp_origins
@@ -1030,13 +1095,19 @@ fn execute_instr(
             }
 
             // Check if callee is an external call — either by name or by origin tracking
+            let has_callback_capable_source_surface =
+                function_has_callback_capable_low_level_call(ast, function_id);
+            let has_value_moving_source_surface =
+                function_has_value_moving_low_level_call(ast, function_id);
+            let has_any_low_level_source_surface =
+                has_callback_capable_source_surface || has_value_moving_source_surface;
             let is_external_by_name = is_external_call(&callee_name);
             let is_external_by_origin = temp_origins
                 .get(&callee_key)
                 .map(|o| o.contains(&TempOrigin::ExternalCallRef))
                 .unwrap_or(false);
             // Legacy parser fallback often lowers low-level members (send/call/transfer) as temp callees.
-            // Treat temp callees with call-like shape as external to avoid silently dropping these paths.
+            // Treat temp callees as low-level only when the source actually contains a low-level surface.
             let is_external_by_temp = callee_is_temp && (has_explicit_value || !args.is_empty());
             let is_external =
                 is_external_by_name
@@ -1053,7 +1124,7 @@ fn execute_instr(
                 || callee_lower.ends_with(".transfer")
                 || callee_lower.ends_with(".delegatecall")
                 || callee_lower.ends_with(".staticcall");
-            let is_low_level_by_temp = callee_is_temp && args.len() <= 1;
+            let is_low_level_by_temp = callee_is_temp && has_any_low_level_source_surface;
             let is_low_level_call = is_external
                 && (is_low_level_by_name
                     || is_external_by_origin
@@ -1062,7 +1133,7 @@ fn execute_instr(
             let has_value = has_explicit_value
                 || callee_is_send_ref
                 || callee_is_transfer_ref
-                || (is_low_level_by_temp && !args.is_empty());
+                || (callee_is_temp && has_value_moving_source_surface);
             let is_transfer_call = callee_lower == "transfer"
                 || callee_lower.ends_with(".transfer")
                 || callee_is_transfer_ref;
@@ -1085,6 +1156,7 @@ fn execute_instr(
                         callee: callee_name.clone(),
                         has_value,
                         reentrant_capable,
+                        low_level: is_low_level_call,
                     },
                 });
 
@@ -1418,6 +1490,40 @@ fn has_no_value_reentrant_callback_overlap(
             )
         })
         .any(|overlaps| overlaps)
+}
+
+fn function_has_callback_capable_low_level_call(ast: &NormalizedAst, function_id: u32) -> bool {
+    let Some(source_lower) = function_source_lower(ast, function_id) else {
+        return false;
+    };
+    source_lower.contains(".call(")
+        || source_lower.contains(".call (")
+        || source_lower.contains(".call.value")
+        || source_lower.contains(".delegatecall")
+        || source_lower.contains(".callcode")
+}
+
+fn function_has_value_moving_low_level_call(ast: &NormalizedAst, function_id: u32) -> bool {
+    let Some(source_lower) = function_source_lower(ast, function_id) else {
+        return false;
+    };
+    source_lower.contains(".call.value")
+        || source_lower.contains(".send(")
+        || source_lower.contains(".send (")
+        || source_lower.contains(".transfer(")
+        || source_lower.contains(".transfer (")
+}
+
+fn function_source_lower(ast: &NormalizedAst, function_id: u32) -> Option<String> {
+    let function = ast.functions.get(function_id as usize)?;
+    let file = ast.files.get(function.span.file as usize)?;
+    Some(
+        file.source
+            .get(function.span.start as usize..function.span.end as usize)
+            .filter(|source| !source.is_empty())
+            .unwrap_or(file.source.as_str())
+            .to_ascii_lowercase(),
+    )
 }
 
 #[derive(Debug, Clone)]
