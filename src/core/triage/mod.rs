@@ -65,10 +65,7 @@ impl FindingTriage {
     }
 
     pub fn total_seen_by_layer(&self, layer: &str) -> usize {
-        self.total_seen_by_layer
-            .get(layer)
-            .copied()
-            .unwrap_or(0)
+        self.total_seen_by_layer.get(layer).copied().unwrap_or(0)
     }
 
     pub fn unique_count_by_layer(&self, layer: &str) -> usize {

@@ -1,0 +1,38 @@
+{
+  "name": "fse2024",
+  "description": "Default benchmark scope aligned to the FSE 2024 SC-SAST study benchmark families and local exclusions.",
+  "source_suites": [
+    {
+      "suite": "not-so-smart",
+      "root": "Benchmarks/Not-so-smart/not-so-smart-contracts-master",
+      "kind": "ground-truth",
+      "enabled": true
+    },
+    {
+      "suite": "smart-contract-benchmark-suites",
+      "root": "Benchmarks/Smart-Contract-Benchmark-Suites/dataset",
+      "kind": "broad-corpus",
+      "enabled": true
+    },
+    {
+      "suite": "smartbugs-curated",
+      "root": "Benchmarks/smartbugs-curated/dataset",
+      "kind": "ground-truth",
+      "enabled": true
+    },
+    {
+      "suite": "solidifi-benchmark",
+      "root": "Benchmarks/SolidiFI-benchmark/buggy_contracts",
+      "kind": "ground-truth",
+      "enabled": true
+    }
+  ],
+  "metadata_only": [
+    {
+      "name": "bnb-official-addresses",
+      "path": "Benchmarks/FSE2024/BNB-OFFICIAL.csv",
+      "kind": "address-list"
+    }
+  ],
+  "exclusions_csv": "Benchmarks/FSE2024/exclusions.csv"
+}

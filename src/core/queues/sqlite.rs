@@ -130,4 +130,3 @@ impl FindingQueue for SqliteFindingQueue {
         self.inner.len()
     }
 }
-

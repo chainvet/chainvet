@@ -67,7 +67,9 @@ impl SolcManager {
                 self.ensure_solc(&version, &list)
             }
             Err(err) => {
-                if let Some(local) = find_local_solc_binary(&reqs, self.platform, Some(&self.cache_dir)) {
+                if let Some(local) =
+                    find_local_solc_binary(&reqs, self.platform, Some(&self.cache_dir))
+                {
                     return Ok(local);
                 }
                 if reqs.is_empty() {
@@ -83,6 +85,38 @@ impl SolcManager {
                 )))
             }
         }
+    }
+
+    pub fn prepare_legacy_retry(
+        &self,
+        sources: &[SourceFile],
+        current_solc: &Path,
+    ) -> Result<Option<PathBuf>> {
+        if !has_legacy_solidity_markers(sources) {
+            return Ok(None);
+        }
+
+        let Some(current_version) = detect_solc_version(current_solc) else {
+            return Ok(None);
+        };
+        let reqs = collect_version_reqs(sources);
+
+        let local = find_local_solc_binaries(&reqs, self.platform, Some(&self.cache_dir));
+        if let Some((_, path)) = local
+            .into_iter()
+            .find(|(version, _)| version < &current_version)
+        {
+            return Ok(Some(path));
+        }
+
+        let list = match self.load_list() {
+            Ok(list) => list,
+            Err(_) => return Ok(None),
+        };
+        let Some(version) = select_legacy_retry_version(&reqs, &list, current_version) else {
+            return Ok(None);
+        };
+        self.ensure_solc(&version, &list).map(Some)
     }
 
     pub fn check_solc(&self, solc_path: &Path) -> Result<()> {
@@ -371,12 +405,7 @@ struct SolcList {
 }
 
 fn select_version(reqs: &[VersionReq], list: &SolcList) -> Result<SolcVersion> {
-    let mut versions: Vec<SolcVersion> = list
-        .releases
-        .keys()
-        .filter_map(|value| SolcVersion::parse(value))
-        .collect();
-    versions.sort();
+    let versions = matching_versions(reqs, list);
 
     if versions.is_empty() {
         return Err(Error::msg("no solc releases available"));
@@ -396,6 +425,32 @@ fn select_version(reqs: &[VersionReq], list: &SolcList) -> Result<SolcVersion> {
     }
 
     Err(Error::msg("no solc version satisfies pragma requirements"))
+}
+
+fn select_legacy_retry_version(
+    reqs: &[VersionReq],
+    list: &SolcList,
+    current_version: SolcVersion,
+) -> Option<SolcVersion> {
+    matching_versions(reqs, list)
+        .into_iter()
+        .find(|version| version < &current_version)
+}
+
+fn matching_versions(reqs: &[VersionReq], list: &SolcList) -> Vec<SolcVersion> {
+    let mut versions: Vec<SolcVersion> = list
+        .releases
+        .keys()
+        .filter_map(|value| SolcVersion::parse(value))
+        .collect();
+    versions.sort();
+    if reqs.is_empty() {
+        return versions;
+    }
+    versions
+        .into_iter()
+        .filter(|version| reqs.iter().all(|req| req.matches(version)))
+        .collect()
 }
 
 fn collect_version_reqs(sources: &[SourceFile]) -> Vec<VersionReq> {
@@ -426,16 +481,55 @@ fn has_legacy_solidity_markers(sources: &[SourceFile]) -> bool {
 
 fn source_has_legacy_solidity_markers(source: &str) -> bool {
     let lower = source.to_ascii_lowercase();
-    // 0.4-era anonymous fallback syntax:
-    //   function() { ... }
-    if lower.contains("function()") {
-        return true;
-    }
-    // 0.4-era throw statement removed in modern Solidity.
-    if lower.contains("throw;") {
-        return true;
+    has_legacy_anonymous_fallback(&lower)
+        || has_legacy_named_constructor(&lower)
+        || lower.contains("throw;")
+        || lower.contains(" constant returns")
+        || lower.contains(") constant")
+        || lower.contains("var ")
+        || lower.contains("sha3(")
+        || lower.contains("msg.gas")
+        || lower.contains("suicide(")
+        || lower.contains("_}")
+        || lower.contains("_ }")
+}
+
+fn has_legacy_anonymous_fallback(source: &str) -> bool {
+    let mut rest = source;
+    while let Some(idx) = rest.find("function") {
+        let after = &rest[idx + "function".len()..];
+        let trimmed = after.trim_start();
+        if trimmed.starts_with('(') {
+            return true;
+        }
+        rest = after;
     }
     false
+}
+
+fn has_legacy_named_constructor(source: &str) -> bool {
+    let contract_names = legacy_contract_names(source);
+    contract_names
+        .iter()
+        .any(|name| source.contains(&format!("function {name}(")))
+}
+
+fn legacy_contract_names(source: &str) -> Vec<String> {
+    let tokens: Vec<&str> = source
+        .split(|ch: char| !(ch.is_ascii_alphanumeric() || ch == '_'))
+        .filter(|token| !token.is_empty())
+        .collect();
+    let mut names = Vec::new();
+    let mut idx = 0;
+    while idx + 1 < tokens.len() {
+        if matches!(tokens[idx], "contract" | "library" | "interface") {
+            names.push(tokens[idx + 1].to_string());
+            idx += 2;
+            continue;
+        }
+        idx += 1;
+    }
+    names
 }
 
 fn extract_pragmas(source: &str) -> Vec<String> {
@@ -630,6 +724,15 @@ fn find_local_solc_binary(
     platform: SolcPlatform,
     preferred_cache: Option<&Path>,
 ) -> Option<PathBuf> {
+    let parsed = find_local_solc_binaries(reqs, platform, preferred_cache);
+    parsed.last().map(|(_, path)| path.clone())
+}
+
+fn find_local_solc_binaries(
+    reqs: &[VersionReq],
+    platform: SolcPlatform,
+    preferred_cache: Option<&Path>,
+) -> Vec<(SolcVersion, PathBuf)> {
     let mut candidates = Vec::new();
     let mut seen_paths: HashSet<PathBuf> = HashSet::new();
 
@@ -640,30 +743,21 @@ fn find_local_solc_binary(
     let mut parsed = Vec::new();
     for candidate in candidates {
         if let Some(version) = detect_solc_version(&candidate) {
+            if !reqs.is_empty() && !reqs.iter().all(|req| req.matches(&version)) {
+                continue;
+            }
             parsed.push((version, candidate));
         }
     }
     if parsed.is_empty() {
-        return None;
+        return Vec::new();
     }
 
     parsed.sort_by(|a, b| a.0.cmp(&b.0));
-
-    if reqs.is_empty() {
-        return parsed.pop().map(|(_, path)| path);
-    }
-
     parsed
-        .into_iter()
-        .rev()
-        .find(|(version, _)| reqs.iter().all(|req| req.matches(version)))
-        .map(|(_, path)| path)
 }
 
-fn local_solc_search_roots(
-    platform: SolcPlatform,
-    preferred_cache: Option<&Path>,
-) -> Vec<PathBuf> {
+fn local_solc_search_roots(platform: SolcPlatform, preferred_cache: Option<&Path>) -> Vec<PathBuf> {
     let mut roots = Vec::new();
 
     if let Some(cache) = preferred_cache {
@@ -793,12 +887,7 @@ fn parse_version_hint_component(component: &str) -> Option<SolcVersion> {
     }
 
     let trimmed = component.trim_start();
-    if trimmed.starts_with('v')
-        || trimmed
-            .bytes()
-            .next()
-            .is_some_and(|b| b.is_ascii_digit())
-    {
+    if trimmed.starts_with('v') || trimmed.bytes().next().is_some_and(|b| b.is_ascii_digit()) {
         return parse_version_token(trimmed);
     }
 
@@ -876,5 +965,82 @@ contract C {
         };
         assert!(reqs.iter().all(|req| req.matches(&modern)));
         assert!(!reqs.iter().all(|req| req.matches(&legacy)));
+    }
+
+    #[test]
+    fn legacy_markers_detect_constant_functions_without_pragma() {
+        let src = r#"
+contract OpenAddressLottery {
+    function luckyNumberOfAddress(address addr) constant returns (uint n) {
+        return 7;
+    }
+}
+"#;
+        let reqs = collect_version_reqs(&[mk_source(0, src)]);
+        assert!(!reqs.is_empty());
+        let legacy = SolcVersion {
+            major: 0,
+            minor: 4,
+            patch: 26,
+        };
+        let modern = SolcVersion {
+            major: 0,
+            minor: 8,
+            patch: 34,
+        };
+        assert!(reqs.iter().all(|req| req.matches(&legacy)));
+        assert!(!reqs.iter().all(|req| req.matches(&modern)));
+    }
+
+    #[test]
+    fn legacy_markers_detect_named_constructor_without_pragma() {
+        let src = r#"
+contract C {
+    function C() {
+    }
+}
+"#;
+        let reqs = collect_version_reqs(&[mk_source(0, src)]);
+        assert!(!reqs.is_empty());
+        let legacy = SolcVersion {
+            major: 0,
+            minor: 4,
+            patch: 26,
+        };
+        let modern = SolcVersion {
+            major: 0,
+            minor: 8,
+            patch: 34,
+        };
+        assert!(reqs.iter().all(|req| req.matches(&legacy)));
+        assert!(!reqs.iter().all(|req| req.matches(&modern)));
+    }
+
+    #[test]
+    fn legacy_retry_prefers_older_matching_release() {
+        let req = VersionReq::parse("^0.4.9").expect("version req");
+        let list = SolcList {
+            releases: HashMap::from([
+                ("0.4.10".to_string(), "solc-0.4.10".to_string()),
+                ("0.4.15".to_string(), "solc-0.4.15".to_string()),
+                ("0.4.26".to_string(), "solc-0.4.26".to_string()),
+                ("0.5.17".to_string(), "solc-0.5.17".to_string()),
+            ]),
+            latest_release: "0.5.17".to_string(),
+        };
+        let current = SolcVersion {
+            major: 0,
+            minor: 4,
+            patch: 26,
+        };
+        let retry = select_legacy_retry_version(&[req], &list, current).expect("retry version");
+        assert_eq!(
+            retry,
+            SolcVersion {
+                major: 0,
+                minor: 4,
+                patch: 10,
+            }
+        );
     }
 }

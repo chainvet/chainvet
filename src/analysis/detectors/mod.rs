@@ -393,7 +393,10 @@ mod tests {
                 )
             })
             .count();
-        assert!(count >= 2, "expected at least two DoS findings for list_dos.sol, got {count}");
+        assert!(
+            count >= 2,
+            "expected at least two DoS findings for list_dos.sol, got {count}"
+        );
     }
 
     #[test]

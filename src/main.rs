@@ -205,7 +205,10 @@ fn run() -> Result<()> {
                     .iter()
                     .map(hybrid_finding_candidate)
                     .collect(),
-                meta_findings_raw.iter().map(hybrid_finding_candidate).collect(),
+                meta_findings_raw
+                    .iter()
+                    .map(hybrid_finding_candidate)
+                    .collect(),
             );
             match format {
                 report::OutputFormat::Text => {
@@ -297,9 +300,15 @@ fn hybrid_finding_candidate(finding: &core::artifacts::Finding) -> surfaced::Fin
             .metadata
             .get("category")
             .cloned()
-            .unwrap_or_else(|| surfaced::default_category_for_kind(&finding.finding_type).to_string()),
+            .unwrap_or_else(|| {
+                surfaced::default_category_for_kind(&finding.finding_type).to_string()
+            }),
         severity: finding.severity.clone(),
-        confidence: None,
+        confidence: finding
+            .metadata
+            .get("confidence")
+            .cloned()
+            .or_else(|| confidence_from_severity(finding.severity.as_str())),
         message: finding.message.clone(),
         file: finding
             .location
@@ -309,10 +318,7 @@ fn hybrid_finding_candidate(finding: &core::artifacts::Finding) -> surfaced::Fin
             .location
             .as_ref()
             .and_then(|location| location.start),
-        end: finding
-            .location
-            .as_ref()
-            .and_then(|location| location.end),
+        end: finding.location.as_ref().and_then(|location| location.end),
         function_id: finding
             .location
             .as_ref()
@@ -323,5 +329,14 @@ fn hybrid_finding_candidate(finding: &core::artifacts::Finding) -> surfaced::Fin
             .and_then(|location| location.function_name.clone()),
         analysis_layer: finding.analysis_layer.clone(),
         evidence_kind: Some(finding.evidence_kind.clone()),
+    }
+}
+
+fn confidence_from_severity(severity: &str) -> Option<String> {
+    match severity.trim().to_ascii_lowercase().as_str() {
+        "high" => Some("high".to_string()),
+        "medium" => Some("medium".to_string()),
+        "low" => Some("low".to_string()),
+        _ => None,
     }
 }

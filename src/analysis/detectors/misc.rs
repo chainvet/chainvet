@@ -6,9 +6,13 @@
 use std::collections::HashSet;
 
 use crate::analysis::taint::TaintSummary;
-use crate::norm::{NormalizedAst, StmtKind};
+use crate::norm::{CallTarget, ExprKind, NormalizedAst, Span, StmtKind};
 
 use super::{Finding, FindingKind, Severity};
+
+const NON_EXTERNAL_MEMBER_HELPERS: &[&str] = &["add", "sub", "mul", "div", "mod", "push", "pop"];
+const RISKY_EXTERNAL_MEMBER_CALLS: &[&str] =
+    &["call", "delegatecall", "staticcall", "send", "transfer"];
 
 // ═══════════════════════════════════════════════════════════════════════════════
 //  Entry point
@@ -173,10 +177,51 @@ fn check_shadowing_in_stmt(
 //  MI-02 – Tainted call arguments
 // ═══════════════════════════════════════════════════════════════════════════════
 
-fn detect_taint(_ast: &NormalizedAst, summaries: &[TaintSummary]) -> Vec<Finding> {
+fn should_surface_tainted_call(ast: &NormalizedAst, span: Span) -> bool {
+    if ast.statements.iter().any(|stmt| match stmt.kind {
+        StmtKind::Emit(_) => {
+            stmt.span.file == span.file
+                && stmt.span.start <= span.start
+                && stmt.span.end >= span.end
+        }
+        _ => false,
+    }) {
+        return false;
+    }
+
+    let Some(expr) = ast
+        .expressions
+        .iter()
+        .find(|expr| expr.span == span && matches!(expr.kind, ExprKind::Call { .. }))
+    else {
+        return true;
+    };
+
+    match expr.meta.call.as_ref().map(|call| &call.target) {
+        Some(CallTarget::Direct { .. }) => false,
+        Some(CallTarget::Member { name, receiver }) => {
+            let is_helper = NON_EXTERNAL_MEMBER_HELPERS
+                .iter()
+                .any(|&helper| helper == name.as_str());
+            let is_internal_receiver = receiver.last().is_some_and(|segment| {
+                segment.eq_ignore_ascii_case("this") || segment.eq_ignore_ascii_case("super")
+            });
+            let is_risky_sink = RISKY_EXTERNAL_MEMBER_CALLS
+                .iter()
+                .any(|&sink| sink == name.as_str());
+            !is_helper && !is_internal_receiver && is_risky_sink
+        }
+        Some(CallTarget::Unknown) | None => true,
+    }
+}
+
+fn detect_taint(ast: &NormalizedAst, summaries: &[TaintSummary]) -> Vec<Finding> {
     let mut findings = Vec::new();
     for summary in summaries {
         for span in &summary.tainted_calls {
+            if !should_surface_tainted_call(ast, *span) {
+                continue;
+            }
             findings.push(Finding {
                 kind: FindingKind::TaintedCall,
                 severity: Severity::High,
@@ -187,4 +232,118 @@ fn detect_taint(_ast: &NormalizedAst, summaries: &[TaintSummary]) -> Vec<Finding
         }
     }
     findings
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::frontend::parser::load_via_parser_sources;
+    use crate::norm::SourceFile;
+
+    fn parse(source: &str) -> NormalizedAst {
+        load_via_parser_sources(vec![SourceFile {
+            id: 0,
+            path: "test.sol".to_string(),
+            source: source.to_string(),
+        }])
+        .expect("parser should succeed")
+    }
+
+    fn substring_span(source: &str, needle: &str) -> Span {
+        let start = source.find(needle).expect("needle should exist") as u32;
+        Span {
+            file: 0,
+            start,
+            end: start + needle.len() as u32,
+        }
+    }
+
+    #[test]
+    fn emit_event_call_is_not_surfaced_as_tainted_call() {
+        let source = r#"
+            pragma solidity ^0.4.24;
+            contract ERC20 {
+                event Approval(address indexed owner, address indexed spender, uint256 value);
+                function approve(address spender, uint256 value) public returns (bool) {
+                    emit Approval(msg.sender, spender, value);
+                    return true;
+                }
+            }
+        "#;
+        let ast = parse(source);
+        let summaries = vec![TaintSummary {
+            function_id: 0,
+            tainted_vars: Vec::new(),
+            tainted_calls: vec![substring_span(
+                source,
+                "Approval(msg.sender, spender, value)",
+            )],
+            uses_source: true,
+        }];
+
+        let findings = detect_taint(&ast, &summaries);
+        assert!(
+            findings.is_empty(),
+            "event emissions should not surface as tainted external calls"
+        );
+    }
+
+    #[test]
+    fn external_member_call_still_surfaces_as_tainted_call() {
+        let source = r#"
+            pragma solidity ^0.4.24;
+            contract Vault {
+                function run(address target, bytes data) public {
+                    target.call(data);
+                }
+            }
+        "#;
+        let ast = parse(source);
+        let summaries = vec![TaintSummary {
+            function_id: 0,
+            tainted_vars: Vec::new(),
+            tainted_calls: vec![substring_span(source, "target.call(data)")],
+            uses_source: true,
+        }];
+
+        let findings = detect_taint(&ast, &summaries);
+        assert!(
+            findings
+                .iter()
+                .any(|finding| finding.kind == FindingKind::TaintedCall),
+            "external member calls should still surface as tainted-call findings"
+        );
+    }
+
+    #[test]
+    fn benign_logging_member_call_is_not_surfaced_as_tainted_call() {
+        let source = r#"
+            pragma solidity ^0.4.24;
+            contract Logger {
+                function AddMessage(address who, uint256 value, string data) public {}
+            }
+            contract Vault {
+                Logger log;
+                function deposit() public payable {
+                    log.AddMessage(msg.sender, msg.value, "Put");
+                }
+            }
+        "#;
+        let ast = parse(source);
+        let summaries = vec![TaintSummary {
+            function_id: 1,
+            tainted_vars: Vec::new(),
+            tainted_calls: vec![substring_span(
+                source,
+                "log.AddMessage(msg.sender, msg.value, \"Put\")",
+            )],
+            uses_source: true,
+        }];
+
+        let findings = detect_taint(&ast, &summaries);
+        assert!(
+            findings.is_empty(),
+            "benign helper/logging calls should not surface as tainted-call findings"
+        );
+    }
 }

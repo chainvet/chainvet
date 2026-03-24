@@ -488,7 +488,6 @@ pub enum FuzzFindingKind {
     StorageMemoryIssue,
     PublicMintBurn,
     // --- Project extensions ---
-    Honeypot,
     Shadowing,
     // --- Other ---
     InvariantViolation,
@@ -527,7 +526,6 @@ impl FuzzFindingKind {
             Self::DosWithFailedCall => "dos-with-failed-call",
             Self::StorageMemoryIssue => "storage-memory-issue",
             Self::PublicMintBurn => "public-mint-burn",
-            Self::Honeypot => "honeypot",
             Self::Shadowing => "shadowing",
         }
     }
@@ -567,7 +565,6 @@ impl FuzzFindingKind {
             | Self::StorageMemoryIssue
             | Self::DosWithFailedCall
             | Self::PublicMintBurn
-            | Self::Honeypot
             | Self::Shadowing => FuzzConfidence::Medium,
 
             Self::ExceptionDisorder
@@ -617,7 +614,6 @@ impl FuzzFindingKind {
 
             Self::StorageMemoryIssue => "Storage and Memory",
             Self::PublicMintBurn => "Access Control",
-            Self::Honeypot => "Miscellaneous",
             Self::Shadowing => "Storage and Memory",
 
             Self::ExceptionDisorder | Self::InvariantViolation => "Access Control",

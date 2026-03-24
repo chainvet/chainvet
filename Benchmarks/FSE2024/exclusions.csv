@@ -1,0 +1,4 @@
+suite,path,count,reason,policy
+not-so-smart,Benchmarks/Not-so-smart/not-so-smart-contracts-master/honeypots/**/*.sol,6,outdated vulnerability type honeypot,exclude_from_fse2024_aligned_scoring
+solidifi-benchmark,Benchmarks/SolidiFI-benchmark/buggy_contracts/Unhandled-Exceptions/buggy_*.sol,50,quality-only unhandled exceptions family,exclude_from_fse2024_aligned_scoring
+smartbugs-curated,Benchmarks/smartbugs-curated/dataset/short_addresses/short_address_example.sol,1,obsolete short-address vulnerability,exclude_from_fse2024_aligned_scoring

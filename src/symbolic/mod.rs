@@ -7,8 +7,9 @@ use std::env;
 use std::hash::{Hash, Hasher};
 use std::time::Instant;
 use z3::{
-    SatResult, Solver, set_global_param,
+    SatResult, Solver,
     ast::{BV, Bool, Int},
+    set_global_param,
 };
 
 use crate::analysis;
@@ -800,10 +801,7 @@ pub fn run(output: &FrontendOutput, format: OutputFormat) -> Result<()> {
                         path_constraints: Vec::new(),
                         message: format!(
                             "public {} function may allow unauthorized supply manipulation",
-                            function
-                                .name
-                                .as_deref()
-                                .unwrap_or("<anonymous>")
+                            function.name.as_deref().unwrap_or("<anonymous>")
                         ),
                         model: None,
                     });
@@ -906,10 +904,9 @@ pub fn run(output: &FrontendOutput, format: OutputFormat) -> Result<()> {
         .map(|v| v.function_id)
         .collect::<HashSet<_>>();
 
-    for finding in static_findings
-        .iter()
-        .filter(|finding| finding.kind == analysis::detectors::FindingKind::TransactionOrderDependency)
-    {
+    for finding in static_findings.iter().filter(|finding| {
+        finding.kind == analysis::detectors::FindingKind::TransactionOrderDependency
+    }) {
         let function_id = finding.function.unwrap_or(0);
         if runtime_tod_functions.contains(&function_id) {
             continue;
@@ -1220,7 +1217,10 @@ pub fn run(output: &FrontendOutput, format: OutputFormat) -> Result<()> {
             trigger: None,
             branch_triggers: Vec::new(),
             location: finding.location.as_ref().map(|location| FindingLocation {
-                file: location.file.clone().unwrap_or_else(|| "<unknown>".to_string()),
+                file: location
+                    .file
+                    .clone()
+                    .unwrap_or_else(|| "<unknown>".to_string()),
                 start: location.start.unwrap_or(0),
                 end: location.end.unwrap_or(0),
                 snippet: None,
@@ -1470,7 +1470,9 @@ pub fn run(output: &FrontendOutput, format: OutputFormat) -> Result<()> {
             );
             println!(
                 "meta findings: {} (raw={}, suppressed={})",
-                report.meta_finding_count, report.meta_finding_count_raw, report.suppressed_meta_findings
+                report.meta_finding_count,
+                report.meta_finding_count_raw,
+                report.suppressed_meta_findings
             );
             for entry in &report.by_function {
                 println!(
@@ -1504,7 +1506,7 @@ pub fn run(output: &FrontendOutput, format: OutputFormat) -> Result<()> {
                         vuln.function_name.as_deref().unwrap_or("<anonymous>"),
                         vuln.severity
                     );
-                     println!("     message: {}", vuln.message);
+                    println!("     message: {}", vuln.message);
                     if let Some(file) = &vuln.file {
                         println!(
                             "     location: {}:{}-{}",
@@ -1574,13 +1576,19 @@ fn symbolic_runtime_candidate(vuln: &VulnerabilityFinding) -> surfaced::FindingC
     }
 }
 
-fn symbolic_meta_candidate(finding: &crate::core::artifacts::Finding) -> surfaced::FindingCandidate {
+fn symbolic_meta_candidate(
+    finding: &crate::core::artifacts::Finding,
+) -> surfaced::FindingCandidate {
     surfaced::FindingCandidate {
         kind: finding.finding_type.clone(),
         canonical_kind: surfaced::canonicalize_kind(&finding.finding_type),
         category: meta_category_for_kind(finding.finding_type.as_str()).to_string(),
         severity: finding.severity.clone(),
-        confidence: None,
+        confidence: finding
+            .metadata
+            .get("confidence")
+            .cloned()
+            .or_else(|| confidence_from_severity_string(finding.severity.as_str())),
         message: finding.message.clone(),
         file: finding
             .location
@@ -1590,10 +1598,7 @@ fn symbolic_meta_candidate(finding: &crate::core::artifacts::Finding) -> surface
             .location
             .as_ref()
             .and_then(|location| location.start),
-        end: finding
-            .location
-            .as_ref()
-            .and_then(|location| location.end),
+        end: finding.location.as_ref().and_then(|location| location.end),
         function_id: finding
             .location
             .as_ref()
@@ -1604,6 +1609,15 @@ fn symbolic_meta_candidate(finding: &crate::core::artifacts::Finding) -> surface
             .and_then(|location| location.function_name.clone()),
         analysis_layer: "meta".to_string(),
         evidence_kind: Some(finding.evidence_kind.clone()),
+    }
+}
+
+fn confidence_from_severity_string(severity: &str) -> Option<String> {
+    match severity.trim().to_ascii_lowercase().as_str() {
+        "high" => Some("high".to_string()),
+        "medium" => Some("medium".to_string()),
+        "low" => Some("low".to_string()),
+        _ => None,
     }
 }
 
@@ -1628,15 +1642,14 @@ fn category_for_kind(kind: &str) -> &'static str {
         | "uninit-permission-check"
         | "unprotected-ether-withdrawal"
         | "public-mint-burn" => "Access Control",
-        "integer-overflow" | "integer-underflow" | "division-before-multiplication" => {
-            "Arithmetic"
-        }
+        "integer-overflow" | "integer-underflow" | "division-before-multiplication" => "Arithmetic",
         "weak-prng" | "timestamp-dependency" | "transaction-order-dependency" => {
             "Block Manipulation"
         }
-        "dos-block-gas-limit" | "dos-with-failed-call" | "hardcoded-gas-transfer" | "locked-ether" => {
-            "Denial of Service"
-        }
+        "dos-block-gas-limit"
+        | "dos-with-failed-call"
+        | "hardcoded-gas-transfer"
+        | "locked-ether" => "Denial of Service",
         "memory-manipulation" | "shadowing" => "Storage and Memory",
         "reentrancy" => "Reentrancy",
         _ => "Miscellaneous",
@@ -1645,17 +1658,16 @@ fn category_for_kind(kind: &str) -> &'static str {
 
 fn meta_category_for_kind(kind: &str) -> &'static str {
     match surfaced::canonicalize_kind(kind).as_str() {
-        "incorrect-interface" | "honeypot" => "Miscellaneous",
+        "incorrect-interface" => "Miscellaneous",
         "shadowing" | "memory-manipulation" => "Storage and Memory",
         "weak-prng" | "timestamp-dependency" | "transaction-order-dependency" => {
             "Block Manipulation"
         }
-        "dos-block-gas-limit" | "dos-with-failed-call" | "hardcoded-gas-transfer" | "locked-ether" => {
-            "Denial of Service"
-        }
-        "integer-overflow" | "integer-underflow" | "division-before-multiplication" => {
-            "Arithmetic"
-        }
+        "dos-block-gas-limit"
+        | "dos-with-failed-call"
+        | "hardcoded-gas-transfer"
+        | "locked-ether" => "Denial of Service",
+        "integer-overflow" | "integer-underflow" | "division-before-multiplication" => "Arithmetic",
         "access-control"
         | "arbitrary-write"
         | "unchecked-call"
@@ -1961,7 +1973,11 @@ fn engine(
             dead_ends += 1;
             continue;
         };
-        let Some(block) = current_cfg.blocks.iter().find(|block| block.id == state.block_id) else {
+        let Some(block) = current_cfg
+            .blocks
+            .iter()
+            .find(|block| block.id == state.block_id)
+        else {
             dead_ends += 1;
             continue;
         };
@@ -2061,14 +2077,19 @@ fn engine(
                     if is_storage_place(dest) {
                         let dest_slot_key = place_key(dest);
                         if let Some(call_pc) = state.external_call_pc {
-                            let stale_read_hit = state.callback_stale_read_keys.contains(&dest_slot_key);
-                            let callback_changed_hit = state
-                                .callback_changed_storage_keys
-                                .contains(&dest_slot_key);
-                            let callback_changed_any = !state.callback_changed_storage_keys.is_empty();
-                            if state.callback_observed && (stale_read_hit || callback_changed_hit || callback_changed_any) {
+                            let stale_read_hit =
+                                state.callback_stale_read_keys.contains(&dest_slot_key);
+                            let callback_changed_hit =
+                                state.callback_changed_storage_keys.contains(&dest_slot_key);
+                            let callback_changed_any =
+                                !state.callback_changed_storage_keys.is_empty();
+                            if state.callback_observed
+                                && (stale_read_hit || callback_changed_hit || callback_changed_any)
+                            {
                                 if seen_reentrancy_edges.insert((call_pc, current_pc)) {
-                                    let evidence = if stale_read_hit || !state.callback_stale_read_keys.is_empty() {
+                                    let evidence = if stale_read_hit
+                                        || !state.callback_stale_read_keys.is_empty()
+                                    {
                                         "stale-read"
                                     } else if callback_changed_hit {
                                         "changed-slot"
@@ -2323,8 +2344,11 @@ fn engine(
                     let lhs_v = state.eval_value(lhs);
                     let rhs_v = state.eval_value(rhs);
                     if !checked_arithmetic && op == "+" {
-                        let overflow_model =
-                            solver_cache.check_add_overflow(&state.path_constraints, &lhs_v, &rhs_v);
+                        let overflow_model = solver_cache.check_add_overflow(
+                            &state.path_constraints,
+                            &lhs_v,
+                            &rhs_v,
+                        );
                         if let Some(model) = overflow_model {
                             if seen_vulns.insert((VulnerabilityKind::Overflow, current_pc)) {
                                 vulnerabilities.push(LocalVulnerability {
@@ -2416,7 +2440,10 @@ fn engine(
                     if let Some(rhs_key) = value_var_key(rhs) {
                         if let Some(pending) = state.pending_low_level_calls.get(&rhs_key).cloned()
                         {
-                            state.pending_low_level_calls.entry(dest_key.clone()).or_insert(pending);
+                            state
+                                .pending_low_level_calls
+                                .entry(dest_key.clone())
+                                .or_insert(pending);
                         }
                     }
                     let lhs_has_timestamp =
@@ -2437,8 +2464,7 @@ fn engine(
                     if (lhs_has_timestamp || rhs_has_timestamp)
                         && (lhs_has_blocknum || rhs_has_blocknum)
                         && is_weak_prng_arithmetic_op(op)
-                        && seen_vulns
-                            .insert((VulnerabilityKind::TimestampDependency, current_pc))
+                        && seen_vulns.insert((VulnerabilityKind::TimestampDependency, current_pc))
                     {
                         vulnerabilities.push(LocalVulnerability {
                             kind: VulnerabilityKind::TimestampDependency,
@@ -2714,6 +2740,12 @@ fn engine(
                                 )
                             })
                             .unwrap_or(false)
+                        && !authority_profile.guarded_by_modifier
+                        && !state.sender_checked
+                        && !function_has_sender_authority_guard_hint(
+                            callback_data.map(|data| data.ast),
+                            state.function_id,
+                        )
                         && seen_vulns.insert((VulnerabilityKind::Selfdestruct, current_pc))
                     {
                         vulnerabilities.push(LocalVulnerability {
@@ -2755,8 +2787,7 @@ fn engine(
                     let has_tod_sink_evidence =
                         has_value || is_hardcoded_gas_transfer || is_transfer_like_external_call;
                     if is_hardcoded_gas_transfer
-                        && seen_vulns
-                            .insert((VulnerabilityKind::HardcodedGasTransfer, current_pc))
+                        && seen_vulns.insert((VulnerabilityKind::HardcodedGasTransfer, current_pc))
                     {
                         vulnerabilities.push(LocalVulnerability {
                             kind: VulnerabilityKind::HardcodedGasTransfer,
@@ -2774,8 +2805,7 @@ fn engine(
                     }
                     if allow_signature_malleability
                         && callee_lower.contains("ecrecover")
-                        && seen_vulns
-                            .insert((VulnerabilityKind::SignatureMalleability, current_pc))
+                        && seen_vulns.insert((VulnerabilityKind::SignatureMalleability, current_pc))
                     {
                         vulnerabilities.push(LocalVulnerability {
                             kind: VulnerabilityKind::SignatureMalleability,
@@ -2814,17 +2844,22 @@ fn engine(
                     }
                     if has_value
                         && is_low_level_call
-                        && function_is_externally_callable(callback_data.map(|data| data.ast), state.function_id)
+                        && function_is_externally_callable(
+                            callback_data.map(|data| data.ast),
+                            state.function_id,
+                        )
                         && !authority_profile.guarded_by_modifier
                         && !state.sender_checked
+                        && !function_is_public_sender_payout(
+                            callback_data.map(|data| data.ast),
+                            state.function_id,
+                        )
                         && !function_is_direct_msg_value_forwarder(
                             callback_data.map(|data| data.ast),
                             state.function_id,
                         )
-                        && seen_vulns.insert((
-                            VulnerabilityKind::UnprotectedEtherWithdrawal,
-                            current_pc,
-                        ))
+                        && seen_vulns
+                            .insert((VulnerabilityKind::UnprotectedEtherWithdrawal, current_pc))
                     {
                         vulnerabilities.push(LocalVulnerability {
                             kind: VulnerabilityKind::UnprotectedEtherWithdrawal,
@@ -2845,10 +2880,8 @@ fn engine(
                         && has_writer_reader_dependency
                         && state.saw_order_sensitive_storage_read
                         && has_tod_sink_evidence
-                        && seen_vulns.insert((
-                            VulnerabilityKind::TransactionOrderDependency,
-                            current_pc,
-                        ))
+                        && seen_vulns
+                            .insert((VulnerabilityKind::TransactionOrderDependency, current_pc))
                     {
                         vulnerabilities.push(LocalVulnerability {
                             kind: VulnerabilityKind::TransactionOrderDependency,
@@ -2937,11 +2970,8 @@ fn engine(
                             {
                                 state.sender_checked = true;
                             }
-                            if value_has_origin(
-                                &state.origins,
-                                first_arg,
-                                ValueOrigin::ThisBalance,
-                            ) && cond_text.contains("==")
+                            if value_has_origin(&state.origins, first_arg, ValueOrigin::ThisBalance)
+                                && cond_text.contains("==")
                             {
                                 state.saw_this_balance_invariant = true;
                             }
@@ -3037,14 +3067,21 @@ fn engine(
                         let frame = callback_frame_from_state(&caller_resume);
                         let mut enqueued_callback = false;
                         for callback_function_id in callback_candidates {
-                            let Some(callback_cfg) = cfg_map.get(&callback_function_id).copied() else {
+                            let Some(callback_cfg) = cfg_map.get(&callback_function_id).copied()
+                            else {
                                 continue;
                             };
-                            let Some(entry_block) = callback_cfg.blocks.first().map(|block| block.id) else {
+                            let Some(entry_block) =
+                                callback_cfg.blocks.first().map(|block| block.id)
+                            else {
                                 continue;
                             };
-                            let mut callback_state =
-                                callback_state_from_frame(&state, frame.clone(), callback_function_id, entry_block);
+                            let mut callback_state = callback_state_from_frame(
+                                &state,
+                                frame.clone(),
+                                callback_function_id,
+                                entry_block,
+                            );
                             callback_state.branch_triggers.push(format!(
                                 "callback(fn={callback_function_id}) from pc {current_pc}"
                             ));
@@ -3066,7 +3103,6 @@ fn engine(
                             break;
                         }
                     }
-
                 }
                 IrInstr::Select {
                     dest,
@@ -3103,16 +3139,8 @@ fn engine(
                     }
                     let has_blocknum =
                         value_has_origin(&state.origins, cond, ValueOrigin::BlockNumber)
-                            || value_has_origin(
-                                &state.origins,
-                                then_val,
-                                ValueOrigin::BlockNumber,
-                            )
-                            || value_has_origin(
-                                &state.origins,
-                                else_val,
-                                ValueOrigin::BlockNumber,
-                            );
+                            || value_has_origin(&state.origins, then_val, ValueOrigin::BlockNumber)
+                            || value_has_origin(&state.origins, else_val, ValueOrigin::BlockNumber);
                     if has_blocknum {
                         state
                             .origins
@@ -3122,16 +3150,8 @@ fn engine(
                     }
                     let has_this_balance =
                         value_has_origin(&state.origins, cond, ValueOrigin::ThisBalance)
-                            || value_has_origin(
-                                &state.origins,
-                                then_val,
-                                ValueOrigin::ThisBalance,
-                            )
-                            || value_has_origin(
-                                &state.origins,
-                                else_val,
-                                ValueOrigin::ThisBalance,
-                            );
+                            || value_has_origin(&state.origins, then_val, ValueOrigin::ThisBalance)
+                            || value_has_origin(&state.origins, else_val, ValueOrigin::ThisBalance);
                     if has_this_balance {
                         state
                             .origins
@@ -3663,7 +3683,10 @@ fn resume_from_callback(
     resumed
 }
 
-fn diff_storage_keys(before: &HashMap<String, Int>, after: &HashMap<String, Int>) -> HashSet<String> {
+fn diff_storage_keys(
+    before: &HashMap<String, Int>,
+    after: &HashMap<String, Int>,
+) -> HashSet<String> {
     let mut keys = before.keys().cloned().collect::<HashSet<_>>();
     keys.extend(after.keys().cloned());
     keys.into_iter()
@@ -3810,17 +3833,18 @@ fn reentrant_callback_candidates(
         if candidate_id == function_id {
             continue;
         }
-        let overlaps = current_deps
-            .zip(deps.functions.get(&candidate_id))
-            .map(|(current, candidate)| {
-                current.writes.iter().any(|slot| {
-                    candidate.reads.contains(slot) || candidate.writes.contains(slot)
-                }) || current
-                    .reads
-                    .iter()
-                    .any(|slot| candidate.writes.contains(slot))
-            })
-            .unwrap_or(false);
+        let overlaps =
+            current_deps
+                .zip(deps.functions.get(&candidate_id))
+                .map(|(current, candidate)| {
+                    current.writes.iter().any(|slot| {
+                        candidate.reads.contains(slot) || candidate.writes.contains(slot)
+                    }) || current
+                        .reads
+                        .iter()
+                        .any(|slot| candidate.writes.contains(slot))
+                })
+                .unwrap_or(false);
         if overlaps {
             overlap.push(candidate_id);
         }
@@ -3958,7 +3982,7 @@ fn function_source_has_dynamic_gas_loop(ast: &NormalizedAst, function_id: u32) -
 }
 
 fn function_uses_only_stipend_external_calls(ast: &NormalizedAst, function_id: u32) -> bool {
-    let Some(function) = ast.functions.get(function_id as usize) else {
+    let Some(function) = ast_function_by_id(ast, function_id) else {
         return false;
     };
     let Some(source_lower) = source_span_lower(ast, function.span) else {
@@ -3977,7 +4001,7 @@ fn function_uses_only_stipend_external_calls(ast: &NormalizedAst, function_id: u
 }
 
 fn function_has_callback_capable_low_level_call(ast: &NormalizedAst, function_id: u32) -> bool {
-    let Some(function) = ast.functions.get(function_id as usize) else {
+    let Some(function) = ast_function_by_id(ast, function_id) else {
         return false;
     };
     let Some(source_lower) = source_span_lower(ast, function.span) else {
@@ -3991,7 +4015,7 @@ fn function_has_callback_capable_low_level_call(ast: &NormalizedAst, function_id
 }
 
 fn function_has_value_moving_low_level_call(ast: &NormalizedAst, function_id: u32) -> bool {
-    let Some(function) = ast.functions.get(function_id as usize) else {
+    let Some(function) = ast_function_by_id(ast, function_id) else {
         return false;
     };
     let Some(source_lower) = source_span_lower(ast, function.span) else {
@@ -4005,7 +4029,7 @@ fn function_has_value_moving_low_level_call(ast: &NormalizedAst, function_id: u3
 }
 
 fn function_has_strong_stipend_reentrancy_pattern(ast: &NormalizedAst, function_id: u32) -> bool {
-    let Some(function) = ast.functions.get(function_id as usize) else {
+    let Some(function) = ast_function_by_id(ast, function_id) else {
         return false;
     };
     let Some(source_lower) = source_span_lower(ast, function.span) else {
@@ -4014,10 +4038,6 @@ fn function_has_strong_stipend_reentrancy_pattern(ast: &NormalizedAst, function_
     let call_idx = [
         source_lower.find(".call.value("),
         source_lower.find(".call{value"),
-        source_lower.find(".transfer("),
-        source_lower.find(".transfer ("),
-        source_lower.find(".send("),
-        source_lower.find(".send ("),
     ]
     .into_iter()
     .flatten()
@@ -4041,7 +4061,7 @@ fn function_is_checked_selector_low_level_wrapper(
     let Some(ast) = ast else {
         return false;
     };
-    let Some(function) = ast.functions.get(function_id as usize) else {
+    let Some(function) = ast_function_by_id(ast, function_id) else {
         return false;
     };
     let Some(source_lower) = source_span_lower(ast, function.span) else {
@@ -4065,7 +4085,7 @@ fn function_is_direct_msg_value_forwarder(ast: Option<&NormalizedAst>, function_
     let Some(ast) = ast else {
         return false;
     };
-    let Some(function) = ast.functions.get(function_id as usize) else {
+    let Some(function) = ast_function_by_id(ast, function_id) else {
         return false;
     };
     let Some(source_lower) = source_span_lower(ast, function.span) else {
@@ -4078,15 +4098,44 @@ fn function_is_direct_msg_value_forwarder(ast: Option<&NormalizedAst>, function_
         || source_lower.contains(".transfer (msg.value)")
 }
 
+fn function_has_sender_authority_guard_hint(ast: Option<&NormalizedAst>, function_id: u32) -> bool {
+    let Some(ast) = ast else {
+        return false;
+    };
+    let Some(function) = ast_function_by_id(ast, function_id) else {
+        return false;
+    };
+    crate::frontend::has_sender_authority_check_hint(function, ast)
+}
+
+fn function_is_public_sender_payout(ast: Option<&NormalizedAst>, function_id: u32) -> bool {
+    let Some(ast) = ast else {
+        return false;
+    };
+    let Some(function) = ast_function_by_id(ast, function_id) else {
+        return false;
+    };
+    crate::frontend::has_public_sender_payout_hint(function, ast)
+}
+
 fn function_is_externally_callable(ast: Option<&NormalizedAst>, function_id: u32) -> bool {
-    ast.and_then(|ast| ast.functions.get(function_id as usize))
+    ast.and_then(|ast| ast_function_by_id(ast, function_id))
         .map(|function| {
             matches!(
                 function.visibility,
                 Visibility::Public | Visibility::External
-            ) || matches!(function.kind, FunctionKind::Fallback | FunctionKind::Receive)
+            ) || matches!(
+                function.kind,
+                FunctionKind::Fallback | FunctionKind::Receive
+            )
         })
         .unwrap_or(true)
+}
+
+fn ast_function_by_id(ast: &NormalizedAst, function_id: u32) -> Option<&crate::norm::Function> {
+    ast.functions
+        .iter()
+        .find(|function| function.id == function_id)
 }
 
 fn state_var_initializer_lower(ast: &NormalizedAst, span: Span) -> Option<String> {
@@ -4122,7 +4171,8 @@ fn function_is_exploit_cleanup_selfdestruct_helper(ast: &NormalizedAst, function
     let Some(function_source) = source_span_lower(ast, function.span) else {
         return false;
     };
-    if !(function_source.contains("suicide(owner") || function_source.contains("selfdestruct(owner"))
+    if !(function_source.contains("suicide(owner")
+        || function_source.contains("selfdestruct(owner"))
     {
         return false;
     }
@@ -4160,12 +4210,14 @@ fn function_has_callback_overlap(function_id: u32, data: EngineCallbackData<'_>)
         let Some(candidate_deps) = data.deps.functions.get(&candidate.id) else {
             return false;
         };
-        current_deps.writes.iter().any(|slot| {
-            candidate_deps.reads.contains(slot) || candidate_deps.writes.contains(slot)
-        }) || current_deps
-            .reads
+        current_deps
+            .writes
             .iter()
-            .any(|slot| candidate_deps.writes.contains(slot))
+            .any(|slot| candidate_deps.reads.contains(slot) || candidate_deps.writes.contains(slot))
+            || current_deps
+                .reads
+                .iter()
+                .any(|slot| candidate_deps.writes.contains(slot))
     })
 }
 
@@ -4223,7 +4275,10 @@ fn is_tod_transfer_like_call_expr(callee_lower: &str) -> bool {
 }
 
 fn is_weak_prng_arithmetic_op(op: &str) -> bool {
-    matches!(op, "+" | "-" | "*" | "/" | "%" | "&" | "|" | "^" | "<<" | ">>")
+    matches!(
+        op,
+        "+" | "-" | "*" | "/" | "%" | "&" | "|" | "^" | "<<" | ">>"
+    )
 }
 
 fn is_selfdestruct_name(callee_lower: &str) -> bool {
@@ -4324,7 +4379,12 @@ fn function_has_ether_send(function: &crate::ir::IrFunction) -> bool {
                         temp_value_refs.insert(dest_key);
                     }
                 }
-                IrInstr::Call { callee, args, options, .. } => {
+                IrInstr::Call {
+                    callee,
+                    args,
+                    options,
+                    ..
+                } => {
                     let callee_name = value_name_raw(callee).to_ascii_lowercase();
                     let callee_key = value_var_key(callee);
                     let send_like = is_send_name(&callee_name)
@@ -4704,12 +4764,14 @@ fn storage_accumulator_has_guard(
     rhs_expr: &str,
     store_expr: &str,
 ) -> bool {
-    state.branch_triggers.iter().any(|text| {
-        guard_mentions_storage_accumulator(text, lhs_expr, rhs_expr, store_expr)
-    }) || state.path_constraints.iter().any(|constraint| {
-        let text = constraint.to_string();
-        guard_mentions_storage_accumulator(text.as_str(), lhs_expr, rhs_expr, store_expr)
-    })
+    state
+        .branch_triggers
+        .iter()
+        .any(|text| guard_mentions_storage_accumulator(text, lhs_expr, rhs_expr, store_expr))
+        || state.path_constraints.iter().any(|constraint| {
+            let text = constraint.to_string();
+            guard_mentions_storage_accumulator(text.as_str(), lhs_expr, rhs_expr, store_expr)
+        })
 }
 
 fn guard_mentions_storage_accumulator(
@@ -4726,10 +4788,7 @@ fn guard_mentions_storage_accumulator(
         || text.contains("bvule")
         || text.contains("bvugt")
         || text.contains("bvult");
-    has_guard_op
-        && text.contains(lhs_expr)
-        && text.contains(rhs_expr)
-        && text.contains(store_expr)
+    has_guard_op && text.contains(lhs_expr) && text.contains(rhs_expr) && text.contains(store_expr)
 }
 
 fn format_trace(trace: &[usize]) -> String {
@@ -4807,14 +4866,7 @@ fn place_is_order_sensitive(place: &IrPlace) -> bool {
         .any(|token| {
             matches!(
                 token,
-                "price"
-                    | "rate"
-                    | "reward"
-                    | "bid"
-                    | "bids"
-                    | "auction"
-                    | "winner"
-                    | "quote"
+                "price" | "rate" | "reward" | "bid" | "bids" | "auction" | "winner" | "quote"
             ) || token.ends_with("price")
                 || token.ends_with("rate")
                 || token.ends_with("reward")
@@ -4863,13 +4915,12 @@ fn place_is_constructor_authority_sensitive(place: &IrPlace) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        build_sink_scores, constrain_boolean_int, engine, eval_binary, function_has_ether_send,
-        function_is_checked_selector_low_level_wrapper, has_checked_arithmetic, havoc_storage,
-        is_public_mint_burn_function,
+        EngineCallbackData, EngineStats, MAX_BLOCK_VISITS_PER_PATH, SolverCache, State,
+        VulnerabilityKind, build_sink_scores, constrain_boolean_int, engine, eval_binary,
+        function_has_ether_send, function_is_checked_selector_low_level_wrapper,
+        has_checked_arithmetic, havoc_storage, is_public_mint_burn_function,
         place_is_authority_sensitive, place_is_order_sensitive, pop_next_state,
-        reentrant_callback_candidates,
-        state_priority_score, EngineCallbackData, EngineStats, SolverCache, State,
-        VulnerabilityKind, MAX_BLOCK_VISITS_PER_PATH,
+        reentrant_callback_candidates, state_priority_score,
     };
     use crate::cfg::{self, Block, CfgFunction};
     use crate::frontend;
@@ -4901,8 +4952,12 @@ mod tests {
     }
 
     fn cfg_with_instrs(instrs: Vec<IrInstr>) -> CfgFunction {
+        cfg_with_id_and_instrs(0, instrs)
+    }
+
+    fn cfg_with_id_and_instrs(id: u32, instrs: Vec<IrInstr>) -> CfgFunction {
         CfgFunction {
-            id: 0,
+            id,
             blocks: vec![Block { id: 0, instrs }],
             edges: Vec::new(),
         }
@@ -5266,6 +5321,14 @@ mod tests {
     }
 
     fn callback_candidate_ast_with_source(function_name: &str, source: &str) -> NormalizedAst {
+        callback_candidate_ast_with_source_and_id(function_name, source, 0)
+    }
+
+    fn callback_candidate_ast_with_source_and_id(
+        function_name: &str,
+        source: &str,
+        function_id: u32,
+    ) -> NormalizedAst {
         let mut ast = NormalizedAst::from_sources(vec![SourceFile {
             id: 0,
             path: "checked_wrapper.sol".to_string(),
@@ -5276,7 +5339,7 @@ mod tests {
             name: "Vault".to_string(),
             kind: ContractKind::Contract,
             bases: Vec::new(),
-            functions: vec![0],
+            functions: vec![function_id],
             state_vars: Vec::new(),
             modifiers: Vec::new(),
             events: Vec::new(),
@@ -5288,7 +5351,7 @@ mod tests {
             },
         });
         ast.functions.push(Function {
-            id: 0,
+            id: function_id,
             contract: Some(0),
             name: Some(function_name.to_string()),
             kind: FunctionKind::Function,
@@ -5333,7 +5396,11 @@ mod tests {
         deps
     }
 
-    fn test_function(name: Option<&str>, visibility: Visibility, mutability: Mutability) -> Function {
+    fn test_function(
+        name: Option<&str>,
+        visibility: Visibility,
+        mutability: Mutability,
+    ) -> Function {
         Function {
             id: 0,
             contract: Some(0),
@@ -6063,6 +6130,155 @@ mod tests {
     }
 
     #[test]
+    fn sender_guard_suppresses_unprotected_selfdestruct() {
+        let cfg = CfgFunction {
+            id: 0,
+            blocks: vec![
+                Block {
+                    id: 0,
+                    instrs: vec![IrInstr::Control {
+                        kind: ControlKind::If {
+                            cond: IrValue::Var(IrVar::Named("msg.sender == owner".to_string())),
+                        },
+                        span: span(),
+                    }],
+                },
+                Block {
+                    id: 1,
+                    instrs: vec![
+                        IrInstr::Call {
+                            dest: Vec::new(),
+                            callee: IrValue::Var(IrVar::Named("selfdestruct".to_string())),
+                            args: vec![IrValue::Var(IrVar::Named("owner".to_string()))],
+                            options: Vec::new(),
+                            span: span(),
+                        },
+                        IrInstr::Return {
+                            values: Vec::new(),
+                            span: span(),
+                        },
+                    ],
+                },
+                Block {
+                    id: 2,
+                    instrs: vec![IrInstr::Return {
+                        values: Vec::new(),
+                        span: span(),
+                    }],
+                },
+            ],
+            edges: vec![
+                crate::cfg::Edge { from: 0, to: 1 },
+                crate::cfg::Edge { from: 0, to: 2 },
+            ],
+        };
+
+        let stats = run_engine(&cfg, true, false, false);
+        assert!(
+            !stats
+                .vulnerabilities
+                .iter()
+                .any(|v| matches!(v.kind, VulnerabilityKind::Selfdestruct)),
+            "sender-guarded selfdestruct should not emit unprotected-selfdestruct"
+        );
+    }
+
+    #[test]
+    fn public_reward_claim_source_suppresses_unprotected_withdrawal() {
+        let cfg = cfg_with_instrs(vec![
+            IrInstr::Call {
+                dest: vec![IrVar::Temp(0)],
+                callee: IrValue::Var(IrVar::Named("msg.sender.call".to_string())),
+                args: Vec::new(),
+                options: vec![IrCallOption::Value(number_lit("1"))],
+                span: span(),
+            },
+            IrInstr::Return {
+                values: Vec::new(),
+                span: span(),
+            },
+        ]);
+        let ast = callback_candidate_ast_with_source(
+            "solve",
+            "function solve(string solution) public payable { require(hash == sha3(solution)); msg.sender.call.value(1)(\"\"); }",
+        );
+        let deps = callback_candidate_deps();
+        let compiler = test_compiler();
+
+        let stats = engine(
+            &cfg,
+            std::slice::from_ref(&cfg),
+            Some(EngineCallbackData {
+                ast: &ast,
+                compiler: &compiler,
+                deps: &deps,
+            }),
+            true,
+            false,
+            false,
+            false,
+        );
+
+        assert!(
+            !stats
+                .vulnerabilities
+                .iter()
+                .any(|v| matches!(v.kind, VulnerabilityKind::UnprotectedEtherWithdrawal)),
+            "public reward claim payout should not emit unprotected-ether-withdrawal"
+        );
+    }
+
+    #[test]
+    fn nonpositional_function_id_keeps_sender_owned_withdrawal_suppressed() {
+        let function_id = 7;
+        let cfg = cfg_with_id_and_instrs(
+            function_id,
+            vec![
+                IrInstr::Call {
+                    dest: vec![IrVar::Temp(0)],
+                    callee: IrValue::Var(IrVar::Named("msg.sender.call".to_string())),
+                    args: Vec::new(),
+                    options: vec![IrCallOption::Value(number_lit("1"))],
+                    span: span(),
+                },
+                IrInstr::Return {
+                    values: Vec::new(),
+                    span: span(),
+                },
+            ],
+        );
+        let ast = callback_candidate_ast_with_source_and_id(
+            "withdraw",
+            "function withdraw(uint amount) public payable { if (credit[msg.sender] >= amount) { msg.sender.call.value(amount)(); credit[msg.sender] -= amount; } }",
+            function_id,
+        );
+        let deps = callback_candidate_deps();
+        let compiler = test_compiler();
+
+        let stats = engine(
+            &cfg,
+            std::slice::from_ref(&cfg),
+            Some(EngineCallbackData {
+                ast: &ast,
+                compiler: &compiler,
+                deps: &deps,
+            }),
+            true,
+            false,
+            false,
+            false,
+        );
+
+        assert!(
+            !stats
+                .vulnerabilities
+                .iter()
+                .any(|v| matches!(v.kind, VulnerabilityKind::UnprotectedEtherWithdrawal)),
+            "non-positional function ids should still honor sender-owned payout suppression"
+        );
+    }
+
+    #[test]
     fn callback_candidates_keep_only_self_and_overlap() {
         let ast = callback_candidate_ast();
         let deps = callback_candidate_deps();
@@ -6083,8 +6299,14 @@ mod tests {
             "function withdraw(address target) public payable { target.call.value(msg.value)(); }",
         );
 
-        assert!(function_is_checked_selector_low_level_wrapper(Some(&wrapper), 0));
-        assert!(!function_is_checked_selector_low_level_wrapper(Some(&plain), 0));
+        assert!(function_is_checked_selector_low_level_wrapper(
+            Some(&wrapper),
+            0
+        ));
+        assert!(!function_is_checked_selector_low_level_wrapper(
+            Some(&plain),
+            0
+        ));
     }
 
     #[test]
@@ -6485,6 +6707,62 @@ mod tests {
     }
 
     #[test]
+    fn stipend_transfer_with_destructive_update_does_not_emit_reentrancy_fallback() {
+        let cfg = cfg_with_id_and_instrs(
+            0,
+            vec![
+                IrInstr::Call {
+                    dest: Vec::new(),
+                    callee: IrValue::Var(IrVar::Named("msg.sender.transfer".to_string())),
+                    args: vec![number_lit("1")],
+                    options: Vec::new(),
+                    span: span(),
+                },
+                IrInstr::Store {
+                    dest: IrPlace::Var {
+                        var: IrVar::Named("balances".to_string()),
+                        class: PlaceClass::Storage,
+                    },
+                    src: number_lit("0"),
+                    span: span(),
+                },
+                IrInstr::Return {
+                    values: Vec::new(),
+                    span: span(),
+                },
+            ],
+        );
+        let ast = callback_candidate_ast_with_source(
+            "withdraw",
+            "function withdraw(uint amount) public { msg.sender.transfer(amount); balances[msg.sender] -= amount; }",
+        );
+        let deps = callback_candidate_deps();
+        let compiler = test_compiler();
+
+        let stats = engine(
+            &cfg,
+            std::slice::from_ref(&cfg),
+            Some(EngineCallbackData {
+                ast: &ast,
+                compiler: &compiler,
+                deps: &deps,
+            }),
+            true,
+            false,
+            false,
+            false,
+        );
+
+        assert!(
+            !stats
+                .vulnerabilities
+                .iter()
+                .any(|v| matches!(v.kind, VulnerabilityKind::ReentrancyFallback)),
+            "stipend-only transfer bookkeeping should not emit reentrancy fallback"
+        );
+    }
+
+    #[test]
     fn engine_bounds_unconditional_loop_revisits() {
         let cfg = CfgFunction {
             id: 0,
@@ -6532,7 +6810,9 @@ mod tests {
         let mut high = State::new();
         high.block_id = 2;
         high.external_call_pc = Some(9);
-        assert!(state_priority_score(&high, &sink_scores) > state_priority_score(&low, &sink_scores));
+        assert!(
+            state_priority_score(&high, &sink_scores) > state_priority_score(&low, &sink_scores)
+        );
 
         let mut worklist = vec![low, high];
         let picked = pop_next_state(&mut worklist, &sink_scores).expect("state");

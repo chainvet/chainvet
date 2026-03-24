@@ -1,0 +1,12 @@
+{
+  "active_scope": "fse2024",
+  "active_manifest": "Benchmarks/FSE2024/benchmark_manifest.json",
+  "comparison_defaults": {
+    "all_approaches_manifest": "Benchmarks/FSE2024/all_approaches_manifest.json",
+    "all_approaches_target_policy": "When comparing static, symbolic, fuzzing, and hybrid together, default to Not-so-smart plus smartbugs-curated only."
+  },
+  "notes": [
+    "Only FSE 2024 benchmark suites should be used for default benchmarking unless a task explicitly opts into supplemental scenario or stress corpora.",
+    "Supplemental suites remain under Benchmarks/ for research, exploit scenarios, and specialized evaluation, but are not part of the active default benchmark scope."
+  ]
+}

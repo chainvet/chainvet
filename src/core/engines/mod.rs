@@ -425,9 +425,10 @@ fn hybrid_static_runtime_finding(
                     .contains("external call inside `while` loop"))
                 && function_id
                     .map(|id| function_has_value_moving_low_level_call(ast, id))
-                    .zip(function_id.map(|id| {
-                        !function_is_checked_selector_low_level_wrapper(ast, id)
-                    }))
+                    .zip(
+                        function_id
+                            .map(|id| !function_is_checked_selector_low_level_wrapper(ast, id)),
+                    )
                     .map(|(has_value_call, allow_wrapper)| has_value_call && allow_wrapper)
                     .unwrap_or(false) =>
         {
@@ -448,7 +449,11 @@ fn hybrid_static_runtime_finding(
                     })
                     .unwrap_or(false) =>
         {
-            ("reentrancy".to_string(), "rule-backstop".to_string(), finding.message)
+            (
+                "reentrancy".to_string(),
+                "rule-backstop".to_string(),
+                finding.message,
+            )
         }
         detectors::FindingKind::ReentrancyNoEthTransfer
             if matches!(
@@ -458,7 +463,11 @@ fn hybrid_static_runtime_finding(
                 .message
                 .contains("state variable updated after cross-contract call (no ETH sent)") =>
         {
-            ("reentrancy".to_string(), "rule-backstop".to_string(), finding.message)
+            (
+                "reentrancy".to_string(),
+                "rule-backstop".to_string(),
+                finding.message,
+            )
         }
         detectors::FindingKind::ReentrancyTransfer
         | detectors::FindingKind::ReentrancyEthTransfer
@@ -468,7 +477,11 @@ fn hybrid_static_runtime_finding(
                 .map(|id| function_has_strong_stipend_reentrancy_pattern(ast, id))
                 .unwrap_or(false) =>
         {
-            ("reentrancy".to_string(), "rule-backstop".to_string(), finding.message)
+            (
+                "reentrancy".to_string(),
+                "rule-backstop".to_string(),
+                finding.message,
+            )
         }
         _ => return None,
     };
@@ -505,9 +518,10 @@ fn hybrid_init_takeover_backstops(
     static_findings: &[detectors::Finding],
 ) -> Vec<Finding> {
     let mut compromised_contracts = std::collections::HashMap::<u32, Vec<u32>>::new();
-    for finding in static_findings.iter().filter(|finding| {
-        finding.kind == detectors::FindingKind::UninitializedPermissionCheck
-    }) {
+    for finding in static_findings
+        .iter()
+        .filter(|finding| finding.kind == detectors::FindingKind::UninitializedPermissionCheck)
+    {
         let Some(function_id) = finding.function else {
             continue;
         };
@@ -667,7 +681,8 @@ fn function_is_exploit_cleanup_selfdestruct_helper(
     let Some(function_source) = function_source_lower(ast, function) else {
         return false;
     };
-    if !(function_source.contains("suicide(owner") || function_source.contains("selfdestruct(owner"))
+    if !(function_source.contains("suicide(owner")
+        || function_source.contains("selfdestruct(owner"))
     {
         return false;
     }
@@ -996,8 +1011,7 @@ impl FuzzEngine for FuzzAdapter {
                 }
             }
 
-            let fuzz_findings =
-                fuzzing::oracle::check_all(&trace, &child.transactions, Some(ast));
+            let fuzz_findings = fuzzing::oracle::check_all(&trace, &child.transactions, Some(ast));
             let mut child_has_finding = false;
             if !fuzz_findings.is_empty() {
                 child_has_finding = true;
@@ -1117,7 +1131,8 @@ impl FuzzEngine for FuzzAdapter {
             0.0
         };
 
-        let mut frontier_goals = build_frontier_goals(ctx, hints, &seen_edge_coverage, budget.epoch);
+        let mut frontier_goals =
+            build_frontier_goals(ctx, hints, &seen_edge_coverage, budget.epoch);
 
         if frontier_goals.len() > 24 {
             frontier_goals.truncate(24);
@@ -1657,7 +1672,9 @@ fn state_matches_target(state: &AssistState, target: &AssistTarget) -> bool {
     {
         return true;
     }
-    if let Some(block) = target.block && state.block_id == block {
+    if let Some(block) = target.block
+        && state.block_id == block
+    {
         return true;
     }
     false
@@ -1704,7 +1721,9 @@ fn solve_state_to_seeds(
 
         let idx = seed_offset + out.len();
         let tx = tx_seed_from_model(&model, goal, trace_prefix, symbols);
-        let mut txs = trace_prefix.map(|prefix| prefix.txs.clone()).unwrap_or_default();
+        let mut txs = trace_prefix
+            .map(|prefix| prefix.txs.clone())
+            .unwrap_or_default();
         if txs.is_empty() {
             txs.push(tx);
         } else if txs.last().map(|last| last.function_id == goal.function_id) == Some(true) {
@@ -2202,11 +2221,7 @@ struct StorageRwChain {
 }
 
 fn build_fuzz_guidance(abi: &fuzzing::types::ContractAbi, hints: &StaticHints) -> FuzzGuidance {
-    let abi_function_ids = abi
-        .functions
-        .iter()
-        .map(|f| f.id)
-        .collect::<HashSet<_>>();
+    let abi_function_ids = abi.functions.iter().map(|f| f.id).collect::<HashSet<_>>();
 
     let mut allowed_functions = hints
         .function_whitelist
@@ -2448,7 +2463,11 @@ fn apply_static_guidance_to_individual(
         if let Some(function_id) =
             pick_weighted_function(&guidance.allowed_functions, &guidance.hotspot_scores, rng)
         {
-            let args_len = guidance.param_counts.get(&function_id).copied().unwrap_or(0);
+            let args_len = guidance
+                .param_counts
+                .get(&function_id)
+                .copied()
+                .unwrap_or(0);
             let args = (0..args_len)
                 .map(|_| fuzzing::generator::random_value_with_dict(rng, Some(dictionary)))
                 .collect::<Vec<_>>();
@@ -2485,16 +2504,32 @@ fn apply_static_guidance_to_individual(
 
         let prefer_owner_writer = guidance.owner_targets.contains(&chain.writer);
         let writer_sender = if prefer_owner_writer {
-            pick_sender_from_pool(&guidance.owner_indices, ind.environment.address_pool_size, rng)
+            pick_sender_from_pool(
+                &guidance.owner_indices,
+                ind.environment.address_pool_size,
+                rng,
+            )
         } else {
-            pick_sender_from_pool(&guidance.attacker_indices, ind.environment.address_pool_size, rng)
+            pick_sender_from_pool(
+                &guidance.attacker_indices,
+                ind.environment.address_pool_size,
+                rng,
+            )
         };
         ind.transactions[0].sender = writer_sender;
 
         let reader_sender = if guidance.attacker_targets.contains(&chain.reader) {
-            pick_sender_from_pool(&guidance.attacker_indices, ind.environment.address_pool_size, rng)
+            pick_sender_from_pool(
+                &guidance.attacker_indices,
+                ind.environment.address_pool_size,
+                rng,
+            )
         } else {
-            pick_sender_from_pool(&guidance.user_indices, ind.environment.address_pool_size, rng)
+            pick_sender_from_pool(
+                &guidance.user_indices,
+                ind.environment.address_pool_size,
+                rng,
+            )
         };
         ind.transactions[1].sender = reader_sender;
 
@@ -2517,11 +2552,8 @@ fn apply_static_guidance_to_individual(
 
     for tx in &mut ind.transactions {
         if !guidance.allowed_functions.contains(&tx.function_id)
-            && let Some(fid) = pick_weighted_function(
-                &guidance.allowed_functions,
-                &guidance.hotspot_scores,
-                rng,
-            )
+            && let Some(fid) =
+                pick_weighted_function(&guidance.allowed_functions, &guidance.hotspot_scores, rng)
         {
             tx.function_id = fid;
             tx.args.clear();
@@ -2533,8 +2565,10 @@ fn apply_static_guidance_to_individual(
             .copied()
             .unwrap_or(tx.args.len());
         while tx.args.len() < args_len {
-            tx.args
-                .push(fuzzing::generator::random_value_with_dict(rng, Some(dictionary)));
+            tx.args.push(fuzzing::generator::random_value_with_dict(
+                rng,
+                Some(dictionary),
+            ));
         }
         if tx.args.len() > args_len {
             tx.args.truncate(args_len);
@@ -2594,12 +2628,9 @@ fn apply_static_guidance_to_individual(
 
     if ind.transactions.is_empty() {
         let config = fuzzing::types::FuzzConfig::default();
-        if let Some(tx) = fuzzing::generator::random_transaction_with_dict(
-            abi,
-            rng,
-            &config,
-            Some(dictionary),
-        ) {
+        if let Some(tx) =
+            fuzzing::generator::random_transaction_with_dict(abi, rng, &config, Some(dictionary))
+        {
             ind.transactions.push(tx);
         }
     }
@@ -2852,8 +2883,10 @@ mod tests {
     use crate::analysis::detectors::{Finding as StaticFinding, FindingKind, Severity};
     use crate::cfg;
     use crate::frontend::{FrontendMode, FrontendOutput};
+    use crate::fuzzing::types::{
+        ContractAbi, Environment, FunctionAbi, Individual, ParamInfo, Transaction,
+    };
     use crate::ir::{ControlKind, IrBlock, IrFunction, IrInstr, IrModule, IrValue, IrVar};
-    use crate::fuzzing::types::{ContractAbi, Environment, FunctionAbi, Individual, ParamInfo, Transaction};
     use crate::norm::{
         Function, FunctionKind, Literal, Mutability, NormalizedAst, SourceFile, Span, Visibility,
     };
@@ -3011,7 +3044,9 @@ mod tests {
         };
 
         let se = SymbolicAssistAdapter;
-        let result = se.solve(&ctx, &goal, None, &budget).expect("SE solve failed");
+        let result = se
+            .solve(&ctx, &goal, None, &budget)
+            .expect("SE solve failed");
         assert!(!result.new_seeds.is_empty(), "expected at least one seed");
         let solved = result.new_seeds[0]
             .txs
@@ -3019,7 +3054,10 @@ mod tests {
             .and_then(|tx| tx.args.first())
             .and_then(|arg| arg.parse::<u128>().ok())
             .unwrap_or(0);
-        assert!(solved > 10, "expected model to satisfy x > 10, got {solved}");
+        assert!(
+            solved > 10,
+            "expected model to satisfy x > 10, got {solved}"
+        );
     }
 
     #[test]
@@ -3334,7 +3372,8 @@ mod tests {
         let finding = StaticFinding {
             kind: FindingKind::UninitializedPermissionCheck,
             severity: Severity::High,
-            message: "authority-initialization function 'IamMissing' lacks access control".to_string(),
+            message: "authority-initialization function 'IamMissing' lacks access control"
+                .to_string(),
             span: ast.functions[function_id as usize].span,
             function: Some(function_id),
         };
@@ -3356,10 +3395,22 @@ mod tests {
         let cfg_fn = cfg::CfgFunction {
             id: 0,
             blocks: vec![
-                cfg::Block { id: 0, instrs: vec![] },
-                cfg::Block { id: 1, instrs: vec![] },
-                cfg::Block { id: 2, instrs: vec![] },
-                cfg::Block { id: 3, instrs: vec![] },
+                cfg::Block {
+                    id: 0,
+                    instrs: vec![],
+                },
+                cfg::Block {
+                    id: 1,
+                    instrs: vec![],
+                },
+                cfg::Block {
+                    id: 2,
+                    instrs: vec![],
+                },
+                cfg::Block {
+                    id: 3,
+                    instrs: vec![],
+                },
             ],
             edges: vec![
                 cfg::Edge { from: 0, to: 1 },

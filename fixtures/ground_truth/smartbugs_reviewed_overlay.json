@@ -1,0 +1,158 @@
+{
+  "dataset": "Benchmarks/smartbugs-curated",
+  "basis": "official_truth_plus_reviewed_additional_categories",
+  "source_docs": [
+    "docs/smartbugs_extra_findings_audit.md"
+  ],
+  "contracts": [
+    {
+      "file": "Benchmarks/smartbugs-curated/dataset/other/open_address_lottery.sol",
+      "accepted_extra_categories": [
+        "bad_randomness"
+      ],
+      "notes": "block-derived randomness is a real secondary issue even though the official label only counts the uninitialized-storage bug"
+    },
+    {
+      "file": "Benchmarks/smartbugs-curated/dataset/access_control/FibonacciBalance.sol",
+      "accepted_extra_categories": [
+        "arithmetic",
+        "denial_of_service"
+      ],
+      "notes": "unchecked arithmetic and push-payment failure behavior are both defensible secondary issues"
+    },
+    {
+      "file": "Benchmarks/smartbugs-curated/dataset/access_control/rubixi.sol",
+      "accepted_extra_categories": [
+        "denial_of_service",
+        "unchecked_low_level_calls"
+      ],
+      "notes": "ignored send() results and payout-loop griefing are real secondary issues beyond the official wrong-constructor label"
+    },
+    {
+      "file": "Benchmarks/smartbugs-curated/dataset/denial_of_service/list_dos.sol",
+      "accepted_extra_categories": [
+        "unchecked_low_level_calls"
+      ],
+      "notes": "the contract repeatedly ignores send() return values in payout and refund paths, which is a real secondary unchecked-call issue beyond the array-reset DOS bug"
+    },
+    {
+      "file": "Benchmarks/smartbugs-curated/dataset/time_manipulation/governmental_survey.sol",
+      "accepted_extra_categories": [
+        "unchecked_low_level_calls"
+      ],
+      "notes": "resetInvestment() ignores the return values of two send() operations, which is a real secondary unchecked-call issue beyond the timestamp-dependent game reset"
+    },
+    {
+      "file": "Benchmarks/smartbugs-curated/dataset/access_control/parity_wallet_bug_1.sol",
+      "accepted_extra_categories": [
+        "unchecked_low_level_calls"
+      ],
+      "notes": "the wallet contains real unchecked low-level interaction risk beyond the public reinitialization path counted by the official benchmark"
+    },
+    {
+      "file": "Benchmarks/smartbugs-curated/dataset/unchecked_low_level_calls/0xb620cee6b52f96f3c6b253e6eea556aa2d214a99.sol",
+      "accepted_extra_categories": [
+        "access_control"
+      ],
+      "notes": "the public DranMe() function is a wrong-constructor-name takeover that lets any caller seize owner privileges beyond the official unchecked-call labels"
+    },
+    {
+      "file": "Benchmarks/smartbugs-curated/dataset/bad_randomness/etheraffle.sol",
+      "accepted_extra_categories": [
+        "denial_of_service"
+      ],
+      "notes": "endRaffle() performs transfer() inside a refund loop, so one reverting recipient can block the whole admin refund path, which is a real secondary DOS issue beyond the benchmark's randomness labels"
+    },
+    {
+      "file": "Benchmarks/smartbugs-curated/dataset/reentrancy/0x01f8c4e3fa3edeb29e514cba738d87ce8c091d3f.sol",
+      "accepted_extra_categories": [
+        "access_control"
+      ],
+      "notes": "the contract exposes public initialization functions SetMinSum, SetLogFile, and Initialized without an owner gate, which is a real secondary access-control issue beyond the official reentrancy label"
+    },
+    {
+      "file": "Benchmarks/smartbugs-curated/dataset/access_control/arbitrary_location_write_simple.sol",
+      "accepted_extra_categories": [
+        "arithmetic"
+      ],
+      "notes": "PopBonusCode() performs a real unsigned length underflow via bonusCodes.length--, which is a source-real arithmetic issue beyond the official access-control label"
+    },
+    {
+      "file": "Benchmarks/smartbugs-curated/dataset/reentrancy/0x4320e6f8c05b27ab4707cd1f6d5ce6f3e4b3a5a1.sol",
+      "accepted_extra_categories": [
+        "access_control"
+      ],
+      "notes": "the contract exposes public initialization functions SetMinSum, SetLogFile, and Initialized without an owner gate, which is a real secondary access-control issue beyond the official reentrancy label"
+    },
+    {
+      "file": "Benchmarks/smartbugs-curated/dataset/reentrancy/0x4e73b32ed6c35f570686b89848e5f39f20ecc106.sol",
+      "accepted_extra_categories": [
+        "access_control"
+      ],
+      "notes": "the contract exposes public initialization functions SetMinSum, SetLogFile, and Initialized without an owner gate, which is a real secondary access-control issue beyond the official reentrancy label"
+    },
+    {
+      "file": "Benchmarks/smartbugs-curated/dataset/reentrancy/0x561eac93c92360949ab1f1403323e6db345cbf31.sol",
+      "accepted_extra_categories": [
+        "access_control"
+      ],
+      "notes": "the contract exposes public initialization functions SetMinSum, SetLogFile, and Initialized without an owner gate, which is a real secondary access-control issue beyond the official reentrancy label"
+    },
+    {
+      "file": "Benchmarks/smartbugs-curated/dataset/reentrancy/0x627fa62ccbb1c1b04ffaecd72a53e37fc0e17839.sol",
+      "accepted_extra_categories": [
+        "access_control"
+      ],
+      "notes": "initTokenBank() is a public owner-reset path that lets any caller seize privileged control before draining token or Ether holders, so the extra access-control finding is real"
+    },
+    {
+      "file": "Benchmarks/smartbugs-curated/dataset/reentrancy/0x7a8721a9d64c74da899424c1b52acbf58ddc9782.sol",
+      "accepted_extra_categories": [
+        "access_control"
+      ],
+      "notes": "the onlyOwner modifier uses tx.origin == owner, which is a real authorization flaw beyond the official reentrancy label"
+    },
+    {
+      "file": "Benchmarks/smartbugs-curated/dataset/reentrancy/0x96edbe868531bd23a6c05e9d0c424ea64fb1b78b.sol",
+      "accepted_extra_categories": [
+        "access_control"
+      ],
+      "notes": "the contract exposes public initialization functions SetMinSum, SetLogFile, and Initialized without an owner gate, which is a real secondary access-control issue beyond the official reentrancy label"
+    },
+    {
+      "file": "Benchmarks/smartbugs-curated/dataset/reentrancy/0xaae1f51cf3339f18b6d3f3bdc75a5facd744b0b8.sol",
+      "accepted_extra_categories": [
+        "access_control"
+      ],
+      "notes": "the contract exposes public initialization functions SetMinSum, SetLogFile, and Initialized without an owner gate, which is a real secondary access-control issue beyond the official reentrancy label"
+    },
+    {
+      "file": "Benchmarks/smartbugs-curated/dataset/reentrancy/0xbe4041d55db380c5ae9d4a9b9703f1ed4e7e3888.sol",
+      "accepted_extra_categories": [
+        "access_control"
+      ],
+      "notes": "the contract exposes public initialization functions SetMinSum, SetLogFile, and Initialized without an owner gate, which is a real secondary access-control issue beyond the official reentrancy label"
+    },
+    {
+      "file": "Benchmarks/smartbugs-curated/dataset/reentrancy/spank_chain_payment.sol",
+      "accepted_extra_categories": [
+        "denial_of_service"
+      ],
+      "notes": "channel close routines perform transfer() to counterparties during settlement, so one reverting recipient can block payout finalization and create a real secondary DOS condition"
+    },
+    {
+      "file": "Benchmarks/smartbugs-curated/dataset/unchecked_low_level_calls/0xb7c5c5aa4d42967efe906e1b66cb8df9cebf04f7.sol",
+      "accepted_extra_categories": [
+        "reentrancy"
+      ],
+      "notes": "withdraw() performs msg.sender.call.value(...)() before zeroing balances[msg.sender], so the file contains a real reentrancy issue in addition to the official unchecked-call label"
+    },
+    {
+      "file": "Benchmarks/smartbugs-curated/dataset/unchecked_low_level_calls/lotto.sol",
+      "accepted_extra_categories": [
+        "access_control"
+      ],
+      "notes": "withdrawLeftOver() is publicly callable after payedOut flips and lets any caller drain the remaining contract balance, which is a real secondary access-control failure"
+    }
+  ]
+}

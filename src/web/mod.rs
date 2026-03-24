@@ -1,9 +1,10 @@
 use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
+use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
 
 use axum::extract::{Query, State};
 use axum::http::{StatusCode, header};
@@ -13,7 +14,6 @@ use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-use crate::core::artifacts::Finding;
 use crate::util::error::{Error, Result};
 
 const DEFAULT_PORT: u16 = 7878;
@@ -58,10 +58,27 @@ struct CancelResponse {
 }
 
 #[derive(Debug, Serialize)]
+struct AnalyzeStatusResponse {
+    running: bool,
+    mode: Option<String>,
+    target_path: Option<String>,
+    elapsed_ms: Option<u64>,
+    cancel_requested: bool,
+    phase: String,
+    total_targets: Option<usize>,
+    completed_targets: Option<usize>,
+    remaining_targets: Option<usize>,
+    current_target: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
 struct FilesResponse {
     root_dir: String,
     current_path: String,
     parent_path: Option<String>,
+    direct_subdirectories: usize,
+    direct_solidity_files: usize,
+    recursive_solidity_files: usize,
     entries: Vec<FileEntry>,
 }
 
@@ -105,6 +122,14 @@ struct WebArtifact {
     relative_path: String,
 }
 
+#[derive(Debug, Serialize, Clone)]
+struct WebWarning {
+    title: String,
+    message: String,
+    category: String,
+    suppressed_by_default: bool,
+}
+
 #[derive(Debug, Serialize)]
 struct AnalyzeResponse {
     root_dir: String,
@@ -114,7 +139,7 @@ struct AnalyzeResponse {
     findings: Vec<WebFinding>,
     raw_json: String,
     raw_report: Value,
-    warnings: Vec<String>,
+    warnings: Vec<WebWarning>,
     run_dir: Option<String>,
     artifacts: Vec<WebArtifact>,
 }
@@ -168,17 +193,42 @@ struct CommandResult {
 struct RunningAnalysis {
     mode: String,
     target_path: String,
-    pid: u32,
     cancelled: AtomicBool,
+    started_at: Instant,
+    progress: Mutex<RunningProgress>,
+}
+
+#[derive(Debug, Clone)]
+struct RunningProgressSnapshot {
+    phase: String,
+    total_targets: usize,
+    completed_targets: usize,
+    current_target: Option<String>,
+}
+
+#[derive(Debug)]
+struct RunningProgress {
+    pid: Option<u32>,
+    phase: String,
+    total_targets: usize,
+    completed_targets: usize,
+    current_target: Option<String>,
 }
 
 impl RunningAnalysis {
-    fn new(mode: String, target_path: String, pid: u32) -> Self {
+    fn new(mode: String, target_path: String, total_targets: usize) -> Self {
         Self {
             mode,
             target_path,
-            pid,
             cancelled: AtomicBool::new(false),
+            started_at: Instant::now(),
+            progress: Mutex::new(RunningProgress {
+                pid: None,
+                phase: "preparing".to_string(),
+                total_targets,
+                completed_targets: 0,
+                current_target: None,
+            }),
         }
     }
 
@@ -193,10 +243,67 @@ impl RunningAnalysis {
 
     fn cancel(&self) {
         self.cancelled.store(true, Ordering::SeqCst);
+        if let Ok(progress) = self.progress.lock() {
+            if let Some(pid) = progress.pid {
+                let _ = request_process_termination(pid);
+            }
+        }
     }
 
     fn was_cancelled(&self) -> bool {
         self.cancelled.load(Ordering::SeqCst)
+    }
+
+    fn elapsed_ms(&self) -> u64 {
+        self.started_at
+            .elapsed()
+            .as_millis()
+            .min(u128::from(u64::MAX)) as u64
+    }
+
+    fn set_phase(&self, phase: impl Into<String>) -> ApiResult<()> {
+        let mut progress = self
+            .progress
+            .lock()
+            .map_err(|_| ApiError::internal("analysis progress lock poisoned"))?;
+        progress.phase = phase.into();
+        Ok(())
+    }
+
+    fn start_target(&self, pid: u32, current_target: String) -> ApiResult<()> {
+        let mut progress = self
+            .progress
+            .lock()
+            .map_err(|_| ApiError::internal("analysis progress lock poisoned"))?;
+        progress.pid = Some(pid);
+        progress.phase = "running".to_string();
+        progress.current_target = Some(current_target);
+        Ok(())
+    }
+
+    fn finish_target(&self) -> ApiResult<()> {
+        let mut progress = self
+            .progress
+            .lock()
+            .map_err(|_| ApiError::internal("analysis progress lock poisoned"))?;
+        progress.pid = None;
+        progress.completed_targets = progress.completed_targets.saturating_add(1);
+        progress.current_target = None;
+        progress.phase = "finalizing".to_string();
+        Ok(())
+    }
+
+    fn snapshot(&self) -> ApiResult<RunningProgressSnapshot> {
+        let progress = self
+            .progress
+            .lock()
+            .map_err(|_| ApiError::internal("analysis progress lock poisoned"))?;
+        Ok(RunningProgressSnapshot {
+            phase: progress.phase.clone(),
+            total_targets: progress.total_targets,
+            completed_targets: progress.completed_targets,
+            current_target: progress.current_target.clone(),
+        })
     }
 }
 
@@ -208,7 +315,12 @@ impl AppState {
             .map_err(|_| ApiError::internal("analysis state lock poisoned"))
     }
 
-    fn spawn_job(&self, mode: WebMode, target: &Path) -> ApiResult<(Arc<RunningAnalysis>, Child)> {
+    fn begin_job(
+        &self,
+        mode: WebMode,
+        target: &Path,
+        total_targets: usize,
+    ) -> ApiResult<Arc<RunningAnalysis>> {
         let mut active_job = self
             .active_job
             .lock()
@@ -220,23 +332,13 @@ impl AppState {
             )));
         }
 
-        let child = Command::new(&self.executable)
-            .current_dir(&self.root_dir)
-            .arg(mode.flag())
-            .arg(target)
-            .arg("--json")
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .map_err(ApiError::internal_from_io)?;
-
         let job = Arc::new(RunningAnalysis::new(
             mode.as_str().to_string(),
             relative_display(&self.root_dir, target),
-            child.id(),
+            total_targets,
         ));
         *active_job = Some(job.clone());
-        Ok((job, child))
+        Ok(job)
     }
 
     fn clear_job(&self, current: &Arc<RunningAnalysis>) {
@@ -270,7 +372,7 @@ pub fn serve(root_dir: PathBuf) -> Result<()> {
         let url = format!("http://127.0.0.1:{DEFAULT_PORT}");
         println!("web ui root: {}", root_dir.display());
         println!("web ui url: {url}");
-        try_open_browser(&url);
+        println!("web ui launch: open the URL manually in your browser");
 
         let app = Router::new()
             .route("/", get(index))
@@ -279,6 +381,7 @@ pub fn serve(root_dir: PathBuf) -> Result<()> {
             .route("/api/files", get(api_files))
             .route("/api/file", get(api_file))
             .route("/api/analyze", post(api_analyze))
+            .route("/api/analyze/status", get(api_analysis_status))
             .route("/api/analyze/cancel", post(api_cancel_analysis))
             .with_state(state);
 
@@ -316,6 +419,8 @@ async fn api_files(
         return Err(ApiError::bad_request("requested path is not a directory"));
     }
 
+    let mut direct_subdirectories = 0usize;
+    let mut direct_solidity_files = 0usize;
     let mut entries = fs::read_dir(&dir)
         .map_err(ApiError::internal_from_io)?
         .filter_map(|entry| entry.ok())
@@ -328,6 +433,11 @@ async fn api_files(
                 .and_then(|ext| ext.to_str())
                 .map(|ext| ext.eq_ignore_ascii_case("sol"))
                 .unwrap_or(false);
+            if is_dir {
+                direct_subdirectories += 1;
+            } else if is_solidity {
+                direct_solidity_files += 1;
+            }
             if !is_dir && !is_solidity {
                 return None;
             }
@@ -338,24 +448,32 @@ async fn api_files(
             })
         })
         .collect::<Vec<_>>();
+    let recursive_solidity_files = count_solidity_files_recursive(&dir)?;
 
     entries.sort_by(|a, b| match (a.is_dir, b.is_dir) {
         (true, false) => std::cmp::Ordering::Less,
         (false, true) => std::cmp::Ordering::Greater,
-        _ => a.name.to_ascii_lowercase().cmp(&b.name.to_ascii_lowercase()),
+        _ => a
+            .name
+            .to_ascii_lowercase()
+            .cmp(&b.name.to_ascii_lowercase()),
     });
 
     let current_path = relative_display(&state.root_dir, &dir);
     let parent_path = if dir == state.root_dir {
         None
     } else {
-        dir.parent().map(|parent| relative_display(&state.root_dir, parent))
+        dir.parent()
+            .map(|parent| relative_display(&state.root_dir, parent))
     };
 
     Ok(Json(FilesResponse {
         root_dir: state.root_dir.display().to_string(),
         current_path,
         parent_path,
+        direct_subdirectories,
+        direct_solidity_files,
+        recursive_solidity_files,
         entries,
     }))
 }
@@ -387,7 +505,51 @@ async fn api_analyze(
     Ok(Json(response))
 }
 
-async fn api_cancel_analysis(State(state): State<Arc<AppState>>) -> ApiResult<Json<CancelResponse>> {
+async fn api_analysis_status(
+    State(state): State<Arc<AppState>>,
+) -> ApiResult<Json<AnalyzeStatusResponse>> {
+    let Some(job) = state.active_job()? else {
+        return Ok(Json(AnalyzeStatusResponse {
+            running: false,
+            mode: None,
+            target_path: None,
+            elapsed_ms: None,
+            cancel_requested: false,
+            phase: "idle".to_string(),
+            total_targets: None,
+            completed_targets: None,
+            remaining_targets: None,
+            current_target: None,
+        }));
+    };
+
+    let cancel_requested = job.was_cancelled();
+    let snapshot = job.snapshot()?;
+    Ok(Json(AnalyzeStatusResponse {
+        running: true,
+        mode: Some(job.mode.clone()),
+        target_path: Some(job.target_path.clone()),
+        elapsed_ms: Some(job.elapsed_ms()),
+        cancel_requested,
+        phase: if cancel_requested {
+            "cancelling".to_string()
+        } else {
+            snapshot.phase
+        },
+        total_targets: Some(snapshot.total_targets),
+        completed_targets: Some(snapshot.completed_targets),
+        remaining_targets: Some(
+            snapshot
+                .total_targets
+                .saturating_sub(snapshot.completed_targets),
+        ),
+        current_target: snapshot.current_target,
+    }))
+}
+
+async fn api_cancel_analysis(
+    State(state): State<Arc<AppState>>,
+) -> ApiResult<Json<CancelResponse>> {
     let Some(job) = state.active_job()? else {
         return Ok(Json(CancelResponse {
             cancelled: false,
@@ -396,7 +558,6 @@ async fn api_cancel_analysis(State(state): State<Arc<AppState>>) -> ApiResult<Js
     };
 
     job.cancel();
-    request_process_termination(job.pid).map_err(ApiError::internal_from_io)?;
 
     Ok(Json(CancelResponse {
         cancelled: true,
@@ -408,53 +569,82 @@ fn analyze_sync(state: &AppState, request: AnalyzeRequest) -> ApiResult<AnalyzeR
     let mode = WebMode::parse(request.mode.trim())
         .ok_or_else(|| ApiError::bad_request("unknown analysis mode"))?;
     let target = resolve_existing_path(&state.root_dir, request.path.trim())?;
-    let command_result = run_analysis_command(state, mode, &target)?;
-    let findings = match mode {
-        WebMode::Static => extract_static_findings(&command_result.raw_report),
-        WebMode::Symbolic => extract_symbolic_findings(&command_result.raw_report),
-        WebMode::Fuzzing => extract_fuzzing_findings(&command_result.raw_report),
-        WebMode::Hybrid => extract_hybrid_findings(&command_result.run_dir)?,
-    };
-    let summary_cards = build_summary_cards(mode, &command_result.raw_report, findings.len());
-    let artifacts = collect_artifacts(&state.root_dir, command_result.run_dir.as_deref())?;
+    let targets = collect_analysis_targets(&target)?;
+    let job = state.begin_job(mode, &target, targets.len())?;
 
-    Ok(AnalyzeResponse {
-        root_dir: state.root_dir.display().to_string(),
-        target_path: relative_display(&state.root_dir, &target),
-        mode: mode.as_str().to_string(),
-        summary_cards,
-        findings,
-        raw_json: command_result.raw_json,
-        raw_report: command_result.raw_report,
-        warnings: command_result.warnings,
-        run_dir: command_result
-            .run_dir
-            .as_deref()
-            .map(|run_dir| relative_display(&state.root_dir, run_dir)),
-        artifacts,
-    })
+    let result = if targets.len() == 1 {
+        let command_result = run_analysis_command(state, mode, &targets[0], &job)?;
+        let findings = extract_web_findings(mode, &command_result.raw_report)?;
+        let artifacts = collect_artifacts(&state.root_dir, command_result.run_dir.as_deref())?;
+        let warnings = classify_warnings(command_result.warnings);
+        let summary_cards = build_summary_cards(mode, &findings, &warnings);
+
+        Ok(AnalyzeResponse {
+            root_dir: state.root_dir.display().to_string(),
+            target_path: relative_display(&state.root_dir, &target),
+            mode: mode.as_str().to_string(),
+            summary_cards,
+            findings,
+            raw_json: command_result.raw_json,
+            raw_report: command_result.raw_report,
+            warnings,
+            run_dir: command_result
+                .run_dir
+                .as_deref()
+                .map(|run_dir| relative_display(&state.root_dir, run_dir)),
+            artifacts,
+        })
+    } else {
+        aggregate_directory_analysis(state, mode, &target, &targets, &job)
+    };
+
+    state.clear_job(&job);
+    result
 }
 
-fn run_analysis_command(state: &AppState, mode: WebMode, target: &Path) -> ApiResult<CommandResult> {
+fn run_analysis_command(
+    state: &AppState,
+    mode: WebMode,
+    target: &Path,
+    job: &Arc<RunningAnalysis>,
+) -> ApiResult<CommandResult> {
     let run_dirs_before = if mode == WebMode::Hybrid {
         snapshot_run_dirs(&state.root_dir)
     } else {
         HashSet::new()
     };
 
-    let (job, child) = state.spawn_job(mode, target)?;
+    if job.was_cancelled() {
+        return Err(ApiError::cancelled(format!(
+            "analysis cancelled: {}",
+            job.describe()
+        )));
+    }
+
+    job.set_phase("starting")?;
+    let child = Command::new(&state.executable)
+        .current_dir(&state.root_dir)
+        .arg(mode.flag())
+        .arg(target)
+        .arg("--json")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(ApiError::internal_from_io)?;
+
+    job.start_target(child.id(), relative_display(&state.root_dir, target))?;
     let output_result = child.wait_with_output();
-    state.clear_job(&job);
     let output = match output_result {
         Ok(output) => output,
         Err(_err) if job.was_cancelled() => {
             return Err(ApiError::cancelled(format!(
                 "analysis cancelled: {}",
                 job.describe()
-            )))
+            )));
         }
         Err(err) => return Err(ApiError::internal_from_io(err)),
     };
+    job.finish_target()?;
 
     let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
     let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
@@ -465,18 +655,19 @@ fn run_analysis_command(state: &AppState, mode: WebMode, target: &Path) -> ApiRe
         )));
     }
     if !output.status.success() {
-        let detail = if stderr.is_empty() { stdout.as_str() } else { stderr.as_str() };
-        return Err(ApiError::internal(format!("analysis command failed: {detail}")));
+        let detail = if stderr.is_empty() {
+            stdout.as_str()
+        } else {
+            stderr.as_str()
+        };
+        return Err(ApiError::internal(format!(
+            "analysis command failed: {detail}"
+        )));
     }
 
     let raw_report = serde_json::from_str::<Value>(&stdout)
         .map_err(|err| ApiError::internal(format!("analyzer produced invalid JSON: {err}")))?;
-    let warnings = stderr
-        .lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty())
-        .map(str::to_string)
-        .collect::<Vec<_>>();
+    let warnings = extract_warning_blocks(&stderr);
 
     let run_dir = if mode == WebMode::Hybrid {
         detect_hybrid_run_dir(&state.root_dir, &run_dirs_before)
@@ -492,59 +683,289 @@ fn run_analysis_command(state: &AppState, mode: WebMode, target: &Path) -> ApiRe
     })
 }
 
-fn build_summary_cards(mode: WebMode, report: &Value, finding_count: usize) -> Vec<SummaryCard> {
-    let mut cards = vec![
+fn aggregate_directory_analysis(
+    state: &AppState,
+    mode: WebMode,
+    target: &Path,
+    targets: &[PathBuf],
+    job: &Arc<RunningAnalysis>,
+) -> ApiResult<AnalyzeResponse> {
+    let mut all_findings = Vec::new();
+    let mut warnings = Vec::new();
+    let mut artifacts = Vec::new();
+    let mut report_entries = Vec::new();
+    let mut run_dirs = Vec::new();
+    let mut raw_finding_count = 0usize;
+    let mut suppressed_count = 0usize;
+
+    for file_target in targets {
+        if job.was_cancelled() {
+            return Err(ApiError::cancelled(format!(
+                "analysis cancelled: {}",
+                job.describe()
+            )));
+        }
+
+        let command_result = run_analysis_command(state, mode, file_target, job)?;
+        let relative_target = relative_display(&state.root_dir, file_target);
+        let findings = extract_web_findings(mode, &command_result.raw_report)?;
+        let (raw_count, suppressed) = report_finding_totals(mode, &command_result.raw_report);
+        raw_finding_count += raw_count;
+        suppressed_count += suppressed;
+        all_findings.extend(findings);
+
+        if let Some(run_dir) = command_result.run_dir.clone() {
+            run_dirs.push(relative_display(&state.root_dir, &run_dir));
+            artifacts.extend(collect_artifacts(&state.root_dir, Some(&run_dir))?);
+        }
+
+        warnings.extend(
+            command_result
+                .warnings
+                .into_iter()
+                .map(|warning| format!("[{}] {}", relative_target, warning)),
+        );
+
+        report_entries.push(json!({
+            "target_path": relative_target,
+            "report": command_result.raw_report,
+        }));
+    }
+
+    all_findings.sort_by(|left, right| {
+        (
+            severity_rank(left.severity.as_deref()),
+            left.kind.as_str(),
+            left.file.as_deref().unwrap_or(""),
+            left.function.as_deref().unwrap_or(""),
+            left.start.unwrap_or(0),
+            left.message.as_str(),
+        )
+            .cmp(&(
+                severity_rank(right.severity.as_deref()),
+                right.kind.as_str(),
+                right.file.as_deref().unwrap_or(""),
+                right.function.as_deref().unwrap_or(""),
+                right.start.unwrap_or(0),
+                right.message.as_str(),
+            ))
+    });
+
+    artifacts.sort_by(|left, right| {
+        left.relative_path
+            .cmp(&right.relative_path)
+            .then_with(|| left.name.cmp(&right.name))
+    });
+    artifacts.dedup_by(|left, right| left.relative_path == right.relative_path);
+
+    let raw_report = json!({
+        "mode": mode.as_str(),
+        "target_path": relative_display(&state.root_dir, target),
+        "target_count": targets.len(),
+        "targets": targets
+            .iter()
+            .map(|path| relative_display(&state.root_dir, path))
+            .collect::<Vec<_>>(),
+        "run_dirs": run_dirs,
+        "finding_count_raw": raw_finding_count,
+        "suppressed_findings": suppressed_count,
+        "reports": report_entries,
+    });
+    let raw_json = serde_json::to_string_pretty(&raw_report).map_err(|err| {
+        ApiError::internal(format!("failed to serialize aggregate report: {err}"))
+    })?;
+    let warnings = classify_warnings(warnings);
+    let summary_cards = build_summary_cards(mode, &all_findings, &warnings);
+
+    Ok(AnalyzeResponse {
+        root_dir: state.root_dir.display().to_string(),
+        target_path: relative_display(&state.root_dir, target),
+        mode: mode.as_str().to_string(),
+        summary_cards,
+        findings: all_findings,
+        raw_json,
+        raw_report,
+        warnings,
+        run_dir: None,
+        artifacts,
+    })
+}
+
+fn build_summary_cards(
+    mode: WebMode,
+    findings: &[WebFinding],
+    warnings: &[WebWarning],
+) -> Vec<SummaryCard> {
+    let unique_kinds = findings
+        .iter()
+        .map(|finding| finding.kind.as_str())
+        .collect::<HashSet<_>>()
+        .len();
+    let high_severity = findings
+        .iter()
+        .filter(|finding| severity_bucket(finding.severity.as_deref()) == "high")
+        .count();
+    let high_confidence = findings
+        .iter()
+        .filter(|finding| severity_bucket(finding.confidence.as_deref()) == "high")
+        .count();
+    let warning_count = warnings
+        .iter()
+        .filter(|warning| !warning.suppressed_by_default)
+        .count();
+
+    vec![
         SummaryCard {
             label: "Mode".to_string(),
             value: mode.as_str().to_string(),
         },
         SummaryCard {
             label: "Displayed Findings".to_string(),
-            value: finding_count.to_string(),
+            value: findings.len().to_string(),
         },
-    ];
-
-    match mode {
-        WebMode::Static => {
-            push_json_card(&mut cards, report, "Files", "files");
-            push_json_card(&mut cards, report, "Functions", "functions");
-            push_json_card(&mut cards, report, "Calls", "calls");
-        }
-        WebMode::Symbolic => {
-            push_json_card(&mut cards, report, "Functions", "functions");
-            push_json_card(&mut cards, report, "Runtime Findings", "vulnerability_count");
-            push_json_card(&mut cards, report, "Meta Findings", "meta_finding_count");
-            push_json_card(&mut cards, report, "Explored States", "explored_states");
-        }
-        WebMode::Fuzzing => {
-            push_json_card(&mut cards, report, "Iterations", "iterations");
-            push_json_card(&mut cards, report, "Coverage", "coverage_pct");
-            push_json_card(&mut cards, report, "Runtime Findings", "findings");
-            push_json_card(&mut cards, report, "Meta Findings", "meta_findings");
-        }
-        WebMode::Hybrid => {
-            push_json_card(&mut cards, report, "Epochs", "total_epochs");
-            push_json_card(&mut cards, report, "Runtime Findings", "runtime_findings_unique");
-            push_json_card(&mut cards, report, "Meta Findings", "meta_findings_unique");
-            push_json_card(&mut cards, report, "Runtime ms", "runtime_ms");
-        }
-    }
-
-    cards
+        SummaryCard {
+            label: "Unique Kinds".to_string(),
+            value: unique_kinds.to_string(),
+        },
+        SummaryCard {
+            label: "High Severity".to_string(),
+            value: high_severity.to_string(),
+        },
+        SummaryCard {
+            label: "High Confidence".to_string(),
+            value: high_confidence.to_string(),
+        },
+        SummaryCard {
+            label: "Warnings".to_string(),
+            value: warning_count.to_string(),
+        },
+    ]
 }
 
-fn push_json_card(cards: &mut Vec<SummaryCard>, report: &Value, label: &str, key: &str) {
-    let value = match report.get(key) {
-        Some(Value::Array(items)) => items.len().to_string(),
-        Some(Value::String(value)) => value.clone(),
-        Some(Value::Number(value)) => value.to_string(),
-        Some(Value::Bool(value)) => value.to_string(),
-        _ => return,
+fn report_finding_totals(mode: WebMode, report: &Value) -> (usize, usize) {
+    match mode {
+        WebMode::Static => (
+            json_usize(report, "finding_count_raw"),
+            json_usize(report, "suppressed_findings"),
+        ),
+        WebMode::Symbolic => (
+            json_usize(report, "vulnerability_count_raw")
+                + json_usize(report, "meta_finding_count_raw"),
+            json_usize(report, "suppressed_vulnerabilities")
+                + json_usize(report, "suppressed_meta_findings"),
+        ),
+        WebMode::Fuzzing | WebMode::Hybrid => (
+            json_usize(report, "finding_count_raw") + json_usize(report, "meta_finding_count_raw"),
+            json_usize(report, "suppressed_findings")
+                + json_usize(report, "suppressed_meta_findings"),
+        ),
+    }
+}
+
+fn extract_warning_blocks(stderr: &str) -> Vec<String> {
+    let mut blocks = Vec::new();
+    let mut current = String::new();
+
+    for raw_line in stderr.lines() {
+        let line = raw_line.trim_end();
+        if line.trim().is_empty() {
+            continue;
+        }
+
+        if starts_new_warning_block(line) && !current.is_empty() {
+            blocks.push(current.trim().to_string());
+            current.clear();
+        }
+
+        if !current.is_empty() {
+            current.push('\n');
+        }
+        current.push_str(line);
+    }
+
+    if !current.is_empty() {
+        blocks.push(current.trim().to_string());
+    }
+
+    blocks
+}
+
+fn starts_new_warning_block(line: &str) -> bool {
+    let trimmed = line.trim_start();
+    trimmed.starts_with("solc frontend failed:")
+        || (trimmed.starts_with('[') && trimmed.contains("] solc frontend failed:"))
+        || trimmed.starts_with("analysis command failed:")
+        || trimmed.starts_with("analysis cancelled:")
+}
+
+fn classify_warnings(warnings: Vec<String>) -> Vec<WebWarning> {
+    warnings.into_iter().map(classify_warning).collect()
+}
+
+fn classify_warning(warning: String) -> WebWarning {
+    if is_known_benchmark_compatibility_warning(&warning) {
+        return WebWarning {
+            title: "Known Benchmark Compatibility Warning".to_string(),
+            message: warning,
+            category: "compatibility".to_string(),
+            suppressed_by_default: true,
+        };
+    }
+
+    if warning.contains("solc frontend failed:") {
+        return WebWarning {
+            title: "Compatibility Warning".to_string(),
+            message: warning,
+            category: "compatibility".to_string(),
+            suppressed_by_default: false,
+        };
+    }
+
+    WebWarning {
+        title: "Analyzer Warning".to_string(),
+        message: warning,
+        category: "general".to_string(),
+        suppressed_by_default: false,
+    }
+}
+
+fn is_known_benchmark_compatibility_warning(warning: &str) -> bool {
+    const KNOWN_PATHS: [&str; 3] = [
+        "Benchmarks/Not-so-smart/not-so-smart-contracts-master/denial_of_service/list_dos.sol",
+        "Benchmarks/Not-so-smart/not-so-smart-contracts-master/reentrancy/DAO_source_code/DAO.sol",
+        "Benchmarks/Not-so-smart/not-so-smart-contracts-master/unprotected_function/WalletLibrary_source_code/WalletLibrary.sol",
+    ];
+
+    warning.contains("solc frontend failed:")
+        && KNOWN_PATHS.iter().any(|path| warning.contains(path))
+}
+
+fn extract_web_findings(mode: WebMode, report: &Value) -> ApiResult<Vec<WebFinding>> {
+    let mut findings = match mode {
+        WebMode::Static => extract_static_findings(report),
+        WebMode::Symbolic => extract_surfaced_findings(report, "vulnerabilities", "meta_findings"),
+        WebMode::Fuzzing => extract_surfaced_findings(report, "findings", "meta_findings"),
+        WebMode::Hybrid => extract_surfaced_findings(report, "findings", "meta_findings"),
     };
-    cards.push(SummaryCard {
-        label: label.to_string(),
-        value,
+    findings.sort_by(|left, right| {
+        (
+            severity_rank(left.severity.as_deref()),
+            left.kind.as_str(),
+            left.file.as_deref().unwrap_or(""),
+            left.function.as_deref().unwrap_or(""),
+            left.start.unwrap_or(0),
+            left.message.as_str(),
+        )
+            .cmp(&(
+                severity_rank(right.severity.as_deref()),
+                right.kind.as_str(),
+                right.file.as_deref().unwrap_or(""),
+                right.function.as_deref().unwrap_or(""),
+                right.start.unwrap_or(0),
+                right.message.as_str(),
+            ))
     });
+    Ok(findings)
 }
 
 fn extract_static_findings(report: &Value) -> Vec<WebFinding> {
@@ -557,7 +978,7 @@ fn extract_static_findings(report: &Value) -> Vec<WebFinding> {
             kind: json_string(finding, "kind"),
             layer: "static".to_string(),
             severity: json_string_opt(finding, "severity"),
-            confidence: json_metadata_string_opt(finding, "confidence"),
+            confidence: json_string_opt(finding, "confidence"),
             category: json_string_opt(finding, "category"),
             function: json_string_opt(finding, "function"),
             file: json_string_opt(finding, "file"),
@@ -577,165 +998,42 @@ fn extract_static_findings(report: &Value) -> Vec<WebFinding> {
         .collect()
 }
 
-fn extract_symbolic_findings(report: &Value) -> Vec<WebFinding> {
+fn extract_surfaced_findings(report: &Value, runtime_key: &str, meta_key: &str) -> Vec<WebFinding> {
     let mut findings = Vec::new();
 
-    if let Some(runtime) = report.get("vulnerabilities").and_then(Value::as_array) {
-        findings.extend(runtime.iter().map(|finding| WebFinding {
-            kind: json_string(finding, "kind"),
-            layer: "runtime".to_string(),
-            severity: None,
-            confidence: json_string_opt(finding, "confidence"),
-            category: None,
-            function: json_string_opt(finding, "function_name"),
-            file: finding
-                .get("location")
-                .and_then(|location| location.get("file"))
-                .and_then(Value::as_str)
-                .map(str::to_string),
-            start: finding
-                .get("location")
-                .and_then(|location| location.get("start"))
-                .and_then(Value::as_u64)
-                .map(|value| value as u32),
-            end: finding
-                .get("location")
-                .and_then(|location| location.get("end"))
-                .and_then(Value::as_u64)
-                .map(|value| value as u32),
-            message: json_string(finding, "message"),
-            evidence: None,
-        }));
+    if let Some(runtime) = report.get(runtime_key).and_then(Value::as_array) {
+        findings.extend(
+            runtime
+                .iter()
+                .map(|finding| extract_surfaced_finding(finding, "runtime")),
+        );
     }
 
-    if let Some(meta) = report.get("meta_findings").and_then(Value::as_array) {
-        findings.extend(meta.iter().map(|finding| WebFinding {
-            kind: json_string(finding, "finding_type"),
-            layer: "meta".to_string(),
-            severity: json_string_opt(finding, "severity"),
-            confidence: json_metadata_string_opt(finding, "confidence"),
-            category: json_metadata_string_opt(finding, "category"),
-            function: finding
-                .get("location")
-                .and_then(|location| location.get("function_name"))
-                .and_then(Value::as_str)
-                .map(str::to_string),
-            file: finding
-                .get("location")
-                .and_then(|location| location.get("file"))
-                .and_then(Value::as_str)
-                .map(str::to_string),
-            start: finding
-                .get("location")
-                .and_then(|location| location.get("start"))
-                .and_then(Value::as_u64)
-                .map(|value| value as u32),
-            end: finding
-                .get("location")
-                .and_then(|location| location.get("end"))
-                .and_then(Value::as_u64)
-                .map(|value| value as u32),
-            message: json_string(finding, "message"),
-            evidence: json_string_opt(finding, "evidence_kind"),
-        }));
+    if let Some(meta) = report.get(meta_key).and_then(Value::as_array) {
+        findings.extend(
+            meta.iter()
+                .map(|finding| extract_surfaced_finding(finding, "meta")),
+        );
     }
 
     findings
 }
 
-fn extract_fuzzing_findings(report: &Value) -> Vec<WebFinding> {
-    let mut findings = Vec::new();
-
-    if let Some(runtime) = report.get("findings").and_then(Value::as_array) {
-        findings.extend(runtime.iter().map(|finding| WebFinding {
-            kind: json_string(finding, "canonical_kind"),
-            layer: "runtime".to_string(),
-            severity: json_string_opt(finding, "severity"),
-            confidence: json_string_opt(finding, "confidence"),
-            category: json_string_opt(finding, "category"),
-            function: None,
-            file: None,
-            start: None,
-            end: None,
-            message: json_string(finding, "message"),
-            evidence: None,
-        }));
+fn extract_surfaced_finding(finding: &Value, default_layer: &str) -> WebFinding {
+    WebFinding {
+        kind: json_string(finding, "kind"),
+        layer: json_string_opt(finding, "analysis_layer")
+            .unwrap_or_else(|| default_layer.to_string()),
+        severity: json_string_opt(finding, "severity"),
+        confidence: json_string_opt(finding, "confidence"),
+        category: json_string_opt(finding, "category"),
+        function: json_string_opt(finding, "function_name"),
+        file: json_string_opt(finding, "file"),
+        start: json_u32_opt(finding, "start"),
+        end: json_u32_opt(finding, "end"),
+        message: json_string(finding, "message"),
+        evidence: json_string_opt(finding, "evidence_kind"),
     }
-
-    if let Some(meta) = report.get("meta_findings").and_then(Value::as_array) {
-        findings.extend(meta.iter().map(|finding| WebFinding {
-            kind: json_string(finding, "finding_type"),
-            layer: "meta".to_string(),
-            severity: json_string_opt(finding, "severity"),
-            confidence: json_metadata_string_opt(finding, "confidence"),
-            category: json_metadata_string_opt(finding, "category"),
-            function: finding
-                .get("location")
-                .and_then(|location| location.get("function_name"))
-                .and_then(Value::as_str)
-                .map(str::to_string),
-            file: finding
-                .get("location")
-                .and_then(|location| location.get("file"))
-                .and_then(Value::as_str)
-                .map(str::to_string),
-            start: finding
-                .get("location")
-                .and_then(|location| location.get("start"))
-                .and_then(Value::as_u64)
-                .map(|value| value as u32),
-            end: finding
-                .get("location")
-                .and_then(|location| location.get("end"))
-                .and_then(Value::as_u64)
-                .map(|value| value as u32),
-            message: json_string(finding, "message"),
-            evidence: json_string_opt(finding, "evidence_kind"),
-        }));
-    }
-
-    findings
-}
-
-fn extract_hybrid_findings(run_dir: &Option<PathBuf>) -> ApiResult<Vec<WebFinding>> {
-    let Some(run_dir) = run_dir else {
-        return Ok(Vec::new());
-    };
-    let findings_path = run_dir.join("findings.json");
-    if !findings_path.exists() {
-        return Ok(Vec::new());
-    }
-    let findings_raw = fs::read_to_string(&findings_path).map_err(ApiError::internal_from_io)?;
-    let findings = serde_json::from_str::<Vec<Finding>>(&findings_raw)
-        .map_err(|err| ApiError::internal(format!("failed to decode hybrid findings.json: {err}")))?;
-    Ok(findings
-        .into_iter()
-        .map(|finding| WebFinding {
-            kind: finding.finding_type,
-            layer: finding.analysis_layer,
-            severity: Some(finding.severity),
-            confidence: finding.metadata.get("confidence").cloned(),
-            category: finding.metadata.get("category").cloned(),
-            function: finding
-                .location
-                .as_ref()
-                .and_then(|location| location.function_name.clone()),
-            file: finding
-                .location
-                .as_ref()
-                .and_then(|location| location.file.clone()),
-            start: finding
-                .location
-                .as_ref()
-                .and_then(|location| location.start),
-            end: finding
-                .location
-                .as_ref()
-                .and_then(|location| location.end),
-            message: finding.message,
-            evidence: Some(finding.evidence_kind),
-        })
-        .collect())
 }
 
 fn collect_artifacts(root_dir: &Path, run_dir: Option<&Path>) -> ApiResult<Vec<WebArtifact>> {
@@ -758,6 +1056,86 @@ fn collect_artifacts(root_dir: &Path, run_dir: Option<&Path>) -> ApiResult<Vec<W
         .collect::<Vec<_>>();
     artifacts.sort_by(|a, b| a.name.cmp(&b.name));
     Ok(artifacts)
+}
+
+fn collect_analysis_targets(target: &Path) -> ApiResult<Vec<PathBuf>> {
+    let metadata = fs::metadata(target).map_err(ApiError::internal_from_io)?;
+    if metadata.is_file() {
+        return Ok(vec![target.to_path_buf()]);
+    }
+    if !metadata.is_dir() {
+        return Err(ApiError::bad_request(
+            "selected target must be a Solidity file or directory",
+        ));
+    }
+
+    let mut files = Vec::new();
+    collect_solidity_files_recursive(target, &mut files)?;
+    files.sort();
+    if files.is_empty() {
+        return Err(ApiError::bad_request(
+            "selected directory does not contain Solidity files",
+        ));
+    }
+    Ok(files)
+}
+
+fn count_solidity_files_recursive(dir: &Path) -> ApiResult<usize> {
+    let mut count = 0usize;
+    collect_solidity_file_count_recursive(dir, &mut count)?;
+    Ok(count)
+}
+
+fn collect_solidity_file_count_recursive(dir: &Path, count: &mut usize) -> ApiResult<()> {
+    let mut entries = fs::read_dir(dir)
+        .map_err(ApiError::internal_from_io)?
+        .filter_map(|entry| entry.ok())
+        .collect::<Vec<_>>();
+    entries.sort_by_key(|entry| entry.file_name().to_string_lossy().to_string());
+
+    for entry in entries {
+        let path = entry.path();
+        let file_type = entry.file_type().map_err(ApiError::internal_from_io)?;
+        if file_type.is_dir() {
+            collect_solidity_file_count_recursive(&path, count)?;
+            continue;
+        }
+        let is_solidity = path
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .map(|ext| ext.eq_ignore_ascii_case("sol"))
+            .unwrap_or(false);
+        if is_solidity {
+            *count += 1;
+        }
+    }
+    Ok(())
+}
+
+fn collect_solidity_files_recursive(dir: &Path, out: &mut Vec<PathBuf>) -> ApiResult<()> {
+    let mut entries = fs::read_dir(dir)
+        .map_err(ApiError::internal_from_io)?
+        .filter_map(|entry| entry.ok())
+        .collect::<Vec<_>>();
+    entries.sort_by_key(|entry| entry.file_name().to_string_lossy().to_string());
+
+    for entry in entries {
+        let path = entry.path();
+        let file_type = entry.file_type().map_err(ApiError::internal_from_io)?;
+        if file_type.is_dir() {
+            collect_solidity_files_recursive(&path, out)?;
+            continue;
+        }
+        let is_solidity = path
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .map(|ext| ext.eq_ignore_ascii_case("sol"))
+            .unwrap_or(false);
+        if is_solidity {
+            out.push(path);
+        }
+    }
+    Ok(())
 }
 
 fn resolve_existing_path(root_dir: &Path, requested: &str) -> ApiResult<PathBuf> {
@@ -849,11 +1227,41 @@ fn json_string_opt(value: &Value, key: &str) -> Option<String> {
     value.get(key).and_then(Value::as_str).map(str::to_string)
 }
 
-fn json_metadata_string_opt(value: &Value, key: &str) -> Option<String> {
-    value.get("metadata")
-        .and_then(|metadata| metadata.get(key))
-        .and_then(Value::as_str)
-        .map(str::to_string)
+fn json_u32_opt(value: &Value, key: &str) -> Option<u32> {
+    value
+        .get(key)
+        .and_then(Value::as_u64)
+        .map(|value| value as u32)
+}
+
+fn json_usize(value: &Value, key: &str) -> usize {
+    value
+        .get(key)
+        .and_then(Value::as_u64)
+        .map(|value| value as usize)
+        .unwrap_or(0)
+}
+
+fn severity_bucket(value: Option<&str>) -> &'static str {
+    let normalized = value.unwrap_or("unknown").trim().to_ascii_lowercase();
+    if normalized.contains("critical") || normalized.contains("high") {
+        "high"
+    } else if normalized.contains("medium") || normalized.contains("moderate") {
+        "medium"
+    } else if normalized.contains("low") {
+        "low"
+    } else {
+        "unknown"
+    }
+}
+
+fn severity_rank(value: Option<&str>) -> u8 {
+    match severity_bucket(value) {
+        "high" => 0,
+        "medium" => 1,
+        "low" => 2,
+        _ => 3,
+    }
 }
 
 impl ApiError {
@@ -912,22 +1320,4 @@ fn request_process_termination(pid: u32) -> std::io::Result<()> {
         .args(["/PID", &pid.to_string(), "/T", "/F"])
         .status()?;
     Ok(())
-}
-
-fn try_open_browser(url: &str) {
-    #[cfg(target_os = "linux")]
-    {
-        let _ = Command::new("xdg-open").arg(url).spawn();
-    }
-    #[cfg(target_os = "macos")]
-    {
-        let _ = Command::new("open").arg(url).spawn();
-    }
-    #[cfg(target_os = "windows")]
-    {
-        let _ = Command::new("rundll32")
-            .arg("url.dll,FileProtocolHandler")
-            .arg(url)
-            .spawn();
-    }
 }

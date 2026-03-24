@@ -1209,7 +1209,9 @@ fn parse_ts_expr(node: Node, ctx: &mut TsContext) -> u32 {
         }
         "ERROR" => first_ts_expr_child(node)
             .map(|expr| parse_ts_expr(expr, ctx))
-            .unwrap_or_else(|| push_expr(ctx.ast, Expr::unknown(span_from_node(node, ctx.file_id)))),
+            .unwrap_or_else(|| {
+                push_expr(ctx.ast, Expr::unknown(span_from_node(node, ctx.file_id)))
+            }),
         _ => push_expr(ctx.ast, Expr::unknown(span_from_node(node, ctx.file_id))),
     }
 }
@@ -2470,9 +2472,15 @@ fn parse_atom_expr_in_range(
         if end_idx_expr == end_idx {
             return Some((expr_id, end_idx_expr));
         }
-        if let Some(call_id) =
-            parse_trailing_call_expr(tokens, start_idx, end_idx, file_id, ast, expr_id, end_idx_expr)
-        {
+        if let Some(call_id) = parse_trailing_call_expr(
+            tokens,
+            start_idx,
+            end_idx,
+            file_id,
+            ast,
+            expr_id,
+            end_idx_expr,
+        ) {
             return Some((call_id, end_idx));
         }
     }
@@ -2482,9 +2490,15 @@ fn parse_atom_expr_in_range(
         if end_idx_expr == end_idx {
             return Some((expr_id, end_idx_expr));
         }
-        if let Some(call_id) =
-            parse_trailing_call_expr(tokens, start_idx, end_idx, file_id, ast, expr_id, end_idx_expr)
-        {
+        if let Some(call_id) = parse_trailing_call_expr(
+            tokens,
+            start_idx,
+            end_idx,
+            file_id,
+            ast,
+            expr_id,
+            end_idx_expr,
+        ) {
             return Some((call_id, end_idx));
         }
     }
@@ -2545,7 +2559,13 @@ fn parse_trailing_call_expr(
     }
 
     let callee = normalize_legacy_call_option_expr(ast, callee_expr).unwrap_or(callee_expr);
-    let args = parse_call_args(tokens, open_idx + 1, close_idx.saturating_sub(1), file_id, ast);
+    let args = parse_call_args(
+        tokens,
+        open_idx + 1,
+        close_idx.saturating_sub(1),
+        file_id,
+        ast,
+    );
     let chain = chain_from_expr(ast, callee).unwrap_or_default();
     let target = call_target_from_chain(&chain);
     let mut chain_with_call = chain.clone();
@@ -3337,7 +3357,10 @@ mod tests {
             panic!("expected block body");
         };
         let stmt_id = *stmts.first().expect("statement");
-        let stmt = ast.statements.get(stmt_id as usize).expect("expression statement");
+        let stmt = ast
+            .statements
+            .get(stmt_id as usize)
+            .expect("expression statement");
         let StmtKind::Expr(expr_id) = stmt.kind else {
             panic!("expected expression statement");
         };
@@ -3605,10 +3628,17 @@ mod tests {
         let ExprKind::Call { callee, args } = &expr.kind else {
             panic!("expected outer call expression");
         };
-        assert!(args.is_empty(), "outer legacy call should have no direct args");
+        assert!(
+            args.is_empty(),
+            "outer legacy call should have no direct args"
+        );
 
         let callee_expr = ast.expressions.get(*callee as usize).expect("callee");
-        let ExprKind::CallOptions { callee: inner, options } = &callee_expr.kind else {
+        let ExprKind::CallOptions {
+            callee: inner,
+            options,
+        } = &callee_expr.kind
+        else {
             panic!("expected call options as outer callee");
         };
         assert_eq!(options.len(), 1, "expected one legacy call option");
@@ -3630,7 +3660,6 @@ mod tests {
         let inner_expr = ast.expressions.get(*inner as usize).expect("inner callee");
         assert!(matches!(inner_expr.kind, ExprKind::Member { .. }));
     }
-
 }
 
 trait UnknownExpr {

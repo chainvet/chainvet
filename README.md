@@ -18,6 +18,7 @@ Run commands:
 
 ```bash
 # Web UI (rooted at the directory you launch it from)
+# Prints the localhost URL; does not auto-open a browser
 cargo run -- --web
 
 # Static (default if no mode flag is passed)
@@ -78,6 +79,8 @@ src/
 - Benchmark and scoring:
   - `docs/evaluation_modes.md`
   - `docs/not_so_smart_comparison.md`
+  - `docs/smartbugs_external_tools_comparison.md`
+  - `docs/grad_project_presentation_plan.md`
 
 ## Notes
 

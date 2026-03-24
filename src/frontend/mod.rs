@@ -57,8 +57,8 @@ pub fn load_project(path: &str) -> Result<FrontendOutput> {
                 compiler: CompilerInfo {
                     compiler_name: "tree-sitter".to_string(),
                     compiler_version: compiler.compiler_version,
-                    legacy_omitted_visibility_is_public:
-                        compiler.legacy_omitted_visibility_is_public,
+                    legacy_omitted_visibility_is_public: compiler
+                        .legacy_omitted_visibility_is_public,
                 },
             })
         }
@@ -125,6 +125,61 @@ pub fn has_authority_modifier_hint(function: &Function, ast: &NormalizedAst) -> 
         .unwrap_or(false)
 }
 
+pub fn has_sender_authority_check_hint(function: &Function, ast: &NormalizedAst) -> bool {
+    if has_authority_modifier_hint(function, ast) {
+        return true;
+    }
+    let Some(source_lower) = function_source_lower(function, ast) else {
+        return false;
+    };
+    source_lower.lines().any(|line| {
+        let compact = line
+            .chars()
+            .filter(|ch| !ch.is_whitespace())
+            .collect::<String>();
+        compact.contains("msg.sender")
+            && (compact.contains("==") || compact.contains("!="))
+            && AUTHORITY_CHECK_TOKENS
+                .iter()
+                .any(|token| compact.contains(token))
+    })
+}
+
+pub fn has_public_sender_payout_hint(function: &Function, ast: &NormalizedAst) -> bool {
+    let Some(source_lower) = function_source_lower(function, ast) else {
+        return false;
+    };
+    let sender_payout = source_lower.contains("msg.sender.transfer(")
+        || source_lower.contains("msg.sender.transfer (")
+        || source_lower.contains("msg.sender.send(")
+        || source_lower.contains("msg.sender.send (")
+        || source_lower.contains("msg.sender.call.value(")
+        || source_lower.contains("msg.sender.call.value (");
+    if !sender_payout {
+        return false;
+    }
+
+    let function_name = function.name.as_deref().unwrap_or("").to_ascii_lowercase();
+    let has_gate = source_lower.contains("require(")
+        || source_lower.contains("require (")
+        || source_lower.contains("assert(")
+        || source_lower.contains("assert (")
+        || source_lower.contains("if(")
+        || source_lower.contains("if (");
+    let has_reward_context = CLAIM_PAYOUT_TOKENS
+        .iter()
+        .any(|token| function_name.contains(token) || source_lower.contains(token))
+        || source_lower.contains("msg.value");
+    let has_sender_accounting_context = CALLER_ACCOUNT_INDEX_TOKENS
+        .iter()
+        .any(|token| source_lower.contains(token))
+        && ACCOUNTING_CONTEXT_TOKENS
+            .iter()
+            .any(|token| source_lower.contains(token));
+
+    has_gate && (has_reward_context || has_sender_accounting_context)
+}
+
 fn authority_modifier_token(name: &str) -> bool {
     let lower = name.trim().to_ascii_lowercase();
     lower.starts_with("only")
@@ -139,6 +194,57 @@ fn authority_modifier_token(name: &str) -> bool {
                 | "operatoronly"
         )
 }
+
+const AUTHORITY_CHECK_TOKENS: &[&str] = &[
+    "owner",
+    "admin",
+    "operator",
+    "governance",
+    "auth",
+    "authority",
+    "controller",
+    "creator",
+    "organizer",
+];
+
+const CLAIM_PAYOUT_TOKENS: &[&str] = &[
+    "reward",
+    "prize",
+    "jackpot",
+    "winner",
+    "won",
+    "claim",
+    "solve",
+    "solution",
+    "submission",
+    "proof",
+    "guess",
+    "answer",
+    "lottery",
+    "bet",
+    "play",
+    "participate",
+];
+
+const CALLER_ACCOUNT_INDEX_TOKENS: &[&str] = &["[msg.sender]", "[tx.origin]"];
+
+const ACCOUNTING_CONTEXT_TOKENS: &[&str] = &[
+    "balance",
+    "balances",
+    "credit",
+    "credits",
+    "deposit",
+    "deposits",
+    "refund",
+    "refunds",
+    "share",
+    "shares",
+    "stake",
+    "stakes",
+    "owed",
+    "allowance",
+    "allowances",
+];
 
 fn function_head_snippet<'a>(function: &Function, ast: &'a NormalizedAst) -> Option<&'a str> {
     let file = ast.files.get(function.span.file as usize)?;
@@ -157,6 +263,19 @@ fn signature_contains_authority_modifier(signature: &str) -> bool {
         .split(|ch: char| !(ch.is_ascii_alphanumeric() || ch == '_'))
         .filter(|token| !token.is_empty())
         .any(authority_modifier_token)
+}
+
+fn function_source_lower(function: &Function, ast: &NormalizedAst) -> Option<String> {
+    let file = ast.files.get(function.span.file as usize)?;
+    let start = function.span.start as usize;
+    let end = function.span.end as usize;
+    Some(
+        file.source
+            .get(start..end)
+            .filter(|source| !source.is_empty())
+            .unwrap_or(file.source.as_str())
+            .to_ascii_lowercase(),
+    )
 }
 
 fn surrounding_contract_name(function: &Function, ast: &NormalizedAst) -> Option<String> {
@@ -262,9 +381,8 @@ fn infer_compiler_info(files: &[SourceFile]) -> CompilerInfo {
         }
     }
 
-    let compiler_version = best_version.map(|(major, minor, patch)| {
-        format!("{major}.{minor}.{patch}")
-    });
+    let compiler_version =
+        best_version.map(|(major, minor, patch)| format!("{major}.{minor}.{patch}"));
     // If pragma is missing entirely, prefer legacy entrypoint semantics so
     // omitted visibilities are treated as externally callable (0.4-style).
     let legacy_omitted_visibility_is_public = best_version
@@ -450,7 +568,8 @@ fn normalize_manifest_path(path: &Path) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::norm::{Function, Span};
+    use crate::frontend::parser::load_via_parser_sources;
+    use crate::norm::{Function, NormalizedAst, SourceFile, Span};
 
     fn function(kind: FunctionKind, visibility: Visibility, mutability: Mutability) -> Function {
         Function {
@@ -468,6 +587,15 @@ mod tests {
         }
     }
 
+    fn parse(source: &str) -> NormalizedAst {
+        load_via_parser_sources(vec![SourceFile {
+            id: 0,
+            path: "test.sol".to_string(),
+            source: source.to_string(),
+        }])
+        .expect("parser should succeed")
+    }
+
     #[test]
     fn legacy_pragma_defaults_unknown_visibility_to_public() {
         let info = infer_compiler_info(&[SourceFile {
@@ -475,7 +603,11 @@ mod tests {
             path: "test.sol".to_string(),
             source: "pragma solidity ^0.4.15; contract C { function f() {} }".to_string(),
         }]);
-        let func = function(FunctionKind::Function, Visibility::Unknown, Mutability::NonPayable);
+        let func = function(
+            FunctionKind::Function,
+            Visibility::Unknown,
+            Mutability::NonPayable,
+        );
         assert_eq!(effective_visibility(&func, &info), Visibility::Public);
         assert!(is_public_entrypoint(&func, &info));
         assert!(is_mutating_entrypoint(&func, &info));
@@ -488,7 +620,11 @@ mod tests {
             path: "test.sol".to_string(),
             source: "pragma solidity ^0.8.20; contract C { function f() {} }".to_string(),
         }]);
-        let func = function(FunctionKind::Function, Visibility::Unknown, Mutability::NonPayable);
+        let func = function(
+            FunctionKind::Function,
+            Visibility::Unknown,
+            Mutability::NonPayable,
+        );
         assert_eq!(effective_visibility(&func, &info), Visibility::Unknown);
         assert!(!is_public_entrypoint(&func, &info));
     }
@@ -500,8 +636,60 @@ mod tests {
             path: "test.sol".to_string(),
             source: "contract C { function f() {} }".to_string(),
         }]);
-        let func = function(FunctionKind::Function, Visibility::Unknown, Mutability::NonPayable);
+        let func = function(
+            FunctionKind::Function,
+            Visibility::Unknown,
+            Mutability::NonPayable,
+        );
         assert_eq!(effective_visibility(&func, &info), Visibility::Public);
         assert!(is_public_entrypoint(&func, &info));
+    }
+
+    #[test]
+    fn self_service_withdraw_counts_as_public_sender_payout() {
+        let ast = parse(
+            r#"
+            pragma solidity ^0.4.24;
+            contract SimpleDAO {
+                mapping(address => uint256) public credit;
+                function withdraw(uint256 amount) public {
+                    if (credit[msg.sender] >= amount) {
+                        msg.sender.call.value(amount)();
+                        credit[msg.sender] -= amount;
+                    }
+                }
+            }
+            "#,
+        );
+
+        let function = ast
+            .functions
+            .iter()
+            .find(|function| function.name.as_deref() == Some("withdraw"))
+            .expect("withdraw function should exist");
+        assert!(has_public_sender_payout_hint(function, &ast));
+    }
+
+    #[test]
+    fn arbitrary_public_drain_is_not_treated_as_sender_owned_payout() {
+        let ast = parse(
+            r#"
+            pragma solidity ^0.4.24;
+            contract Lotto {
+                bool public payedOut;
+                function withdrawLeftOver() public {
+                    require(payedOut);
+                    msg.sender.send(this.balance);
+                }
+            }
+            "#,
+        );
+
+        let function = ast
+            .functions
+            .iter()
+            .find(|function| function.name.as_deref() == Some("withdrawLeftOver"))
+            .expect("withdrawLeftOver function should exist");
+        assert!(!has_public_sender_payout_hint(function, &ast));
     }
 }

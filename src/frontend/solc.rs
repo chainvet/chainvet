@@ -21,7 +21,10 @@ pub fn load_via_solc(path: &str) -> Result<NormalizedAst> {
     load_via_solc_sources(path, sources)
 }
 
-pub fn load_via_solc_sources(path: &str, sources: Vec<crate::norm::SourceFile>) -> Result<NormalizedAst> {
+pub fn load_via_solc_sources(
+    path: &str,
+    sources: Vec<crate::norm::SourceFile>,
+) -> Result<NormalizedAst> {
     if sources.is_empty() {
         return Err(Error::msg("no Solidity files found"));
     }
@@ -36,7 +39,19 @@ pub fn load_via_solc_sources(path: &str, sources: Vec<crate::norm::SourceFile>) 
     let allow_paths = build_allow_paths(&root, &include_paths);
 
     let input = build_standard_json(&sources, remappings)?;
-    let output = run_solc(&solc_path, &root, &include_paths, &allow_paths, &input)?;
+    let output = match run_solc(&solc_path, &root, &include_paths, &allow_paths, &input) {
+        Ok(output) => output,
+        Err(primary_err) => {
+            let Some(legacy_solc) = manager.prepare_legacy_retry(&sources, &solc_path)? else {
+                return Err(primary_err);
+            };
+            manager.check_solc(&legacy_solc)?;
+            match run_solc(&legacy_solc, &root, &include_paths, &allow_paths, &input) {
+                Ok(output) => output,
+                Err(_) => return Err(primary_err),
+            }
+        }
+    };
     let ast = normalize_output(sources, output)?;
     Ok(ast)
 }
@@ -117,12 +132,25 @@ fn run_solc(
     allow_paths: &[PathBuf],
     input: &SolcInput,
 ) -> Result<SolcOutput> {
-    let output = run_solc_once(solc_path, base_path, include_paths, allow_paths, input, true)?;
+    let output = run_solc_once(
+        solc_path,
+        base_path,
+        include_paths,
+        allow_paths,
+        input,
+        true,
+    )?;
     match parse_solc_output(&output) {
         Ok(parsed) => Ok(parsed),
         Err(err) if should_retry_without_path_flags(&output) => {
-            let fallback =
-                run_solc_once(solc_path, base_path, include_paths, allow_paths, input, false)?;
+            let fallback = run_solc_once(
+                solc_path,
+                base_path,
+                include_paths,
+                allow_paths,
+                input,
+                false,
+            )?;
             parse_solc_output(&fallback)
         }
         Err(err) => Err(err),

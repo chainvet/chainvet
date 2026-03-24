@@ -126,4 +126,3 @@ impl FindingQueue for RedisFindingQueue {
         self.inner.len()
     }
 }
-

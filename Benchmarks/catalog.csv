@@ -1,0 +1,15 @@
+suite,category,local_path,source_kind,solidity_files,default_use,notes
+Not-so-smart,ground-truth,Benchmarks/Not-so-smart/not-so-smart-contracts-master,source,25,yes,small curated benchmark used for current regression scoring
+Smart-Contract-Benchmark-Suites,broad-corpus,Benchmarks/Smart-Contract-Benchmark-Suites/dataset,source,46186,yes,broad benchmark collection from FSE2024 study scope
+smartbugs-curated,ground-truth,Benchmarks/smartbugs-curated/dataset,source,143,yes,curated benchmark with one obsolete short-address case excluded for FSE2024 alignment
+SolidiFI-benchmark,ground-truth,Benchmarks/SolidiFI-benchmark/buggy_contracts,source,350,yes,injected bug benchmark with unhandled-exceptions subset excluded for FSE2024 alignment
+SCRUBD,ground-truth,Benchmarks/SCRUBD,source,485,yes,labeled reentrancy and unhandled-exception dataset
+Web3Bugs,ground-truth,Benchmarks/Web3Bugs,source,6564,yes,real-world Code4rena-derived exploitable bug dataset
+DAppSCAN,ground-truth,Benchmarks/DAppSCAN,source,21457,yes,audit-report-grounded real-world corpus
+sb-heists,exploit-scenarios,Benchmarks/sb-heists,source,240,no,exploit coverage overlay for SmartBugs Curated
+SCONE-bench,exploit-scenarios,Benchmarks/SCONE-bench,manifest,0,no,historical exploit benchmark with manifest and harness rather than local source corpus
+DeFiVulnLabs,exploit-scenarios,Benchmarks/DeFiVulnLabs,source,57,no,compact Foundry-based vulnerability lab set
+Damn-Vulnerable-DeFi,exploit-scenarios,Benchmarks/Damn-Vulnerable-DeFi,source,73,no,realistic DeFi challenge suite
+Ethernaut,exploit-scenarios,Benchmarks/Ethernaut,source,417,no,level-based historical hack training corpus
+USCHunt,specialized,Benchmarks/USCHunt,source,59074,no,upgradeable proxy and upgradeability corpus
+FSE2024,alignment,Benchmarks/FSE2024,metadata,0,no,scope notes plus BNB-OFFICIAL.csv address list and exclusions.csv

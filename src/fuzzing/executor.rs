@@ -385,9 +385,7 @@ fn execute_transaction(
         }
         match &event.kind {
             TraceEventKind::ExternalCall {
-                callee,
-                low_level,
-                ..
+                callee, low_level, ..
             } => {
                 if *low_level {
                     last_ext_call = Some(callee.clone());
@@ -464,13 +462,10 @@ fn execute_instr(
                     let name = meta.var_name.clone();
                     let constructor_like =
                         function_is_constructor_like(function_id, ast, &output.compiler);
-                    let wrong_constructor_candidate = is_wrong_constructor_runtime_candidate(
-                        function_id,
-                        ast,
-                        &output.compiler,
-                    );
-                    let sender_derived =
-                        value_is_sender_derived(src, temp_origins) || value_name(src).contains("sender");
+                    let wrong_constructor_candidate =
+                        is_wrong_constructor_runtime_candidate(function_id, ast, &output.compiler);
+                    let sender_derived = value_is_sender_derived(src, temp_origins)
+                        || value_name(src).contains("sender");
                     state.insert(name.clone(), val);
                     trace.events.push(TraceEvent {
                         function_id,
@@ -738,7 +733,10 @@ fn execute_instr(
             let src_key = value_key(src);
             let dest_key = var_key(dest);
             if let Some(origins) = temp_origins.get(&src_key).cloned() {
-                temp_origins.entry(dest_key.clone()).or_default().extend(origins);
+                temp_origins
+                    .entry(dest_key.clone())
+                    .or_default()
+                    .extend(origins);
             }
             if let Some(call_id) = tracked_call_by_var.get(&src_key).copied() {
                 tracked_call_by_var.insert(dest_key.clone(), call_id);
@@ -800,7 +798,10 @@ fn execute_instr(
                 .unwrap_or(false);
             if (lhs_has_ts || rhs_has_ts)
                 && (lhs_blocknum || rhs_blocknum)
-                && matches!(op.as_str(), "%" | "*" | "+" | "-" | "^" | "|" | "&" | "<<" | ">>")
+                && matches!(
+                    op.as_str(),
+                    "%" | "*" | "+" | "-" | "^" | "|" | "&" | "<<" | ">>"
+                )
             {
                 trace.events.push(TraceEvent {
                     function_id,
@@ -853,8 +854,7 @@ fn execute_instr(
                     .get(&rhs_key)
                     .map(|o| o.contains(&TempOrigin::EcrecoverResult))
                     .unwrap_or(false);
-                let compared_to_zero =
-                    (lhs_is_ecrecover && r == 0) || (rhs_is_ecrecover && l == 0);
+                let compared_to_zero = (lhs_is_ecrecover && r == 0) || (rhs_is_ecrecover && l == 0);
                 if compared_to_zero {
                     trace.events.push(TraceEvent {
                         function_id,
@@ -1109,11 +1109,10 @@ fn execute_instr(
             // Legacy parser fallback often lowers low-level members (send/call/transfer) as temp callees.
             // Treat temp callees as low-level only when the source actually contains a low-level surface.
             let is_external_by_temp = callee_is_temp && (has_explicit_value || !args.is_empty());
-            let is_external =
-                is_external_by_name
-                    || is_external_by_origin
-                    || has_explicit_value
-                    || is_external_by_temp;
+            let is_external = is_external_by_name
+                || is_external_by_origin
+                || has_explicit_value
+                || is_external_by_temp;
             let is_low_level_by_name = callee_lower == "call"
                 || callee_lower == "send"
                 || callee_lower == "transfer"
@@ -1188,29 +1187,30 @@ fn execute_instr(
                     select_reentrant_callback_targets(function_id, ast, &output.compiler, deps);
                 if !callback_targets.is_empty() {
                     for callback_target in callback_targets {
-                    trace.events.push(TraceEvent {
-                        function_id,
-                        kind: TraceEventKind::ReentrantCallback {
-                            into_function_id: callback_target,
-                        },
-                    });
-                    let callback_tx = build_callback_transaction(callback_target, ast, tx.sender);
-                    let callback_trace = execute_transaction(
-                        &callback_tx,
-                        env,
-                        state,
-                        output,
-                        ir_module,
-                        cfgs,
-                        abi,
-                        deps,
-                        checked_arithmetic,
-                        reentry_depth.saturating_add(1),
-                    );
-                    trace.events.extend(callback_trace.events);
-                    trace.coverage.extend(callback_trace.coverage);
-                    trace.edge_coverage.extend(callback_trace.edge_coverage);
-                    trace.reverted |= callback_trace.reverted;
+                        trace.events.push(TraceEvent {
+                            function_id,
+                            kind: TraceEventKind::ReentrantCallback {
+                                into_function_id: callback_target,
+                            },
+                        });
+                        let callback_tx =
+                            build_callback_transaction(callback_target, ast, tx.sender);
+                        let callback_trace = execute_transaction(
+                            &callback_tx,
+                            env,
+                            state,
+                            output,
+                            ir_module,
+                            cfgs,
+                            abi,
+                            deps,
+                            checked_arithmetic,
+                            reentry_depth.saturating_add(1),
+                        );
+                        trace.events.extend(callback_trace.events);
+                        trace.coverage.extend(callback_trace.coverage);
+                        trace.edge_coverage.extend(callback_trace.edge_coverage);
+                        trace.reverted |= callback_trace.reverted;
                     }
                 }
             }
@@ -1225,10 +1225,7 @@ fn execute_instr(
                         .or_default()
                         .insert(TempOrigin::EcrecoverResult);
                 }
-                if callee_is_send_ref
-                    || callee_lower == "send"
-                    || callee_lower.ends_with(".send")
-                {
+                if callee_is_send_ref || callee_lower == "send" || callee_lower.ends_with(".send") {
                     let key = var_key(var);
                     temp_origins
                         .entry(key)
@@ -1423,20 +1420,18 @@ fn select_reentrant_callback_targets(
             candidates.push((0u8, function_id));
             continue;
         }
-        let overlaps = deps
-            .functions
-            .get(&function_id)
-            .map(|candidate| {
-                current_deps
-                    .writes
-                    .iter()
-                    .any(|slot| candidate.reads.contains(slot) || candidate.writes.contains(slot))
-                    || current_deps
+        let overlaps =
+            deps.functions
+                .get(&function_id)
+                .map(|candidate| {
+                    current_deps.writes.iter().any(|slot| {
+                        candidate.reads.contains(slot) || candidate.writes.contains(slot)
+                    }) || current_deps
                         .reads
                         .iter()
                         .any(|slot| candidate.writes.contains(slot))
-            })
-            .unwrap_or(false);
+                })
+                .unwrap_or(false);
         if overlaps {
             candidates.push((1u8, function_id));
         }
@@ -1740,14 +1735,7 @@ fn slot_is_order_sensitive(slot_key: &str, var_name: &str) -> bool {
         .any(|token| {
             matches!(
                 token,
-                "price"
-                    | "rate"
-                    | "reward"
-                    | "bid"
-                    | "bids"
-                    | "auction"
-                    | "winner"
-                    | "quote"
+                "price" | "rate" | "reward" | "bid" | "bids" | "auction" | "winner" | "quote"
             ) || token.ends_with("price")
                 || token.ends_with("rate")
                 || token.ends_with("reward")
@@ -2160,9 +2148,12 @@ mod tests {
             0,
         );
 
-        assert!(trace.events.iter().any(|event| {
-            matches!(event.kind, TraceEventKind::BalanceInvariantCheck)
-        }));
+        assert!(
+            trace
+                .events
+                .iter()
+                .any(|event| { matches!(event.kind, TraceEventKind::BalanceInvariantCheck) })
+        );
     }
 
     #[test]

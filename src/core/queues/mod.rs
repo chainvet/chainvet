@@ -266,9 +266,6 @@ mod tests {
             attempts: 0,
         });
         assert_eq!(q.len(), 1);
-        assert_eq!(
-            backend.url(),
-            q.url()
-        );
+        assert_eq!(backend.url(), q.url());
     }
 }

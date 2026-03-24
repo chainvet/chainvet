@@ -29,6 +29,8 @@ const LOW_LEVEL_CALLS: &[&str] = &["call", "delegatecall", "staticcall"];
 /// is the most dangerous pattern.
 const TRANSFER_METHODS: &[&str] = &["transfer", "send"];
 
+const NON_EXTERNAL_MEMBER_HELPERS: &[&str] = &["add", "sub", "mul", "div", "mod", "push", "pop"];
+
 // ═══════════════════════════════════════════════════════════════════════════════
 //  Entry point
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -38,7 +40,6 @@ pub fn detect_all(ast: &NormalizedAst) -> Vec<Finding> {
     let mut findings = Vec::new();
 
     findings.extend(detect_reentrancy_negative_events(ast)); // RE-01
-    findings.extend(detect_reentrancy_transfer(ast)); // RE-02
     findings.extend(detect_reentrancy_same_effect(ast)); // RE-03
     findings.extend(detect_reentrancy_eth_transfer(ast)); // RE-04
     findings.extend(detect_reentrancy_no_eth_transfer(ast)); // RE-05
@@ -573,10 +574,6 @@ fn source_guided_nested_eth_reentrancy_span(
     let call_idx = [
         source_lower.find(".call.value("),
         source_lower.find(".call{value"),
-        source_lower.find(".transfer("),
-        source_lower.find(".transfer ("),
-        source_lower.find(".send("),
-        source_lower.find(".send ("),
     ]
     .into_iter()
     .flatten()
@@ -620,11 +617,25 @@ fn find_cross_contract_calls_in_stmt(ast: &NormalizedAst, stmt_id: u32) -> Vec<E
         // Look for calls via Member access: `someContract.someFunc(...)`
         if let ExprKind::Call { callee, .. } = &expr.kind {
             if let Some(callee_expr) = ast.expressions.get(*callee as usize) {
-                if let ExprKind::Member { field, .. } = &callee_expr.kind {
+                if let ExprKind::Member { base, field } = &callee_expr.kind {
                     // Skip known low-level / ETH transfer methods
                     let is_known = LOW_LEVEL_CALLS.iter().any(|&m| m == field.as_str())
                         || TRANSFER_METHODS.iter().any(|&m| m == field.as_str());
-                    if !is_known {
+                    let is_helper = NON_EXTERNAL_MEMBER_HELPERS
+                        .iter()
+                        .any(|&m| m == field.as_str());
+                    let is_internal_receiver = ast
+                        .expressions
+                        .get(*base as usize)
+                        .map(|base_expr| match &base_expr.kind {
+                            ExprKind::Ident(name) => {
+                                name.eq_ignore_ascii_case("this")
+                                    || name.eq_ignore_ascii_case("super")
+                            }
+                            _ => false,
+                        })
+                        .unwrap_or(false);
+                    if !is_known && !is_helper && !is_internal_receiver {
                         // This is a member call on another object — likely
                         // a cross-contract call.
                         calls.push(ExternalCallInfo {
@@ -640,10 +651,16 @@ fn find_cross_contract_calls_in_stmt(ast: &NormalizedAst, stmt_id: u32) -> Vec<E
 
         // Also flag calls resolved via CallMeta as Member target
         if let Some(call) = &expr.meta.call {
-            if let CallTarget::Member { name, .. } = &call.target {
+            if let CallTarget::Member { receiver, name } = &call.target {
                 let is_known = LOW_LEVEL_CALLS.iter().any(|&m| m == name.as_str())
                     || TRANSFER_METHODS.iter().any(|&m| m == name.as_str());
-                if !is_known {
+                let is_helper = NON_EXTERNAL_MEMBER_HELPERS
+                    .iter()
+                    .any(|&m| m == name.as_str());
+                let is_internal_receiver = receiver.last().is_some_and(|segment| {
+                    segment.eq_ignore_ascii_case("this") || segment.eq_ignore_ascii_case("super")
+                });
+                if !is_known && !is_helper && !is_internal_receiver {
                     calls.push(ExternalCallInfo {
                         sends_eth: false,
                         is_transfer_or_send: false,
@@ -737,67 +754,6 @@ fn detect_reentrancy_negative_events(ast: &NormalizedAst) -> Vec<Finding> {
     findings
 }
 
-// ── RE-02  Reentrancy Vulnerability with Transfer ────────────────────────────
-//
-// Specifically targets the `.transfer()` and `.send()` pattern.
-// While these are limited to 2300 gas (making reentrancy harder since
-// EIP-2929 / Istanbul), older compilers and certain patterns can still
-// be exploited.  State updates after `.transfer()` / `.send()` are
-// flagged.
-//
-// Detection:
-//   Scan for `.transfer(...)` or `.send(...)` calls followed by state
-//   variable assignments in subsequent statements.
-//
-// Severity: Medium — 2300 gas limits reduce risk but do not eliminate it.
-
-fn detect_reentrancy_transfer(ast: &NormalizedAst) -> Vec<Finding> {
-    let mut findings = Vec::new();
-
-    for func in &ast.functions {
-        match func.visibility {
-            Visibility::Public | Visibility::External | Visibility::Unknown => {}
-            _ => continue,
-        }
-
-        let Some(body) = func.body else { continue };
-        let stmts = top_level_stmts(ast, body);
-
-        for (i, &sid) in stmts.iter().enumerate() {
-            // Find external calls that are specifically transfer / send.
-            let ext_calls = find_external_calls_in_stmt(ast, sid);
-            let transfer_calls: Vec<_> =
-                ext_calls.iter().filter(|c| c.is_transfer_or_send).collect();
-
-            if transfer_calls.is_empty() {
-                continue;
-            }
-
-            // Look ahead for state updates.
-            for &later_sid in &stmts[i + 1..] {
-                let updates = find_state_updates_in_stmt(ast, later_sid);
-                if !updates.is_empty() {
-                    let func_name = func.name.as_deref().unwrap_or("<anonymous>");
-                    findings.push(Finding {
-                        kind: FindingKind::ReentrancyTransfer,
-                        severity: Severity::Medium,
-                        message: format!(
-                            "RE-02: reentrancy in `{func_name}`: state variable updated \
-                            after `.transfer()` / `.send()` call; update state \
-                            **before** transferring to follow checks-effects-interactions"
-                        ),
-                        span: transfer_calls[0].span,
-                        function: Some(func.id),
-                    });
-                    break; // one finding per call site
-                }
-            }
-        }
-    }
-
-    findings
-}
-
 // ── RE-03  Reentrancy Vulnerability with Same Effect ─────────────────────────
 //
 // A special case where the **same** state variable is both read before
@@ -831,7 +787,11 @@ fn detect_reentrancy_same_effect(ast: &NormalizedAst) -> Vec<Finding> {
 
         for (i, &sid) in stmts.iter().enumerate() {
             let ext_calls = find_external_calls_in_stmt(ast, sid);
-            if ext_calls.is_empty() {
+            let callback_capable_calls: Vec<_> = ext_calls
+                .iter()
+                .filter(|call| !call.is_transfer_or_send)
+                .collect();
+            if callback_capable_calls.is_empty() {
                 continue;
             }
 
@@ -871,7 +831,7 @@ fn detect_reentrancy_same_effect(ast: &NormalizedAst) -> Vec<Finding> {
                         read before external call and written after it; a re-entrant \
                         callback will see stale values and repeat the same effect"
                     ),
-                    span: ext_calls[0].span,
+                    span: callback_capable_calls[0].span,
                     function: Some(func.id),
                 });
             }
@@ -912,7 +872,10 @@ fn detect_reentrancy_eth_transfer(ast: &NormalizedAst) -> Vec<Finding> {
         for (i, &sid) in stmts.iter().enumerate() {
             let ext_calls = find_external_calls_in_stmt(ast, sid);
             // Filter to only calls that send ETH.
-            let eth_calls: Vec<_> = ext_calls.iter().filter(|c| c.sends_eth).collect();
+            let eth_calls: Vec<_> = ext_calls
+                .iter()
+                .filter(|c| c.sends_eth && !c.is_transfer_or_send)
+                .collect();
 
             if eth_calls.is_empty() {
                 continue;
@@ -1125,5 +1088,78 @@ mod tests {
                     .message
                     .contains("state variable is read before an ETH-sending external call")
         }));
+    }
+
+    #[test]
+    fn stipend_only_payouts_do_not_emit_reentrancy_findings() {
+        let ast = load_via_parser_sources(vec![SourceFile {
+            id: 0,
+            path: "wallet.sol".to_string(),
+            source: r#"
+                pragma solidity ^0.4.24;
+                contract Wallet {
+                    mapping(address => uint256) balances;
+                    function withdraw(uint256 amount) public {
+                        require(balances[msg.sender] >= amount);
+                        msg.sender.transfer(amount);
+                        balances[msg.sender] -= amount;
+                    }
+                }
+            "#
+            .to_string(),
+        }])
+        .expect("parser should succeed");
+
+        let findings = detect_all(&ast);
+        assert!(
+            !findings.iter().any(|finding| {
+                matches!(
+                    finding.kind,
+                    FindingKind::ReentrancyTransfer
+                        | FindingKind::ReentrancySameEffect
+                        | FindingKind::ReentrancyEthTransfer
+                )
+            }),
+            "stipend-only payouts should not be treated as reentrancy by default"
+        );
+    }
+
+    #[test]
+    fn safemath_member_calls_do_not_emit_no_eth_reentrancy() {
+        let ast = load_via_parser_sources(vec![SourceFile {
+            id: 0,
+            path: "erc20.sol".to_string(),
+            source: r#"
+                pragma solidity ^0.4.24;
+                library SafeMath {
+                    function sub(uint256 a, uint256 b) internal pure returns (uint256) {
+                        require(b <= a);
+                        return a - b;
+                    }
+                    function add(uint256 a, uint256 b) internal pure returns (uint256) {
+                        uint256 c = a + b;
+                        require(c >= a);
+                        return c;
+                    }
+                }
+                contract ERC20 {
+                    using SafeMath for *;
+                    mapping(address => uint256) private balances;
+                    function transfer(address to, uint256 value) public returns (bool) {
+                        balances[msg.sender] = balances[msg.sender].sub(value);
+                        balances[to] = balances[to].add(value);
+                        return true;
+                    }
+                }
+            "#
+            .to_string(),
+        }])
+        .expect("parser should succeed");
+
+        let findings = detect_reentrancy_no_eth_transfer(&ast);
+        assert!(
+            findings.is_empty(),
+            "SafeMath helper calls should not be treated as cross-contract callbacks"
+        );
     }
 }

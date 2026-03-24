@@ -356,10 +356,7 @@ fn inject_dependency_chain(
     ind.transactions[1] = reader_tx;
 }
 
-fn pick_writer_reader_pair(
-    deps: &DependencyMap,
-    rng: &mut impl Rng,
-) -> Option<(u32, u32)> {
+fn pick_writer_reader_pair(deps: &DependencyMap, rng: &mut impl Rng) -> Option<(u32, u32)> {
     let mut pairs = Vec::new();
     for (writer_id, writer_fd) in &deps.functions {
         if writer_fd.writes.is_empty() {
@@ -369,7 +366,12 @@ fn pick_writer_reader_pair(
             if writer_id == reader_id || reader_fd.reads.is_empty() {
                 continue;
             }
-            if reader_fd.reads.intersection(&writer_fd.writes).next().is_some() {
+            if reader_fd
+                .reads
+                .intersection(&writer_fd.writes)
+                .next()
+                .is_some()
+            {
                 pairs.push((*writer_id, *reader_id));
             }
         }
@@ -429,8 +431,8 @@ fn random_payable_value(rng: &mut impl Rng) -> u128 {
 mod tests {
     use super::*;
     use crate::fuzzing::types::{DependencyMap, Environment, FunctionAbi, FunctionDeps, ParamInfo};
-    use std::collections::{HashMap, HashSet};
     use crate::norm::{FunctionKind, Mutability, Visibility};
+    use std::collections::{HashMap, HashSet};
 
     fn sample_individual() -> Individual {
         Individual {
@@ -609,6 +611,9 @@ mod tests {
                 break;
             }
         }
-        assert!(injected, "expected guided mutator to inject writer->reader chain");
+        assert!(
+            injected,
+            "expected guided mutator to inject writer->reader chain"
+        );
     }
 }

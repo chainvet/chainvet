@@ -100,15 +100,14 @@ pub fn default_category_for_kind(kind: &str) -> &'static str {
         | "uninit-permission-check"
         | "unprotected-ether-withdrawal"
         | "public-mint-burn" => "Access Control",
-        "integer-overflow" | "integer-underflow" | "division-before-multiplication" => {
-            "Arithmetic"
-        }
+        "integer-overflow" | "integer-underflow" | "division-before-multiplication" => "Arithmetic",
         "weak-prng" | "timestamp-dependency" | "transaction-order-dependency" => {
             "Block Manipulation"
         }
-        "dos-block-gas-limit" | "dos-with-failed-call" | "hardcoded-gas-transfer" | "locked-ether" => {
-            "Denial of Service"
-        }
+        "dos-block-gas-limit"
+        | "dos-with-failed-call"
+        | "hardcoded-gas-transfer"
+        | "locked-ether" => "Denial of Service",
         "memory-manipulation" | "shadowing" => "Storage and Memory",
         "reentrancy" => "Reentrancy",
         "cryptographic-issue" | "signature-malleability" => "Cryptographic",
@@ -158,7 +157,10 @@ pub fn surface_findings(
 
 fn deduplicate(candidates: Vec<FindingCandidate>) -> Vec<FindingCandidate> {
     let mut best_by_key = HashMap::<DedupKey, FindingCandidate>::new();
-    for candidate in candidates.into_iter().filter(|candidate| !candidate.kind.is_empty()) {
+    for candidate in candidates
+        .into_iter()
+        .filter(|candidate| !candidate.kind.is_empty())
+    {
         let key = dedup_key(&candidate);
         match best_by_key.get_mut(&key) {
             None => {

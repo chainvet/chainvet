@@ -570,9 +570,16 @@ mod tests {
             .flat_map(|ind| ind.transactions.iter().map(|tx| tx.function_id))
             .collect();
 
-        assert_eq!(covered.len(), 4, "every callable function should be bootstrapped");
+        assert_eq!(
+            covered.len(),
+            4,
+            "every callable function should be bootstrapped"
+        );
         for expected in 0..4 {
-            assert!(covered.contains(&expected), "missing bootstrap seed for f{expected}");
+            assert!(
+                covered.contains(&expected),
+                "missing bootstrap seed for f{expected}"
+            );
         }
         assert!(
             pop.len() >= 4,
@@ -627,8 +634,8 @@ mod tests {
             ..Default::default()
         };
         let mut rng = <rand::rngs::StdRng as rand::SeedableRng>::seed_from_u64(9);
-        let seed = generate_dependency_seed_with_dict(&abi, &deps, &config, &mut rng, None)
-            .expect("seed");
+        let seed =
+            generate_dependency_seed_with_dict(&abi, &deps, &config, &mut rng, None).expect("seed");
         assert!(seed.transactions.len() >= 2);
         assert_eq!(seed.transactions[0].function_id, 0);
         assert_eq!(seed.transactions[1].function_id, 1);

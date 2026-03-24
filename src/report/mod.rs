@@ -16,7 +16,11 @@ pub enum OutputFormat {
     Json,
 }
 
-pub fn print_report(output: &FrontendOutput, requested_path: &str, format: OutputFormat) -> Result<()> {
+pub fn print_report(
+    output: &FrontendOutput,
+    requested_path: &str,
+    format: OutputFormat,
+) -> Result<()> {
     let report = build_report(output, requested_path);
     match format {
         OutputFormat::Text => print_text(&report),
@@ -63,6 +67,8 @@ struct ReportFinding {
     category: String,
     kind: String,
     severity: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    confidence: Option<String>,
     message: String,
     file: String,
     span: SpanRange,
@@ -74,6 +80,7 @@ struct SyntheticFinding {
     category: String,
     kind: String,
     severity: String,
+    confidence: Option<String>,
     message: String,
     file: String,
     span: SpanRange,
@@ -222,7 +229,8 @@ fn build_report(output: &FrontendOutput, requested_path: &str) -> Report {
         summaries: summary_report,
         call_resolution: resolution,
         finding_count_raw: all_report_findings_raw.len(),
-        suppressed_findings: surfaced.suppressed_runtime_findings + surfaced.suppressed_meta_findings,
+        suppressed_findings: surfaced.suppressed_runtime_findings
+            + surfaced.suppressed_meta_findings,
         finding_counts,
         findings: all_report_findings,
         findings_raw: all_report_findings_raw,
@@ -313,7 +321,7 @@ fn report_finding_candidate(
         canonical_kind: surfaced::canonicalize_kind(&finding.kind),
         category: finding.category.clone(),
         severity: finding.severity.clone(),
-        confidence: None,
+        confidence: finding.confidence.clone(),
         message: finding.message.clone(),
         file: Some(finding.file.clone()),
         start: Some(finding.span.start),
@@ -330,8 +338,12 @@ fn report_finding_from_surfaced(finding: &surfaced::SurfacedFinding) -> ReportFi
         category: finding.category.clone(),
         kind: finding.kind.clone(),
         severity: finding.severity.clone(),
+        confidence: finding.confidence.clone(),
         message: finding.message.clone(),
-        file: finding.file.clone().unwrap_or_else(|| "<unknown>".to_string()),
+        file: finding
+            .file
+            .clone()
+            .unwrap_or_else(|| "<unknown>".to_string()),
         span: SpanRange {
             start: finding.start.unwrap_or(0),
             end: finding.end.unwrap_or(0),
@@ -355,6 +367,7 @@ fn build_report_findings(
             category: finding.kind.category().as_str().to_string(),
             kind: normalized_kind(finding).to_string(),
             severity: severity_to_str(finding.severity).to_string(),
+            confidence: Some(static_confidence_for_severity(finding.severity).to_string()),
             message: finding.message.clone(),
             file,
             span: SpanRange {
@@ -380,10 +393,7 @@ fn build_static_meta_findings(
     let mut seen = BTreeSet::new();
 
     for finding in meta::analyze(output) {
-        if !matches!(
-            finding.finding_type.as_str(),
-            "honeypot" | "incorrect-interface"
-        ) {
+        if !matches!(finding.finding_type.as_str(), "incorrect-interface") {
             continue;
         }
         let Some(location) = finding.location.as_ref() else {
@@ -409,6 +419,7 @@ fn build_static_meta_findings(
             category: meta_category(&finding.finding_type).to_string(),
             kind: finding.finding_type.clone(),
             severity: finding.severity.clone(),
+            confidence: artifact_confidence_or_severity(&finding.metadata, &finding.severity),
             message: finding.message,
             file: file.to_string(),
             span: SpanRange {
@@ -437,6 +448,7 @@ fn build_static_meta_findings(
             category: finding.category,
             kind: finding.kind,
             severity: finding.severity,
+            confidence: finding.confidence,
             message: finding.message,
             file: finding.file,
             span: finding.span,
@@ -462,6 +474,7 @@ fn build_static_meta_findings(
             category: finding.category,
             kind: finding.kind,
             severity: finding.severity,
+            confidence: finding.confidence,
             message: finding.message,
             file: finding.file,
             span: finding.span,
@@ -482,7 +495,7 @@ fn normalized_kind(finding: &Finding) -> &'static str {
 fn meta_category(kind: &str) -> &'static str {
     match kind {
         "access-control" => "Access Control",
-        "incorrect-interface" | "honeypot" => "Miscellaneous",
+        "incorrect-interface" => "Miscellaneous",
         _ => "Miscellaneous",
     }
 }
@@ -498,6 +511,33 @@ fn resolve_file(output: &FrontendOutput, file_id: u32) -> String {
 
 fn severity_to_str(severity: Severity) -> &'static str {
     severity.as_str()
+}
+
+fn static_confidence_for_severity(severity: Severity) -> &'static str {
+    match severity {
+        Severity::High => "high",
+        Severity::Medium => "medium",
+        Severity::Low => "low",
+    }
+}
+
+fn confidence_from_severity_str(severity: &str) -> Option<String> {
+    match severity.trim().to_ascii_lowercase().as_str() {
+        "high" => Some("high".to_string()),
+        "medium" => Some("medium".to_string()),
+        "low" => Some("low".to_string()),
+        _ => None,
+    }
+}
+
+fn artifact_confidence_or_severity(
+    metadata: &std::collections::BTreeMap<String, String>,
+    severity: &str,
+) -> Option<String> {
+    metadata
+        .get("confidence")
+        .cloned()
+        .or_else(|| confidence_from_severity_str(severity))
 }
 
 #[derive(Debug, Clone)]
@@ -546,6 +586,7 @@ fn detect_static_access_control_backstops(output: &FrontendOutput) -> Vec<Synthe
             category: "Access Control".to_string(),
             kind: "access-control".to_string(),
             severity: "medium".to_string(),
+            confidence: Some("medium".to_string()),
             message: format!(
                 "public authority-setting function '{}' can reassign ownership-like state without a sender authorization check",
                 function_name
@@ -628,6 +669,7 @@ fn detect_static_reentrancy_backstops(
             category: "Reentrancy".to_string(),
             kind: "reentrancy".to_string(),
             severity: "high".to_string(),
+            confidence: Some("high".to_string()),
             message: format!(
                 "reentrancy in '{}' : ETH-sending external call is followed by destructive state updates inside the same payout flow",
                 function_name
@@ -734,11 +776,7 @@ fn stmt_contains_msg_sender(ast: &NormalizedAst, stmt_id: u32) -> bool {
     found
 }
 
-fn stmt_assigns_authority_from_param(
-    ast: &NormalizedAst,
-    stmt_id: u32,
-    params: &[String],
-) -> bool {
+fn stmt_assigns_authority_from_param(ast: &NormalizedAst, stmt_id: u32, params: &[String]) -> bool {
     let mut found = false;
     walk_stmt_exprs(ast, stmt_id, &mut |expr_id| {
         if found {

@@ -805,6 +805,15 @@ fn detect_locked_ether(ast: &NormalizedAst) -> Vec<Finding> {
                 }
             }
 
+            if function_source_lower(ast, func)
+                .as_deref()
+                .map(source_contains_external_payout)
+                .unwrap_or(false)
+            {
+                can_send_ether = true;
+                break;
+            }
+
             // Check function body for outgoing Ether calls.
             if let Some(body) = func.body {
                 for_each_expr_in_stmt(ast, body, &mut |_eid, expr| {
@@ -841,6 +850,67 @@ fn detect_locked_ether(ast: &NormalizedAst) -> Vec<Finding> {
     }
 
     findings
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::frontend::parser::load_via_parser_sources;
+    use crate::norm::SourceFile;
+
+    fn parse(source: &str) -> NormalizedAst {
+        load_via_parser_sources(vec![SourceFile {
+            id: 0,
+            path: "test.sol".to_string(),
+            source: source.to_string(),
+        }])
+        .expect("parser should succeed")
+    }
+
+    #[test]
+    fn call_value_withdraw_is_not_locked_ether() {
+        let ast = parse(
+            r#"
+            pragma solidity ^0.4.24;
+            contract Bank {
+                mapping(address => uint256) public balances;
+                function deposit() public payable {
+                    balances[msg.sender] += msg.value;
+                }
+                function collect(uint256 amount) public payable {
+                    if (balances[msg.sender] >= amount) {
+                        msg.sender.call.value(amount)();
+                    }
+                }
+            }
+            "#,
+        );
+
+        let findings = detect_locked_ether(&ast);
+        assert!(
+            findings.is_empty(),
+            "old-style .call.value(...)() withdrawals should count as Ether exit paths"
+        );
+    }
+
+    #[test]
+    fn payable_contract_without_exit_is_locked_ether() {
+        let ast = parse(
+            r#"
+            pragma solidity ^0.4.24;
+            contract PiggyBank {
+                function deposit() public payable {}
+            }
+            "#,
+        );
+
+        let findings = detect_locked_ether(&ast);
+        assert!(
+            findings
+                .iter()
+                .any(|finding| finding.kind == FindingKind::LockedEther)
+        );
+    }
 }
 
 // ── DS-03  DoS with Block Gas Limit ─────────────────────────────────────────
@@ -1064,7 +1134,8 @@ fn detect_dos_with_failed_call(ast: &NormalizedAst) -> Vec<Finding> {
 
         if findings.len() == baseline {
             if let Some(source_lower) = source_lower.as_deref() {
-                if source_contains_loop(source_lower) && source_contains_external_payout(source_lower)
+                if source_contains_loop(source_lower)
+                    && source_contains_external_payout(source_lower)
                 {
                     findings.push(Finding {
                         kind: FindingKind::DosWithFailedCall,

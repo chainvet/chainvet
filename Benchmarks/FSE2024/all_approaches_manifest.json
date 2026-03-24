@@ -1,0 +1,20 @@
+{
+  "name": "fse2024-all-approaches-default",
+  "description": "Default target set for comparing all four analyzer approaches together. Keeps runtime manageable by using only Not-so-smart and smartbugs-curated.",
+  "source_suites": [
+    {
+      "suite": "not-so-smart",
+      "root": "Benchmarks/Not-so-smart/not-so-smart-contracts-master",
+      "kind": "ground-truth",
+      "enabled": true
+    },
+    {
+      "suite": "smartbugs-curated",
+      "root": "Benchmarks/smartbugs-curated/dataset",
+      "kind": "ground-truth",
+      "enabled": true
+    }
+  ],
+  "metadata_only": [],
+  "exclusions_csv": "Benchmarks/FSE2024/exclusions.csv"
+}

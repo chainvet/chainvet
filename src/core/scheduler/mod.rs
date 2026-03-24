@@ -190,9 +190,7 @@ where
 
             let unmet_priority_goal = has_unmet_sink_goal(&static_hints, &covered_blocks_global);
 
-            if (stalled || unmet_priority_goal)
-                && se_assists < budget.max_se_assists as usize
-            {
+            if (stalled || unmet_priority_goal) && se_assists < budget.max_se_assists as usize {
                 if let Some(mut goal) = select_frontier_goal_for_assist(
                     &mut frontier_queue,
                     epoch,
@@ -260,8 +258,10 @@ where
                         let mut retry_goal = goal.clone();
                         retry_goal.priority = (retry_goal.priority * 0.9).max(0.1);
                         frontier_queue.push(retry_goal);
-                        frontier_backoff_until_epoch
-                            .insert(goal_key, epoch.saturating_add(assist_backoff_epochs(attempt)));
+                        frontier_backoff_until_epoch.insert(
+                            goal_key,
+                            epoch.saturating_add(assist_backoff_epochs(attempt)),
+                        );
                     } else {
                         frontier_backoff_until_epoch.remove(&goal_key);
                     }
@@ -409,10 +409,7 @@ fn filter_assist_seeds(
 
 fn assist_goal_distance(goal: &FrontierGoal, trace: &fuzzing::types::ExecutionTrace) -> u32 {
     if let (Some(from), Some(to)) = (goal.edge_from, goal.edge_to) {
-        if trace
-            .edge_coverage
-            .contains(&(goal.function_id, from, to))
-        {
+        if trace.edge_coverage.contains(&(goal.function_id, from, to)) {
             return 0;
         }
         if trace.coverage.contains(&(goal.function_id, to)) {
@@ -676,7 +673,12 @@ fn bootstrap_seeds(output: &crate::frontend::FrontendOutput, hints: &StaticHints
         .to_string();
 
     let owner_targets = owner_role
-        .map(|role| role.target_functions.iter().copied().collect::<HashSet<_>>())
+        .map(|role| {
+            role.target_functions
+                .iter()
+                .copied()
+                .collect::<HashSet<_>>()
+        })
         .unwrap_or_default();
 
     for function in &ast.functions {
@@ -705,7 +707,9 @@ fn bootstrap_seeds(output: &crate::frontend::FrontendOutput, hints: &StaticHints
                     hints
                         .arg_domains
                         .iter()
-                        .find(|domain| domain.function_id == function.id && domain.param_index == idx)
+                        .find(|domain| {
+                            domain.function_id == function.id && domain.param_index == idx
+                        })
                         .and_then(|domain| domain.candidate_values.first().copied())
                         .unwrap_or(0)
                         .to_string()
@@ -834,10 +838,7 @@ mod tests {
             Ok(self.hints.clone())
         }
 
-        fn findings(
-            &self,
-            _ctx: &crate::core::engines::EngineContext<'_>,
-        ) -> Result<Vec<Finding>> {
+        fn findings(&self, _ctx: &crate::core::engines::EngineContext<'_>) -> Result<Vec<Finding>> {
             Ok(self.findings.clone())
         }
     }
@@ -1102,9 +1103,24 @@ mod tests {
         let window_size = 3usize;
         let epsilon = 0.01f64;
 
-        assert!(!update_stall_window(&mut window, 0.02, window_size, epsilon));
-        assert!(!update_stall_window(&mut window, 0.005, window_size, epsilon));
-        assert!(update_stall_window(&mut window, 0.001, window_size, epsilon));
+        assert!(!update_stall_window(
+            &mut window,
+            0.02,
+            window_size,
+            epsilon
+        ));
+        assert!(!update_stall_window(
+            &mut window,
+            0.005,
+            window_size,
+            epsilon
+        ));
+        assert!(update_stall_window(
+            &mut window,
+            0.001,
+            window_size,
+            epsilon
+        ));
         assert!(!update_stall_window(&mut window, 0.2, window_size, epsilon));
     }
 
@@ -1121,8 +1137,9 @@ mod tests {
 
         // g1 is in backoff until epoch 4, so selector should pick g2 at epoch 3.
         backoff.insert(frontier_goal_key(&g1), 4);
-        let selected = select_frontier_goal_for_assist(&mut queue, 3, &mut attempts, &mut backoff, 3)
-            .expect("expected eligible goal");
+        let selected =
+            select_frontier_goal_for_assist(&mut queue, 3, &mut attempts, &mut backoff, 3)
+                .expect("expected eligible goal");
         assert_eq!(selected.id, "g2");
 
         // Exhaust g1 attempt budget; selector should drop it and return none.

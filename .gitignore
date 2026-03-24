@@ -1,3 +1,23 @@
 /target
 **/*.rs.bk
 Cargo.lock
+
+# Generated outputs and local caches
+.cache/
+results/
+runs/
+scripts/__pycache__/
+
+# Local benchmark mirrors not versioned with the repo snapshot
+Benchmarks/DAppSCAN/
+Benchmarks/Damn-Vulnerable-DeFi/
+Benchmarks/DeFiVulnLabs/
+Benchmarks/Ethernaut/
+Benchmarks/SCONE-bench/
+Benchmarks/SCRUBD/
+Benchmarks/Smart-Contract-Benchmark-Suites/
+Benchmarks/SolidiFI-benchmark/
+Benchmarks/USCHunt/
+Benchmarks/Web3Bugs/
+Benchmarks/_archives/
+Benchmarks/sb-heists/

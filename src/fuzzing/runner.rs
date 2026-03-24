@@ -32,7 +32,8 @@ pub fn run(output: &FrontendOutput, config: &FuzzConfig) -> FuzzReport {
     let deps = build_dependency_map(&ir_module, ast);
     let static_call_graph = analysis::build_call_graph(ast);
     let static_taint = analysis::taint::analyze(ast, &cfgs);
-    let static_findings = analysis::detectors::run_detectors(ast, &static_call_graph, &static_taint);
+    let static_findings =
+        analysis::detectors::run_detectors(ast, &static_call_graph, &static_taint);
     let meta_findings =
         meta::analyze_for_engine(output, meta::ConsumerEngine::Fuzzing, &static_findings);
     let (tod_allowed, sig_mall_allowed) = build_static_fp_guards(&static_findings);
@@ -143,7 +144,6 @@ fn promoted_runtime_meta_findings(
         .into_iter()
         .filter_map(|finding| {
             let kind = match finding.finding_type.as_str() {
-                "honeypot" => FuzzFindingKind::Honeypot,
                 "shadowing" => FuzzFindingKind::Shadowing,
                 _ => return None,
             };
@@ -590,16 +590,16 @@ fn apply_static_fp_guards(
     findings
         .into_iter()
         .filter(|finding| match finding.kind {
-            FuzzFindingKind::TransactionOrderDependency => extract_function_id_from_message(
-                finding.message.as_str(),
-            )
-            .map(|id| tod_allowed.contains(&id))
-            .unwrap_or(false),
-            FuzzFindingKind::SignatureMalleability => extract_function_id_from_message(
-                finding.message.as_str(),
-            )
-            .map(|id| sig_mall_allowed.contains(&id))
-            .unwrap_or(false),
+            FuzzFindingKind::TransactionOrderDependency => {
+                extract_function_id_from_message(finding.message.as_str())
+                    .map(|id| tod_allowed.contains(&id))
+                    .unwrap_or(false)
+            }
+            FuzzFindingKind::SignatureMalleability => {
+                extract_function_id_from_message(finding.message.as_str())
+                    .map(|id| sig_mall_allowed.contains(&id))
+                    .unwrap_or(false)
+            }
             _ => true,
         })
         .collect()
@@ -680,7 +680,7 @@ fn function_uses_only_stipend_external_calls(ast: &NormalizedAst, function_id: u
 }
 
 fn function_uses_timestamp_seeded_prng(ast: &NormalizedAst, function_id: u32) -> bool {
-    let Some(function) = ast.functions.get(function_id as usize) else {
+    let Some(function) = ast_function_by_id(ast, function_id) else {
         return false;
     };
     let Some(contract_id) = function.contract else {
@@ -713,7 +713,7 @@ fn function_uses_timestamp_seeded_prng(ast: &NormalizedAst, function_id: u32) ->
 }
 
 fn function_source_lower(ast: &NormalizedAst, function_id: u32) -> Option<String> {
-    let function = ast.functions.get(function_id as usize)?;
+    let function = ast_function_by_id(ast, function_id)?;
     let file = ast.files.get(function.span.file as usize)?;
     Some(
         file.source
@@ -722,6 +722,12 @@ fn function_source_lower(ast: &NormalizedAst, function_id: u32) -> Option<String
             .unwrap_or(file.source.as_str())
             .to_ascii_lowercase(),
     )
+}
+
+fn ast_function_by_id(ast: &NormalizedAst, function_id: u32) -> Option<&crate::norm::Function> {
+    ast.functions
+        .iter()
+        .find(|function| function.id == function_id)
 }
 
 fn state_var_initializer_lower(ast: &NormalizedAst, span: Span) -> Option<String> {
@@ -763,8 +769,14 @@ fn build_locked_ether_candidates(
 
     let mut candidates = std::collections::HashMap::new();
     for contract in &ast.contracts {
-        let payable = has_payable_function.get(&contract.id).copied().unwrap_or(false);
-        let has_send = has_ether_send_path.get(&contract.id).copied().unwrap_or(false);
+        let payable = has_payable_function
+            .get(&contract.id)
+            .copied()
+            .unwrap_or(false);
+        let has_send = has_ether_send_path
+            .get(&contract.id)
+            .copied()
+            .unwrap_or(false);
         candidates.insert(contract.name.clone(), payable && !has_send);
     }
     candidates
@@ -780,7 +792,10 @@ fn keep_locked_ether_finding(finding: &FuzzFinding, locked_ether_candidate: bool
 fn ir_function_has_ether_send(function: &ir::IrFunction) -> bool {
     function.blocks.iter().any(|block| {
         block.instrs.iter().any(|instr| {
-            let ir::IrInstr::Call { callee, options, .. } = instr else {
+            let ir::IrInstr::Call {
+                callee, options, ..
+            } = instr
+            else {
                 return false;
             };
             let callee_name = match callee {
@@ -933,7 +948,11 @@ fn fuzz_contract(
 pub fn print_report(report: &FuzzReport) {
     let surfaced = surfaced::surface_findings(
         report.findings.iter().map(fuzz_runtime_candidate).collect(),
-        report.meta_findings.iter().map(fuzz_meta_candidate).collect(),
+        report
+            .meta_findings
+            .iter()
+            .map(fuzz_meta_candidate)
+            .collect(),
     );
     println!("=== Fuzzing Report ===");
     println!(
@@ -966,7 +985,10 @@ pub fn print_report(report: &FuzzReport) {
         let mut by_category: std::collections::BTreeMap<&str, Vec<&surfaced::SurfacedFinding>> =
             std::collections::BTreeMap::new();
         for finding in &surfaced.runtime_findings {
-            by_category.entry(finding.category.as_str()).or_default().push(finding);
+            by_category
+                .entry(finding.category.as_str())
+                .or_default()
+                .push(finding);
         }
 
         for (category, findings) in &by_category {
@@ -1075,7 +1097,11 @@ pub fn print_report_json(report: &FuzzReport) -> Result<()> {
 fn json_report(report: &FuzzReport) -> JsonFuzzReport {
     let surfaced = surfaced::surface_findings(
         report.findings.iter().map(fuzz_runtime_candidate).collect(),
-        report.meta_findings.iter().map(fuzz_meta_candidate).collect(),
+        report
+            .meta_findings
+            .iter()
+            .map(fuzz_meta_candidate)
+            .collect(),
     );
     JsonFuzzReport {
         iterations: report.iterations,
@@ -1107,7 +1133,11 @@ fn json_report(report: &FuzzReport) -> JsonFuzzReport {
                         function_id: tx.function_id,
                         sender: tx.sender,
                         value: tx.value,
-                        args: tx.args.iter().map(|arg| arg.as_uint().to_string()).collect(),
+                        args: tx
+                            .args
+                            .iter()
+                            .map(|arg| arg.as_uint().to_string())
+                            .collect(),
                     })
                     .collect(),
             })
@@ -1146,7 +1176,9 @@ fn fuzz_meta_candidate(finding: &crate::core::artifacts::Finding) -> surfaced::F
             .metadata
             .get("category")
             .cloned()
-            .unwrap_or_else(|| surfaced::default_category_for_kind(&finding.finding_type).to_string()),
+            .unwrap_or_else(|| {
+                surfaced::default_category_for_kind(&finding.finding_type).to_string()
+            }),
         severity: finding.severity.clone(),
         confidence: None,
         message: finding.message.clone(),
@@ -1158,10 +1190,7 @@ fn fuzz_meta_candidate(finding: &crate::core::artifacts::Finding) -> surfaced::F
             .location
             .as_ref()
             .and_then(|location| location.start),
-        end: finding
-            .location
-            .as_ref()
-            .and_then(|location| location.end),
+        end: finding.location.as_ref().and_then(|location| location.end),
         function_id: finding
             .location
             .as_ref()
@@ -1510,8 +1539,16 @@ mod tests {
 
         let injected = inject_static_runtime_backstops(&[], &static_findings, &ast);
         assert!(injected.iter().any(|f| f.kind == FuzzFindingKind::WeakPRNG));
-        assert!(injected.iter().any(|f| f.kind == FuzzFindingKind::LockedEther));
-        assert!(injected.iter().any(|f| f.kind == FuzzFindingKind::UncheckedCall));
+        assert!(
+            injected
+                .iter()
+                .any(|f| f.kind == FuzzFindingKind::LockedEther)
+        );
+        assert!(
+            injected
+                .iter()
+                .any(|f| f.kind == FuzzFindingKind::UncheckedCall)
+        );
     }
 
     #[test]
@@ -1530,7 +1567,11 @@ mod tests {
         }];
 
         let injected = inject_static_runtime_backstops(&[], &static_findings, &ast);
-        assert!(injected.iter().any(|f| f.kind == FuzzFindingKind::LockedEther));
+        assert!(
+            injected
+                .iter()
+                .any(|f| f.kind == FuzzFindingKind::LockedEther)
+        );
     }
 
     #[test]

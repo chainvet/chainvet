@@ -84,8 +84,7 @@ fn check_reentrancy(
                 ctx.observed_reads.insert(write_key(var_name, slot_key));
             }
             TraceEventKind::ExternalCall {
-                reentrant_capable,
-                ..
+                reentrant_capable, ..
             } => {
                 if *reentrant_capable {
                     ctx.external_call_seen = true;
@@ -112,14 +111,18 @@ fn check_reentrancy(
                     ctx.stale_read = true;
                 }
 
-                if ctx.callback_seen && (ctx.stale_read || ctx.post_call_write) && !ctx.emitted_high {
+                if ctx.callback_seen && (ctx.stale_read || ctx.post_call_write) && !ctx.emitted_high
+                {
                     let evidence = if ctx.stale_read {
                         "stale-read+post-call-mutation"
                     } else {
                         "post-call-mutation"
                     };
-                    let hash =
-                        hash_finding("reentrancy", event.function_id, format!("{key}:{evidence}").as_str());
+                    let hash = hash_finding(
+                        "reentrancy",
+                        event.function_id,
+                        format!("{key}:{evidence}").as_str(),
+                    );
                     findings.push(FuzzFinding {
                         kind: FuzzFindingKind::Reentrancy,
                         severity: FuzzSeverity::High,
@@ -168,7 +171,8 @@ fn check_reentrancy(
                 let mut writes = ctx.pre_call_writes.into_iter().collect::<Vec<_>>();
                 writes.sort_unstable();
                 let detail = writes.join(",");
-                let hash = hash_finding("reentrancy-pre-call-effects", function_id, detail.as_str());
+                let hash =
+                    hash_finding("reentrancy-pre-call-effects", function_id, detail.as_str());
                 findings.push(FuzzFinding {
                     kind: FuzzFindingKind::ReentrancyHeuristic,
                     severity: FuzzSeverity::Low,
@@ -420,15 +424,15 @@ fn function_has_authority_guard_hint(function_id: u32, ast: Option<&NormalizedAs
     let Some(ast) = ast else {
         return false;
     };
-    let Some(function) = ast.functions.get(function_id as usize) else {
+    let Some(function) = ast_function_by_id(ast, function_id) else {
         return false;
     };
     crate::frontend::is_legacy_named_constructor(function, ast)
-        || crate::frontend::has_authority_modifier_hint(function, ast)
+        || crate::frontend::has_sender_authority_check_hint(function, ast)
 }
 
 fn function_is_externally_callable(function_id: u32, ast: Option<&NormalizedAst>) -> bool {
-    ast.and_then(|ast| ast.functions.get(function_id as usize))
+    ast.and_then(|ast| ast_function_by_id(ast, function_id))
         .map(|function| {
             matches!(
                 function.visibility,
@@ -502,7 +506,10 @@ fn check_arbitrary_write(
         {
             continue;
         }
-        let sender_count = senders_by_fn.get(&function_id).map(|s| s.len()).unwrap_or(0);
+        let sender_count = senders_by_fn
+            .get(&function_id)
+            .map(|s| s.len())
+            .unwrap_or(0);
         if sender_count < 2 {
             continue;
         }
@@ -625,7 +632,8 @@ fn function_is_exploit_cleanup_selfdestruct_helper(
     let Some(function_source) = source_span_lower(ast, function.span) else {
         return false;
     };
-    if !(function_source.contains("suicide(owner") || function_source.contains("selfdestruct(owner"))
+    if !(function_source.contains("suicide(owner")
+        || function_source.contains("selfdestruct(owner"))
     {
         return false;
     }
@@ -671,26 +679,18 @@ fn check_selfdestruct(
 
     for func_id in &functions_with_selfdestruct {
         if seen_functions.insert(*func_id)
+            && !functions_with_sender_check.contains(func_id)
+            && !function_has_authority_guard_hint(*func_id, ast)
             && !function_is_exploit_cleanup_selfdestruct_helper(ast, *func_id)
         {
-            let severity = if functions_with_sender_check.contains(func_id) {
-                FuzzSeverity::Low
-            } else {
-                FuzzSeverity::High
-            };
-            let msg = if functions_with_sender_check.contains(func_id) {
-                format!("selfdestruct in function {} (has sender check)", func_id)
-            } else {
-                format!(
-                    "Unprotected selfdestruct in function {} — anyone can destroy the contract",
-                    func_id
-                )
-            };
             let hash = hash_finding("selfdestruct", *func_id, "call");
             findings.push(FuzzFinding {
                 kind: FuzzFindingKind::SelfDestruct,
-                severity,
-                message: msg,
+                severity: FuzzSeverity::High,
+                message: format!(
+                    "Unprotected selfdestruct in function {} — anyone can destroy the contract",
+                    func_id
+                ),
                 tx_sequence: tx_sequence.to_vec(),
                 trace_hash: hash,
             });
@@ -1072,7 +1072,8 @@ fn check_transaction_order_dependency(
             .get(&function_id)
             .map(|read_slots| {
                 write_slots_by_fn.iter().any(|(writer_fn, write_slots)| {
-                    writer_fn != &function_id && write_slots.iter().any(|slot| read_slots.contains(slot))
+                    writer_fn != &function_id
+                        && write_slots.iter().any(|slot| read_slots.contains(slot))
                 })
             })
             .unwrap_or(false);
@@ -1331,8 +1332,8 @@ fn check_cryptographic(trace: &ExecutionTrace, tx_sequence: &[Transaction]) -> V
             });
         }
         if seen.insert((function_id, "signature-malleability")) {
-        let hash = hash_finding("signature-malleability", function_id, "ecrecover");
-        findings.push(FuzzFinding {
+            let hash = hash_finding("signature-malleability", function_id, "ecrecover");
+            findings.push(FuzzFinding {
             kind: FuzzFindingKind::SignatureMalleability,
             severity: FuzzSeverity::Medium,
             message: format!(
@@ -1382,6 +1383,7 @@ fn check_unprotected_ether_withdrawal(
             && function_is_externally_callable(*func_id, ast)
             && !function_has_authority_guard_hint(*func_id, ast)
             && !function_is_direct_msg_value_forwarder(*func_id, ast)
+            && !function_is_public_sender_payout(*func_id, ast)
             && !function_is_checked_selector_low_level_wrapper(*func_id, ast)
             && seen.insert(*func_id)
         {
@@ -1404,7 +1406,7 @@ fn check_unprotected_ether_withdrawal(
 
 fn function_source_lower(ast: Option<&NormalizedAst>, function_id: u32) -> Option<String> {
     let ast = ast?;
-    let function = ast.functions.get(function_id as usize)?;
+    let function = ast_function_by_id(ast, function_id)?;
     let file = ast.files.get(function.span.file as usize)?;
     Some(
         file.source
@@ -1424,6 +1426,22 @@ fn function_is_direct_msg_value_forwarder(function_id: u32, ast: Option<&Normali
         || source_lower.contains(".send (msg.value)")
         || source_lower.contains(".transfer(msg.value)")
         || source_lower.contains(".transfer (msg.value)")
+}
+
+fn function_is_public_sender_payout(function_id: u32, ast: Option<&NormalizedAst>) -> bool {
+    let Some(ast) = ast else {
+        return false;
+    };
+    let Some(function) = ast_function_by_id(ast, function_id) else {
+        return false;
+    };
+    crate::frontend::has_public_sender_payout_hint(function, ast)
+}
+
+fn ast_function_by_id(ast: &NormalizedAst, function_id: u32) -> Option<&crate::norm::Function> {
+    ast.functions
+        .iter()
+        .find(|function| function.id == function_id)
 }
 
 fn function_has_value_moving_low_level_call(ast: Option<&NormalizedAst>, function_id: u32) -> bool {
@@ -1598,7 +1616,7 @@ mod tests {
         ast
     }
 
-    fn source_ast(function_name: &str, source: &str) -> NormalizedAst {
+    fn source_ast_with_id(function_name: &str, source: &str, function_id: u32) -> NormalizedAst {
         let mut ast = NormalizedAst::default();
         ast.files.push(SourceFile {
             id: 0,
@@ -1610,7 +1628,7 @@ mod tests {
             name: "Vault".to_string(),
             kind: ContractKind::Contract,
             bases: Vec::new(),
-            functions: vec![0],
+            functions: vec![function_id],
             state_vars: Vec::new(),
             modifiers: Vec::new(),
             events: Vec::new(),
@@ -1622,7 +1640,7 @@ mod tests {
             },
         });
         ast.functions.push(Function {
-            id: 0,
+            id: function_id,
             contract: Some(0),
             name: Some(function_name.to_string()),
             kind: FunctionKind::Function,
@@ -1639,6 +1657,10 @@ mod tests {
             },
         });
         ast
+    }
+
+    fn source_ast(function_name: &str, source: &str) -> NormalizedAst {
+        source_ast_with_id(function_name, source, 0)
     }
 
     #[test]
@@ -1953,10 +1975,7 @@ mod tests {
 
     #[test]
     fn authority_modifier_hint_suppresses_unprotected_withdrawal() {
-        let ast = authority_modifier_ast(
-            "CollectAllFees",
-            "function CollectAllFees() onlyowner",
-        );
+        let ast = authority_modifier_ast("CollectAllFees", "function CollectAllFees() onlyowner");
         let trace = ExecutionTrace {
             events: vec![TraceEvent {
                 function_id: 0,
@@ -1971,6 +1990,58 @@ mod tests {
         };
 
         assert!(check_unprotected_ether_withdrawal(&trace, &make_tx(), Some(&ast)).is_empty());
+    }
+
+    #[test]
+    fn public_reward_claim_payout_suppresses_unprotected_withdrawal() {
+        let ast = source_ast(
+            "solve",
+            "function solve(string solution) public payable { require(hash == sha3(solution)); msg.sender.transfer(1 ether); }",
+        );
+        let trace = ExecutionTrace {
+            events: vec![TraceEvent {
+                function_id: 0,
+                kind: TraceEventKind::EtherSent {
+                    callee: "msg.sender.transfer".to_string(),
+                },
+            }],
+            coverage: Default::default(),
+            edge_coverage: Default::default(),
+            reverted: false,
+            final_state: Default::default(),
+        };
+
+        assert!(check_unprotected_ether_withdrawal(&trace, &make_tx(), Some(&ast)).is_empty());
+    }
+
+    #[test]
+    fn nonpositional_function_id_keeps_sender_owned_withdrawal_suppressed() {
+        let function_id = 7;
+        let ast = source_ast_with_id(
+            "withdraw",
+            "function withdraw(uint amount) public payable { if (credit[msg.sender] >= amount) { msg.sender.call.value(amount)(); credit[msg.sender] -= amount; } }",
+            function_id,
+        );
+        let trace = ExecutionTrace {
+            events: vec![TraceEvent {
+                function_id,
+                kind: TraceEventKind::EtherSent {
+                    callee: "msg.sender.call.value".to_string(),
+                },
+            }],
+            coverage: Default::default(),
+            edge_coverage: Default::default(),
+            reverted: false,
+            final_state: Default::default(),
+        };
+        let txs = vec![Transaction {
+            function_id,
+            args: vec![FuzzValue::Uint(100)],
+            sender: 0,
+            value: 0,
+        }];
+
+        assert!(check_unprotected_ether_withdrawal(&trace, &txs, Some(&ast)).is_empty());
     }
 
     #[test]
@@ -2024,6 +2095,28 @@ mod tests {
         let findings = check_selfdestruct(&trace, &make_tx(), None);
         assert_eq!(findings.len(), 1);
         assert_eq!(findings[0].kind, FuzzFindingKind::SelfDestruct);
+    }
+
+    #[test]
+    fn sender_checked_selfdestruct_is_suppressed() {
+        let trace = ExecutionTrace {
+            events: vec![
+                TraceEvent {
+                    function_id: 0,
+                    kind: TraceEventKind::SenderChecked,
+                },
+                TraceEvent {
+                    function_id: 0,
+                    kind: TraceEventKind::SelfDestructCall,
+                },
+            ],
+            coverage: Default::default(),
+            edge_coverage: Default::default(),
+            reverted: false,
+            final_state: Default::default(),
+        };
+        let findings = check_selfdestruct(&trace, &make_tx(), None);
+        assert!(findings.is_empty());
     }
 
     #[test]
@@ -2236,7 +2329,10 @@ mod tests {
         ];
         let findings = check_transaction_order_dependency(&trace, &txs);
         assert_eq!(findings.len(), 1);
-        assert_eq!(findings[0].kind, FuzzFindingKind::TransactionOrderDependency);
+        assert_eq!(
+            findings[0].kind,
+            FuzzFindingKind::TransactionOrderDependency
+        );
     }
 
     #[test]

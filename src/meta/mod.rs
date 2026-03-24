@@ -2,8 +2,8 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 use crate::analysis::detectors;
 use crate::core::artifacts::{Finding, FindingLocation};
-use crate::frontend::{self, FrontendOutput};
-use crate::norm::{Contract, ContractKind, Function, FunctionKind, Visibility};
+use crate::frontend::FrontendOutput;
+use crate::norm::{Contract, ContractKind};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConsumerEngine {
@@ -21,10 +21,7 @@ impl ConsumerEngine {
 }
 
 pub fn analyze(output: &FrontendOutput) -> Vec<Finding> {
-    let mut findings = Vec::new();
-    findings.extend(analyze_incorrect_interface(output));
-    findings.extend(analyze_honeypot(output));
-    findings
+    analyze_incorrect_interface(output)
 }
 
 pub fn analyze_for_engine(
@@ -36,11 +33,7 @@ pub fn analyze_for_engine(
         .into_iter()
         .map(|finding| retag_for_engine(finding, engine))
         .collect::<Vec<_>>();
-    findings.extend(analyze_taxonomy_completion(
-        output,
-        engine,
-        static_findings,
-    ));
+    findings.extend(analyze_taxonomy_completion(output, engine, static_findings));
     findings
 }
 
@@ -50,7 +43,6 @@ pub fn runtime_promotions(findings: &[Finding]) -> Vec<Finding> {
 
     for finding in findings {
         let should_promote = match finding.finding_type.as_str() {
-            "honeypot" => finding.evidence_kind == "honeypot-heuristic",
             "shadowing" => finding
                 .location
                 .as_ref()
@@ -94,7 +86,10 @@ fn analyze_incorrect_interface(output: &FrontendOutput) -> Vec<Finding> {
     let ast = &output.ast;
     let mut by_name: HashMap<&str, Vec<&Contract>> = HashMap::new();
     for contract in &ast.contracts {
-        by_name.entry(contract.name.as_str()).or_default().push(contract);
+        by_name
+            .entry(contract.name.as_str())
+            .or_default()
+            .push(contract);
     }
 
     let mut findings = Vec::new();
@@ -127,19 +122,17 @@ fn analyze_incorrect_interface(output: &FrontendOutput) -> Vec<Finding> {
                 if concrete_sigs.is_empty() {
                     continue;
                 }
-                let concrete_by_name = concrete_sigs
-                    .iter()
-                    .fold(HashMap::<&str, Vec<&RawSignature>>::new(), |mut acc, sig| {
+                let concrete_by_name = concrete_sigs.iter().fold(
+                    HashMap::<&str, Vec<&RawSignature>>::new(),
+                    |mut acc, sig| {
                         acc.entry(sig.name.as_str()).or_default().push(sig);
                         acc
-                    });
+                    },
+                );
 
                 for stub_sig in &stub_sigs {
                     let Some(matches) = concrete_by_name.get(stub_sig.name.as_str()) else {
-                        let dedup = format!(
-                            "missing:{}:{}:{}",
-                            name, stub.id, stub_sig.name
-                        );
+                        let dedup = format!("missing:{}:{}:{}", name, stub.id, stub_sig.name);
                         if seen.insert(dedup) {
                             findings.push(meta_finding(
                                 "incorrect-interface",
@@ -175,19 +168,14 @@ fn analyze_incorrect_interface(output: &FrontendOutput) -> Vec<Finding> {
 
                     let dedup = format!(
                         "mismatch:{}:{}:{}:{}",
-                        name,
-                        stub.id,
-                        concrete.id,
-                        stub_sig.name
+                        name, stub.id, concrete.id, stub_sig.name
                     );
                     if seen.insert(dedup) {
                         let mut metadata = BTreeMap::new();
                         metadata.insert("contract".to_string(), name.to_string());
                         metadata.insert("reason".to_string(), "signature-mismatch".to_string());
-                        metadata.insert(
-                            "declared_signature".to_string(),
-                            format_signature(stub_sig),
-                        );
+                        metadata
+                            .insert("declared_signature".to_string(), format_signature(stub_sig));
                         metadata.insert(
                             "implementation_signatures".to_string(),
                             matches
@@ -217,125 +205,6 @@ fn analyze_incorrect_interface(output: &FrontendOutput) -> Vec<Finding> {
                     }
                 }
             }
-        }
-    }
-
-    findings
-}
-
-fn analyze_honeypot(output: &FrontendOutput) -> Vec<Finding> {
-    let ast = &output.ast;
-    let mut findings = Vec::new();
-
-    for contract in &ast.contracts {
-        if matches!(contract.kind, ContractKind::Interface | ContractKind::Library) {
-            continue;
-        }
-
-        let mut funding_paths = Vec::new();
-        let mut payout_candidates = Vec::new();
-        for &function_id in &contract.functions {
-            let Some(function) = ast.functions.get(function_id as usize) else {
-                continue;
-            };
-            let snippet = function_snippet(output, function);
-            let snippet_lower = snippet.to_ascii_lowercase();
-            if is_public_like(function, &output.compiler)
-                && (function.kind == FunctionKind::Fallback
-                    || function.kind == FunctionKind::Receive
-                    || function.mutability == crate::norm::Mutability::Payable
-                    || snippet_lower.contains("msg.value"))
-            {
-                funding_paths.push((function, snippet_lower.clone()));
-            }
-
-            if !is_public_like(function, &output.compiler) {
-                continue;
-            }
-            if snippet_lower.contains(".call.value(")
-                || snippet_lower.contains(".send(")
-                || snippet_lower.contains(".transfer(")
-                || payout_like_name(function)
-            {
-                payout_candidates.push((function, snippet_lower));
-            }
-        }
-
-        if funding_paths.is_empty() || payout_candidates.is_empty() {
-            continue;
-        }
-
-        let contract_name = contract.name.to_ascii_lowercase();
-        for (function, snippet_lower) in payout_candidates {
-            let owner_or_secret_gate = contains_any(
-                &snippet_lower,
-                &[
-                    "msg.sender==sender",
-                    "msg.sender == sender",
-                    "msg.sender==owner",
-                    "msg.sender == owner",
-                    "onlyowner",
-                    "only_owner",
-                    "hashpass",
-                    "passhasbeenset",
-                    "sha3(pass)",
-                    "password",
-                    "secret",
-                    "revoce",
-                ],
-            );
-            let callback_sensitive_payout = snippet_lower.contains(".call.value(")
-                && has_state_write_after_low_level_call(&snippet_lower);
-            let suspicious_contract_name = contains_any(
-                &contract_name,
-                &["gift", "bank", "lottery", "box", "prize", "multiplicator"],
-            );
-            let suspicious_deposit = funding_paths
-                .iter()
-                .any(|(_, path)| looks_like_ticketed_funding_path(path));
-
-            if !(owner_or_secret_gate
-                || (suspicious_contract_name && callback_sensitive_payout)
-                || (suspicious_contract_name && suspicious_deposit))
-            {
-                continue;
-            }
-
-            let mut metadata = BTreeMap::new();
-            metadata.insert("contract".to_string(), contract.name.clone());
-            metadata.insert("confidence".to_string(), "low".to_string());
-            metadata.insert(
-                "reasons".to_string(),
-                [
-                    owner_or_secret_gate.then_some("owner-or-secret-gate"),
-                    callback_sensitive_payout.then_some("callback-sensitive-payout"),
-                    suspicious_contract_name.then_some("suspicious-contract-name"),
-                    suspicious_deposit.then_some("public-funding-path"),
-                ]
-                .into_iter()
-                .flatten()
-                .collect::<Vec<_>>()
-                .join(","),
-            );
-            findings.push(meta_finding(
-                "honeypot",
-                "low",
-                "honeypot-heuristic",
-                format!(
-                    "contract '{}' exposes a public funding path but its payout flow looks deceptive or trap-like",
-                    contract.name
-                ),
-                Some(FindingLocation {
-                    file: Some(file_path(output, function.span.file)),
-                    start: Some(function.span.start),
-                    end: Some(function.span.end),
-                    pc: None,
-                    function_id: Some(function.id),
-                    function_name: function.name.clone(),
-                }),
-                metadata,
-            ));
-            break;
         }
     }
 
@@ -423,12 +292,6 @@ fn is_stub_contract(ast: &crate::norm::NormalizedAst, contract: &Contract) -> bo
     })
 }
 
-fn is_public_like(function: &Function, compiler: &frontend::CompilerInfo) -> bool {
-    matches!(function.kind, FunctionKind::Function | FunctionKind::Fallback | FunctionKind::Receive)
-        && frontend::is_public_entrypoint(function, compiler)
-        && !matches!(frontend::effective_visibility(function, compiler), Visibility::Internal | Visibility::Private)
-}
-
 #[derive(Debug, Clone)]
 struct RawSignature {
     name: String,
@@ -439,7 +302,12 @@ struct RawSignature {
 }
 
 fn extract_contract_signatures(output: &FrontendOutput, contract: &Contract) -> Vec<RawSignature> {
-    let Some(source) = source_slice(output, contract.span.file, contract.span.start, contract.span.end) else {
+    let Some(source) = source_slice(
+        output,
+        contract.span.file,
+        contract.span.start,
+        contract.span.end,
+    ) else {
         return Vec::new();
     };
     scan_contract_function_signatures(source, contract.span.start)
@@ -579,9 +447,7 @@ fn split_top_level_csv(raw: &str) -> Vec<String> {
 
 fn normalize_signature_fragment(raw: &str) -> String {
     let cleaned = raw.replace('\n', " ").replace('\r', " ");
-    let mut normalized = cleaned
-        .split_whitespace()
-        .collect::<Vec<_>>();
+    let mut normalized = cleaned.split_whitespace().collect::<Vec<_>>();
     normalized.retain(|token| {
         !matches!(
             token.to_ascii_lowercase().as_str(),
@@ -601,7 +467,10 @@ fn normalize_signature_fragment(raw: &str) -> String {
     });
     if normalized.len() > 1 {
         let last = normalized.last().copied().unwrap_or_default();
-        if last.chars().all(|ch| ch.is_ascii_alphanumeric() || ch == '_') {
+        if last
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
+        {
             normalized.pop();
         }
     }
@@ -640,64 +509,7 @@ fn find_function_id(
     })
 }
 
-fn contains_any(haystack: &str, needles: &[&str]) -> bool {
-    needles.iter().any(|needle| haystack.contains(needle))
-}
-
-fn payout_like_name(function: &Function) -> bool {
-    let name = function.name.as_deref().unwrap_or("").to_ascii_lowercase();
-    contains_any(
-        &name,
-        &[
-            "withdraw",
-            "cashout",
-            "claim",
-            "gift",
-            "revoce",
-            "collect",
-            "payout",
-        ],
-    )
-}
-
-fn has_state_write_after_low_level_call(snippet_lower: &str) -> bool {
-    let Some(call_idx) = snippet_lower.find(".call.value(") else {
-        return false;
-    };
-    let tail = &snippet_lower[call_idx..];
-    tail.contains("-=")
-        || tail.contains("=0")
-        || tail.contains(" = 0")
-        || tail.contains("balances[")
-        || tail.contains("userbalance[")
-}
-
-fn looks_like_ticketed_funding_path(snippet_lower: &str) -> bool {
-    contains_any(
-        snippet_lower,
-        &[
-            "> 1 ether",
-            ">=1 ether",
-            ">= 1 ether",
-            "mindeposit",
-            "deposit",
-            "setpass",
-            "participate",
-            "ticket",
-        ],
-    ) || (snippet_lower.contains("msg.value") && snippet_lower.contains("ether"))
-}
-
-fn function_snippet<'a>(output: &'a FrontendOutput, function: &Function) -> &'a str {
-    source_slice(output, function.span.file, function.span.start, function.span.end).unwrap_or("")
-}
-
-fn source_slice(
-    output: &FrontendOutput,
-    file_id: u32,
-    start: u32,
-    end: u32,
-) -> Option<&str> {
+fn source_slice(output: &FrontendOutput, file_id: u32, start: u32, end: u32) -> Option<&str> {
     let file = output.ast.files.get(file_id as usize)?;
     let start = start as usize;
     let end = end as usize;
@@ -721,7 +533,6 @@ mod tests {
     };
     use crate::frontend::{CompilerInfo, FrontendMode};
     use crate::norm::{NormalizedAst, SourceFile, Span};
-    use crate::frontend::parser::load_via_legacy_sources;
 
     fn test_output() -> FrontendOutput {
         FrontendOutput {
@@ -748,20 +559,14 @@ mod tests {
         }
         "#;
         let sigs = scan_contract_function_signatures(source, 0);
-        assert!(sigs.iter().any(|sig| sig.name == "set" && sig.params == vec!["uint"]));
-        assert!(sigs
-            .iter()
-            .any(|sig| sig.name == "set_fixed" && sig.params == vec!["int"]));
-    }
-
-    #[test]
-    fn low_level_call_write_heuristic_requires_post_call_write() {
-        assert!(has_state_write_after_low_level_call(
-            "if(msg.sender.call.value(_am)()) { balances[msg.sender]-=_am; }"
-        ));
-        assert!(!has_state_write_after_low_level_call(
-            "msg.sender.transfer(this.balance); return message;"
-        ));
+        assert!(
+            sigs.iter()
+                .any(|sig| sig.name == "set" && sig.params == vec!["uint"])
+        );
+        assert!(
+            sigs.iter()
+                .any(|sig| sig.name == "set_fixed" && sig.params == vec!["int"])
+        );
     }
 
     #[test]
@@ -788,7 +593,10 @@ mod tests {
         assert_eq!(finding.analysis_layer, "meta");
         assert_eq!(finding.evidence_kind, "taxonomy-completion");
         assert_eq!(
-            finding.location.as_ref().and_then(|loc| loc.file.as_deref()),
+            finding
+                .location
+                .as_ref()
+                .and_then(|loc| loc.file.as_deref()),
             Some("test.sol")
         );
     }
@@ -805,9 +613,11 @@ mod tests {
         }];
 
         let findings = analyze_for_engine(&output, ConsumerEngine::Fuzzing, &static_findings);
-        assert!(findings
-            .iter()
-            .any(|finding| finding.finding_type == "shadowing"));
+        assert!(
+            findings
+                .iter()
+                .any(|finding| finding.finding_type == "shadowing")
+        );
     }
 
     #[test]
@@ -816,63 +626,7 @@ mod tests {
     }
 
     #[test]
-    fn honeypot_heuristic_catches_ticketed_lottery_path() {
-        let source = r#"
-            contract OpenAddressLottery {
-                address owner;
-                uint private lastReseed;
-                function OpenAddressLottery() { owner = msg.sender; }
-                function participate() payable {
-                    if(msg.value < 0.1 ether) { return; }
-                    msg.sender.transfer(msg.value * 7);
-                    if(block.number - lastReseed > 1000) { lastReseed = block.number; }
-                }
-                function () payable { if(msg.value >= 0.1 ether && msg.sender != owner) participate(); }
-            }
-        "#;
-        let ast = load_via_legacy_sources(vec![SourceFile {
-            id: 0,
-            path: "Lottery.sol".to_string(),
-            source: source.to_string(),
-        }])
-        .expect("legacy parser should succeed");
-        let output = FrontendOutput {
-            mode: FrontendMode::Partial,
-            ast,
-            compiler: CompilerInfo {
-                compiler_name: "tree-sitter".to_string(),
-                compiler_version: Some("0.4.19".to_string()),
-                legacy_omitted_visibility_is_public: true,
-            },
-        };
-
-        let findings = analyze(&output);
-        assert!(findings
-            .iter()
-            .any(|finding| finding.finding_type == "honeypot"));
-    }
-
-    #[test]
-    fn runtime_promotions_promote_honeypot_and_shadowing() {
-        let honeypot = Finding {
-            engine: "symbolic".to_string(),
-            finding_type: "honeypot".to_string(),
-            severity: "low".to_string(),
-            message: "trap".to_string(),
-            location: Some(FindingLocation {
-                file: Some("Benchmarks/Not-so-smart/not-so-smart-contracts-master/honeypots/GiftBox/GiftBox.sol".to_string()),
-                start: Some(1),
-                end: Some(2),
-                pc: None,
-                function_id: Some(1),
-                function_name: Some("openGift".to_string()),
-            }),
-            reproduction: None,
-            signature: String::new(),
-            analysis_layer: "meta".to_string(),
-            evidence_kind: "honeypot-heuristic".to_string(),
-            metadata: BTreeMap::new(),
-        };
+    fn runtime_promotions_only_promote_shadowing() {
         let shadowing = Finding {
             engine: "symbolic".to_string(),
             finding_type: "shadowing".to_string(),
@@ -893,10 +647,12 @@ mod tests {
             metadata: BTreeMap::new(),
         };
 
-        let promoted = runtime_promotions(&[honeypot, shadowing]);
-        assert_eq!(promoted.len(), 2);
-        assert!(promoted
-            .iter()
-            .all(|finding| finding.analysis_layer == "runtime"));
+        let promoted = runtime_promotions(&[shadowing]);
+        assert_eq!(promoted.len(), 1);
+        assert!(
+            promoted
+                .iter()
+                .all(|finding| finding.analysis_layer == "runtime")
+        );
     }
 }
