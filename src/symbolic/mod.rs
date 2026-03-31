@@ -5,8 +5,7 @@ pub mod types;
 pub mod detectors;
 pub mod results;
 
-// TODO: Phase 4
-// pub mod engine;
+pub mod engine;
 
 use crate::frontend::FrontendOutput;
 use crate::report::OutputFormat;

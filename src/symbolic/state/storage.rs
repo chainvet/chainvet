@@ -165,6 +165,15 @@ impl StorageLayout {
     pub fn is_mapping(&self, var_name: &str) -> bool {
         self.mapping_names.contains(var_name)
     }
+
+    /// Create an empty layout with no slots, offsets, or mappings.
+    pub fn empty() -> Self {
+        Self {
+            slots: HashMap::new(),
+            field_offsets: HashMap::new(),
+            mapping_names: HashSet::new(),
+        }
+    }
 }
 
 #[cfg(test)]
