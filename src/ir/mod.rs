@@ -120,7 +120,7 @@ pub enum ControlKind {
     EndTry,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
 pub enum IrVar {
     Named(String),
     Temp(u32),

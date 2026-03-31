@@ -11,3 +11,7 @@ tree-sitter-solidity = "1"
 rand = "0.8"
 sha2 = "0.10"
 z3 = "0.19.11"
+tiny-keccak = { version = "2", features = ["keccak"] }
+
+[dev-dependencies]
+proptest = "1"
