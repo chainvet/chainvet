@@ -1,6 +1,3 @@
-// TODO Phase 5: remove when run_engine is wired from symbolic/mod.rs::run()
-#![allow(dead_code)]
-
 pub mod executor;
 pub mod explorer;
 pub mod scheduler;
@@ -12,6 +9,7 @@ use z3::SatResult;
 
 use crate::cfg::{BlockId, CfgFunction};
 use crate::norm::NormalizedAst;
+use crate::symbolic::detectors::DetectorRegistry;
 use crate::symbolic::results::coverage::{CoverageReport, CoverageTracker};
 use crate::symbolic::results::SeFinding;
 use crate::symbolic::solver::SmtSolver;
@@ -21,7 +19,7 @@ use crate::symbolic::state::{StateIdGen, SymbolicState};
 use crate::symbolic::types::hash::KeccakContext;
 
 use executor::{BlockOutcome, ExecutorError, execute_block, pre_populate_call_context};
-use explorer::make_strategy;
+use explorer::{ExplorationStrategy, ExplorationStrategyKind, make_strategy};
 use scheduler::{SeConfig, WorklistEntry};
 
 /// Output produced by the engine for one analysis run.
@@ -29,6 +27,37 @@ pub struct EngineResult {
     pub findings: Vec<SeFinding>,
     pub coverage: CoverageReport,
     pub states_explored: usize,
+}
+
+/// Shared immutable parameters threaded through the exploration loop.
+struct RunContext<'a> {
+    solver: &'a dyn SmtSolver,
+    layout: &'a StorageLayout,
+    contract_name: &'a str,
+    max_path_depth: u32,
+    max_instructions: u32,
+    max_loop_unrolling: u32,
+    max_states: usize,
+    total_timeout_s: u64,
+    start_time: Instant,
+}
+
+/// Mutable outputs accumulated across all worklist entries.
+struct RunAccumulators<'a> {
+    coverage: &'a mut CoverageTracker,
+    findings: &'a mut Vec<SeFinding>,
+    keccak_ctx: &'a mut KeccakContext,
+    states_explored: &'a mut usize,
+}
+
+/// Context passed to branch-fork helpers.
+///
+/// Groups the source block, coverage tracker, and worklist strategy so
+/// that fork helpers stay within the seven-argument convention.
+struct ForkSink<'a> {
+    from_block: BlockId,
+    coverage: &'a mut CoverageTracker,
+    strategy: &'a mut dyn ExplorationStrategy,
 }
 
 /// Run symbolic execution over all CFG functions.
@@ -44,263 +73,273 @@ pub fn run_engine(
     solver: &dyn SmtSolver,
 ) -> EngineResult {
     let total_blocks: usize = cfgs.iter().map(|f| f.blocks.len()).sum();
-    let total_functions = cfgs.len();
-
-    let mut coverage = CoverageTracker::new(total_blocks, total_functions);
-    let mut all_findings: Vec<SeFinding> = Vec::new();
+    let mut coverage = CoverageTracker::new(total_blocks, cfgs.len());
+    let mut findings: Vec<SeFinding> = Vec::new();
     let mut id_gen = StateIdGen::new();
     let mut keccak_ctx = KeccakContext::new();
     let mut states_explored: usize = 0;
-    let start_time = Instant::now();
 
-    // Unpack config — we need mutability for detectors.
     let SeConfig {
-        max_path_depth,
-        max_instructions,
-        max_loop_unrolling,
-        max_states,
-        solver_timeout_ms: _,
-        total_timeout_s,
-        dynamic_bytes_bound: _,
-        exploration_strategy,
-        mut detectors,
-        storage_layout,
-        contract_name,
+        max_path_depth, max_instructions, max_loop_unrolling,
+        max_states, solver_timeout_ms: _, total_timeout_s,
+        dynamic_bytes_bound: _, exploration_strategy,
+        mut detectors, storage_layout, contract_name,
     } = config;
 
-    let layout: &StorageLayout = &storage_layout;
+    let run_ctx = RunContext {
+        solver,
+        layout: &storage_layout,
+        contract_name: &contract_name,
+        max_path_depth, max_instructions, max_loop_unrolling,
+        max_states, total_timeout_s, start_time: Instant::now(),
+    };
 
     for cfg_func in cfgs {
         if cfg_func.blocks.is_empty() {
             continue;
         }
-
         detectors.reset_all();
-        coverage.record_function(cfg_func.id);
-
-        let entry_block = cfg_func.blocks[0].id;
-        let (call_ctx, init_constraints) = CallContext::new_symbolic();
-        let mut initial_state = SymbolicState::initial(&mut id_gen, entry_block, call_ctx);
-
-        // Add CallContext initial constraints to PathConstraints.
-        for (c, desc) in init_constraints {
-            initial_state.path_constraints.add(c, desc);
-        }
-
-        // Bind well-known blockchain names in the variable environment.
-        pre_populate_call_context(&mut initial_state);
-
-        let mut strategy = make_strategy(exploration_strategy);
-        strategy.push(WorklistEntry {
-            state: initial_state,
-            cfg_func_id: cfg_func.id,
-            predecessor_block: None,
-            loop_counts: std::collections::HashMap::new(),
-        });
-
-        while let Some(mut entry) = strategy.pop() {
-            // ── Termination guards ──────────────────────────────────────────
-            if total_timeout_s > 0
-                && start_time.elapsed().as_secs() >= total_timeout_s
-            {
-                break;
-            }
-            // Cap total states processed, not just worklist size.
-            if states_explored >= max_states {
-                break;
-            }
-            if entry.state.path_depth >= max_path_depth {
-                continue;
-            }
-            if entry.state.instruction_count >= max_instructions {
-                continue;
-            }
-
-            states_explored += 1;
-            coverage.record_block(cfg_func.id, entry.state.current_block);
-
-            // ── Find the block in the CFG ────────────────────────────────
-            let block = match cfg_func.blocks.iter().find(|b| b.id == entry.state.current_block) {
-                Some(b) => b,
-                None => continue, // stale block reference — skip
-            };
-
-            // ── Execute the block ────────────────────────────────────────
-            let outcome = match execute_block(
-                &mut entry.state,
-                block,
-                cfg_func,
-                &mut detectors,
-                solver,
-                &mut keccak_ctx,
-                layout,
-                &contract_name,
-                &mut all_findings,
-            ) {
-                Ok(o) => o,
-                Err(ExecutorError::UnsupportedInstruction(msg)) => {
-                    eprintln!("[se] warning: {msg}");
-                    continue;
-                }
-                Err(e) => {
-                    eprintln!("[se] executor error: {e}");
-                    continue;
-                }
-            };
-
-            // ── Dispatch on block outcome ────────────────────────────────
-            match outcome {
-                BlockOutcome::Fallthrough { target } => {
-                    coverage.record_edge(block.id, target);
-                    let mut next = entry.fork_to(target);
-                    next.state.path_depth += 1;
-                    strategy.push(next);
-                }
-
-                BlockOutcome::Branch { cond, true_block, false_block } => {
-                    handle_branch(
-                        &entry, cond, true_block, false_block,
-                        block.id, solver, &mut coverage, &mut *strategy,
-                    );
-                }
-
-                BlockOutcome::LoopHeader { cond, body_block, exit_block } => {
-                    handle_loop_header(
-                        entry, cond, body_block, exit_block,
-                        block.id, solver, &mut coverage, &mut *strategy,
-                        max_loop_unrolling,
-                    );
-                }
-
-                // Terminal outcomes — path ends.
-                BlockOutcome::Return { .. } | BlockOutcome::Revert { .. } | BlockOutcome::Stop => {}
-            }
-        }
+        let mut acc = RunAccumulators {
+            coverage: &mut coverage,
+            findings: &mut findings,
+            keccak_ctx: &mut keccak_ctx,
+            states_explored: &mut states_explored,
+        };
+        explore_function(cfg_func, &mut detectors, &mut id_gen, &mut acc, &run_ctx, exploration_strategy);
     }
 
-    EngineResult {
-        findings: all_findings,
-        coverage: coverage.report(),
-        states_explored,
+    EngineResult { findings, coverage: coverage.report(), states_explored }
+}
+
+/// Symbolically explore one CFG function to completion.
+///
+/// Creates the initial symbolic state, binds blockchain context names,
+/// seeds the worklist, then drives the exploration loop.
+fn explore_function(
+    cfg_func: &CfgFunction,
+    detectors: &mut DetectorRegistry,
+    id_gen: &mut StateIdGen,
+    acc: &mut RunAccumulators<'_>,
+    run_ctx: &RunContext<'_>,
+    exploration_strategy: ExplorationStrategyKind,
+) {
+    acc.coverage.record_function(cfg_func.id);
+    let entry_block = cfg_func.blocks[0].id;
+    let (call_ctx, init_constraints) = CallContext::new_symbolic();
+    let mut initial_state = SymbolicState::initial(id_gen, entry_block, call_ctx);
+    for (c, desc) in init_constraints {
+        initial_state.path_constraints.add(c, desc);
+    }
+    pre_populate_call_context(&mut initial_state);
+    let mut strategy = make_strategy(exploration_strategy);
+    strategy.push(WorklistEntry {
+        state: initial_state,
+        cfg_func_id: cfg_func.id,
+        predecessor_block: None,
+        loop_counts: std::collections::HashMap::new(),
+    });
+    run_worklist(&mut *strategy, cfg_func, detectors, acc, run_ctx);
+}
+
+/// Drive the worklist for one function until it is empty or a limit is hit.
+fn run_worklist(
+    strategy: &mut dyn ExplorationStrategy,
+    cfg_func: &CfgFunction,
+    detectors: &mut DetectorRegistry,
+    acc: &mut RunAccumulators<'_>,
+    run_ctx: &RunContext<'_>,
+) {
+    while let Some(mut entry) = strategy.pop() {
+        if run_ctx.total_timeout_s > 0
+            && run_ctx.start_time.elapsed().as_secs() >= run_ctx.total_timeout_s
+        {
+            break;
+        }
+        if *acc.states_explored >= run_ctx.max_states { break; }
+        if entry.state.path_depth >= run_ctx.max_path_depth { continue; }
+        if entry.state.instruction_count >= run_ctx.max_instructions { continue; }
+
+        *acc.states_explored += 1;
+        acc.coverage.record_block(cfg_func.id, entry.state.current_block);
+
+        let block = match cfg_func.blocks.iter().find(|b| b.id == entry.state.current_block) {
+            Some(b) => b,
+            None => continue,
+        };
+
+        let outcome = match execute_block(
+            &mut entry.state, block, cfg_func, detectors,
+            run_ctx.solver, acc.keccak_ctx, run_ctx.layout, run_ctx.contract_name, acc.findings,
+        ) {
+            Ok(o) => o,
+            Err(ExecutorError::UnsupportedInstruction(msg)) => {
+                eprintln!("[se] warning: {msg}");
+                continue;
+            }
+            Err(e) => {
+                eprintln!("[se] executor error: {e}");
+                continue;
+            }
+        };
+
+        let mut sink = ForkSink {
+            from_block: block.id,
+            coverage: &mut *acc.coverage,
+            strategy: &mut *strategy,
+        };
+        dispatch_outcome(entry, outcome, run_ctx, &mut sink);
     }
 }
 
-/// Handle a conditional branch outcome: probe feasibility and push forks.
-#[allow(clippy::too_many_arguments)]
+/// Dispatch a `BlockOutcome` — push successor states onto the worklist.
+fn dispatch_outcome(
+    entry: WorklistEntry,
+    outcome: BlockOutcome,
+    run_ctx: &RunContext<'_>,
+    sink: &mut ForkSink<'_>,
+) {
+    match outcome {
+        BlockOutcome::Fallthrough { target } => {
+            sink.coverage.record_edge(sink.from_block, target);
+            let mut next = entry.fork_to(target);
+            next.state.path_depth += 1;
+            sink.strategy.push(next);
+        }
+        BlockOutcome::Branch { cond, true_block, false_block } => {
+            handle_branch(&entry, cond, true_block, false_block, run_ctx.solver, sink);
+        }
+        BlockOutcome::LoopHeader { cond, body_block, exit_block } => {
+            handle_loop_header(
+                entry, cond, body_block, exit_block,
+                run_ctx.solver, sink, run_ctx.max_loop_unrolling,
+            );
+        }
+        BlockOutcome::Return { .. } | BlockOutcome::Revert { .. } | BlockOutcome::Stop => {}
+    }
+}
+
+/// Probe both branch directions and push feasible forks.
 fn handle_branch(
     entry: &WorklistEntry,
     cond: Bool,
     true_block: BlockId,
     false_block: BlockId,
-    from_block: BlockId,
     solver: &dyn SmtSolver,
-    coverage: &mut CoverageTracker,
-    strategy: &mut dyn explorer::ExplorationStrategy,
+    sink: &mut ForkSink<'_>,
 ) {
-    let base: Vec<Bool> = entry
-        .state
-        .path_constraints
-        .constraints()
-        .iter()
-        .map(|(c, _)| c.clone())
-        .collect();
-
+    let base = collect_base_constraints(&entry.state);
     if probe_branch(solver, &base, &cond) {
-        coverage.record_edge(from_block, true_block);
+        sink.coverage.record_edge(sink.from_block, true_block);
         let mut fork = entry.fork_to(true_block);
         fork.state.path_constraints.add(
             cond.clone(),
             format!("branch true → block {true_block}"),
         );
         fork.state.path_depth += 1;
-        strategy.push(fork);
+        sink.strategy.push(fork);
     }
     if probe_branch(solver, &base, &cond.not()) {
-        coverage.record_edge(from_block, false_block);
+        sink.coverage.record_edge(sink.from_block, false_block);
         let mut fork = entry.fork_to(false_block);
         fork.state.path_constraints.add(
             cond.not(),
             format!("branch false → block {false_block}"),
         );
         fork.state.path_depth += 1;
-        strategy.push(fork);
+        sink.strategy.push(fork);
     }
 }
 
-/// Handle a loop-header outcome: enforce unrolling bound, push body and/or exit forks.
-#[allow(clippy::too_many_arguments)]
+/// Enforce the loop unrolling bound and push the appropriate fork(s).
 fn handle_loop_header(
     entry: WorklistEntry,
     cond: Option<Bool>,
     body_block: BlockId,
     exit_block: Option<BlockId>,
-    from_block: BlockId,
     solver: &dyn SmtSolver,
-    coverage: &mut CoverageTracker,
-    strategy: &mut dyn explorer::ExplorationStrategy,
+    sink: &mut ForkSink<'_>,
     max_loop_unrolling: u32,
 ) {
     let loop_count = entry.loop_counts.get(&body_block).copied().unwrap_or(0);
-    let base: Vec<Bool> = entry
-        .state
-        .path_constraints
-        .constraints()
-        .iter()
-        .map(|(c, _)| c.clone())
-        .collect();
-
+    let base = collect_base_constraints(&entry.state);
     if loop_count >= max_loop_unrolling {
-        // Bound hit: push only exit path.
-        if let Some(exit) = exit_block {
-            let exit_cond = cond.as_ref().map(|c| c.not());
-            let feasible = match &exit_cond {
-                Some(ec) => probe_branch(solver, &base, ec),
-                None => true,
-            };
-            if feasible {
-                coverage.record_edge(from_block, exit);
-                let mut fork = entry.fork_to(exit);
-                if let Some(ec) = exit_cond {
-                    fork.state.path_constraints.add(ec, format!("loop exit → block {exit}"));
-                }
-                fork.state.path_depth += 1;
-                strategy.push(fork);
-            }
-        }
-        return;
+        push_loop_exit_fork(entry, &cond, exit_block, solver, &base, sink);
+    } else {
+        push_loop_forks(entry, cond, body_block, exit_block, solver, &base, sink);
     }
+}
 
-    // Under bound: push body and optionally exit.
+/// Push the exit fork when the loop unrolling bound has been reached.
+fn push_loop_exit_fork(
+    entry: WorklistEntry,
+    cond: &Option<Bool>,
+    exit_block: Option<BlockId>,
+    solver: &dyn SmtSolver,
+    base: &[Bool],
+    sink: &mut ForkSink<'_>,
+) {
+    if let Some(exit) = exit_block {
+        let exit_cond = cond.as_ref().map(|c| c.not());
+        let feasible = match &exit_cond {
+            Some(ec) => probe_branch(solver, base, ec),
+            None => true,
+        };
+        if feasible {
+            sink.coverage.record_edge(sink.from_block, exit);
+            let mut fork = entry.fork_to(exit);
+            if let Some(ec) = exit_cond {
+                fork.state.path_constraints.add(ec, format!("loop exit → block {exit}"));
+            }
+            fork.state.path_depth += 1;
+            sink.strategy.push(fork);
+        }
+    }
+}
+
+/// Push body and exit forks when the loop is still within its unrolling bound.
+fn push_loop_forks(
+    entry: WorklistEntry,
+    cond: Option<Bool>,
+    body_block: BlockId,
+    exit_block: Option<BlockId>,
+    solver: &dyn SmtSolver,
+    base: &[Bool],
+    sink: &mut ForkSink<'_>,
+) {
     let body_feasible = match &cond {
-        Some(c) => probe_branch(solver, &base, c),
+        Some(c) => probe_branch(solver, base, c),
         None => true,
     };
     if body_feasible {
-        coverage.record_edge(from_block, body_block);
+        sink.coverage.record_edge(sink.from_block, body_block);
         let mut fork = entry.fork_to(body_block);
         if let Some(c) = cond.clone() {
             fork.state.path_constraints.add(c, format!("loop body → block {body_block}"));
         }
         *fork.loop_counts.entry(body_block).or_insert(0) += 1;
         fork.state.path_depth += 1;
-        strategy.push(fork);
+        sink.strategy.push(fork);
     }
-
     if let Some(exit) = exit_block {
         let exit_feasible = match &cond {
-            Some(c) => probe_branch(solver, &base, &c.not()),
-            None => false, // unconditional loop — no exit via condition
+            Some(c) => probe_branch(solver, base, &c.not()),
+            None => false,
         };
         if exit_feasible {
-            coverage.record_edge(from_block, exit);
+            sink.coverage.record_edge(sink.from_block, exit);
             let mut fork = entry.fork_to(exit);
             if let Some(c) = cond {
                 fork.state.path_constraints.add(c.not(), format!("loop exit → block {exit}"));
             }
             fork.state.path_depth += 1;
-            strategy.push(fork);
+            sink.strategy.push(fork);
         }
     }
+}
+
+/// Collect current path constraints as a flat `Vec<Bool>` for SAT assumptions.
+fn collect_base_constraints(state: &SymbolicState) -> Vec<Bool> {
+    state.path_constraints.constraints().iter().map(|(c, _)| c.clone()).collect()
 }
 
 /// Probe whether `extra` is satisfiable given the base path constraints.
@@ -315,7 +354,7 @@ fn probe_branch(solver: &dyn SmtSolver, base: &[Bool], extra: &Bool) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cfg::{Block, BlockId, CfgFunction, Edge};
+    use crate::cfg::{Block, CfgFunction, Edge};
     use crate::ir::{ControlKind, IrBlock, IrFunction, IrInstr, IrModule, IrValue, IrVar};
     use crate::norm::{NormalizedAst, Span};
     use crate::symbolic::solver::z3_backend::Z3Backend;
