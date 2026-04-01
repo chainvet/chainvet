@@ -34,18 +34,42 @@ impl Confidence {
 
 /// Vulnerability kinds that SE detectors check.
 ///
-/// Deliberately small — one variant per detector, added only when implemented.
+/// One variant per distinct vulnerability pattern from the taxonomy.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub enum SeVulnKind {
+    // Arithmetic
     IntegerOverflow,
     IntegerUnderflow,
+    DivisionBeforeMultiplication,
+    UnsafeArrayLength,
+    // Reentrancy
     Reentrancy,
+    // Access Control
     UnprotectedSelfdestruct,
-    UncheckedCall,
     TxOriginAuth,
     UnsafeDelegatecall,
-    TimestampDependency,
     AccessControlMissing,
+    UnprotectedEtherWithdrawal,
+    ArbitraryStorageWrite,
+    PayableDelegatecallInLoop,
+    // Block Manipulation
+    TimestampDependency,
+    WeakPRNG,
+    // Denial of Service
+    UncheckedCall,
+    HardcodedGasAmount,
+    DosBlockGasLimit,
+    DosFailedCall,
+    ForceSendEther,
+    UnsafeSendInRequire,
+    // Cryptographic
+    MissingSignatureVerification,
+    SignatureMalleability,
+    // Storage & Memory
+    MsgValueInLoop,
+    ArbitraryFunctionJump,
+    UnsafeAssembly,
+    // Assertions
     AssertionFailure,
 }
 
@@ -55,6 +79,8 @@ impl SeVulnKind {
         match self {
             SeVulnKind::IntegerOverflow => "integer-overflow",
             SeVulnKind::IntegerUnderflow => "integer-underflow",
+            SeVulnKind::DivisionBeforeMultiplication => "division-before-multiplication",
+            SeVulnKind::UnsafeArrayLength => "unsafe-array-length",
             SeVulnKind::Reentrancy => "reentrancy",
             SeVulnKind::UnprotectedSelfdestruct => "unprotected-selfdestruct",
             SeVulnKind::UncheckedCall => "unchecked-call",
@@ -63,21 +89,51 @@ impl SeVulnKind {
             SeVulnKind::TimestampDependency => "timestamp-dependency",
             SeVulnKind::AccessControlMissing => "access-control-missing",
             SeVulnKind::AssertionFailure => "assertion-failure",
+            SeVulnKind::WeakPRNG => "weak-prng",
+            SeVulnKind::HardcodedGasAmount => "hardcoded-gas-amount",
+            SeVulnKind::DosBlockGasLimit => "dos-block-gas-limit",
+            SeVulnKind::DosFailedCall => "dos-failed-call",
+            SeVulnKind::ForceSendEther => "force-send-ether",
+            SeVulnKind::UnsafeSendInRequire => "unsafe-send-in-require",
+            SeVulnKind::UnprotectedEtherWithdrawal => "unprotected-ether-withdrawal",
+            SeVulnKind::ArbitraryStorageWrite => "arbitrary-storage-write",
+            SeVulnKind::ArbitraryFunctionJump => "arbitrary-function-jump",
+            SeVulnKind::UnsafeAssembly => "unsafe-assembly",
+            SeVulnKind::MsgValueInLoop => "msg-value-in-loop",
+            SeVulnKind::PayableDelegatecallInLoop => "payable-delegatecall-in-loop",
+            SeVulnKind::MissingSignatureVerification => "missing-signature-verification",
+            SeVulnKind::SignatureMalleability => "signature-malleability",
         }
     }
 
     /// Map this vulnerability kind to its parent category.
     pub fn category(&self) -> Category {
         match self {
-            SeVulnKind::IntegerOverflow | SeVulnKind::IntegerUnderflow => Category::Arithmetic,
+            SeVulnKind::IntegerOverflow
+            | SeVulnKind::IntegerUnderflow
+            | SeVulnKind::DivisionBeforeMultiplication
+            | SeVulnKind::UnsafeArrayLength => Category::Arithmetic,
             SeVulnKind::Reentrancy => Category::Reentrancy,
             SeVulnKind::UnprotectedSelfdestruct
             | SeVulnKind::TxOriginAuth
             | SeVulnKind::AccessControlMissing
-            | SeVulnKind::UnsafeDelegatecall => Category::AccessControl,
-            SeVulnKind::UncheckedCall => Category::DenialOfService,
-            SeVulnKind::TimestampDependency => Category::BlockManipulation,
-            SeVulnKind::AssertionFailure => Category::Miscellaneous,
+            | SeVulnKind::UnsafeDelegatecall
+            | SeVulnKind::UnprotectedEtherWithdrawal
+            | SeVulnKind::ArbitraryStorageWrite
+            | SeVulnKind::PayableDelegatecallInLoop => Category::AccessControl,
+            SeVulnKind::UncheckedCall
+            | SeVulnKind::HardcodedGasAmount
+            | SeVulnKind::DosBlockGasLimit
+            | SeVulnKind::DosFailedCall
+            | SeVulnKind::ForceSendEther
+            | SeVulnKind::UnsafeSendInRequire => Category::DenialOfService,
+            SeVulnKind::TimestampDependency | SeVulnKind::WeakPRNG => Category::BlockManipulation,
+            SeVulnKind::AssertionFailure
+            | SeVulnKind::MissingSignatureVerification
+            | SeVulnKind::SignatureMalleability
+            | SeVulnKind::MsgValueInLoop
+            | SeVulnKind::ArbitraryFunctionJump
+            | SeVulnKind::UnsafeAssembly => Category::Miscellaneous,
         }
     }
 }
@@ -292,6 +348,8 @@ mod tests {
         let all_kinds = [
             SeVulnKind::IntegerOverflow,
             SeVulnKind::IntegerUnderflow,
+            SeVulnKind::DivisionBeforeMultiplication,
+            SeVulnKind::UnsafeArrayLength,
             SeVulnKind::Reentrancy,
             SeVulnKind::UnprotectedSelfdestruct,
             SeVulnKind::UncheckedCall,
@@ -300,6 +358,20 @@ mod tests {
             SeVulnKind::TimestampDependency,
             SeVulnKind::AccessControlMissing,
             SeVulnKind::AssertionFailure,
+            SeVulnKind::WeakPRNG,
+            SeVulnKind::HardcodedGasAmount,
+            SeVulnKind::DosBlockGasLimit,
+            SeVulnKind::DosFailedCall,
+            SeVulnKind::ForceSendEther,
+            SeVulnKind::UnsafeSendInRequire,
+            SeVulnKind::UnprotectedEtherWithdrawal,
+            SeVulnKind::ArbitraryStorageWrite,
+            SeVulnKind::ArbitraryFunctionJump,
+            SeVulnKind::UnsafeAssembly,
+            SeVulnKind::MsgValueInLoop,
+            SeVulnKind::PayableDelegatecallInLoop,
+            SeVulnKind::MissingSignatureVerification,
+            SeVulnKind::SignatureMalleability,
         ];
         for kind in all_kinds {
             let finding = make_finding(kind);

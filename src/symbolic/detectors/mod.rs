@@ -1,6 +1,24 @@
 // Detector infrastructure — Phase 6 API. Concrete detectors are registered here.
 #![allow(dead_code)]
 
+pub mod access_control;
+pub mod arithmetic;
+pub mod block_manipulation;
+pub mod cryptographic;
+pub mod delegatecall;
+pub mod dos;
+pub mod reentrancy;
+pub mod storage;
+
+use access_control::AccessControlDetector;
+use arithmetic::ArithmeticDetector;
+use block_manipulation::BlockManipulationDetector;
+use cryptographic::CryptographicDetector;
+use delegatecall::DelegatecallDetector;
+use dos::DosDetector;
+use reentrancy::ReentrancyDetector;
+use storage::StorageDetector;
+
 use crate::cfg::BlockId;
 use crate::ir::IrInstr;
 use crate::symbolic::results::SeFinding;
@@ -58,11 +76,17 @@ impl DetectorRegistry {
     }
 
     /// Create with all built-in detectors registered.
-    ///
-    /// Currently returns an empty registry — actual detector
-    /// implementations are deferred to Phase 6.
     pub fn with_defaults() -> Self {
-        Self::new()
+        let mut registry = Self::new();
+        registry.register(Box::new(ArithmeticDetector::new()));
+        registry.register(Box::new(ReentrancyDetector::new()));
+        registry.register(Box::new(AccessControlDetector::new()));
+        registry.register(Box::new(DelegatecallDetector));
+        registry.register(Box::new(BlockManipulationDetector::new()));
+        registry.register(Box::new(DosDetector::new()));
+        registry.register(Box::new(CryptographicDetector::new()));
+        registry.register(Box::new(StorageDetector));
+        registry
     }
 
     /// Register a detector.
@@ -230,10 +254,11 @@ mod tests {
     }
 
     #[test]
-    fn test_registry_with_defaults_is_empty() {
-        // with_defaults() currently returns an empty registry (Phase 6 pending).
+    fn test_registry_with_defaults_has_all_detectors() {
+        // with_defaults() registers all 8 built-in detectors.
         let registry = DetectorRegistry::with_defaults();
-        assert!(registry.is_empty());
+        assert_eq!(registry.len(), 8);
+        assert!(!registry.is_empty());
     }
 
     #[test]
