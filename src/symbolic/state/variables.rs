@@ -32,16 +32,19 @@ impl VariableEnv {
     }
 
     /// Check if a variable is bound.
+    #[allow(dead_code)] // Phase 6: used by detectors checking variable existence before use
     pub fn contains(&self, var: &IrVar) -> bool {
         self.bindings.contains_key(var)
     }
 
     /// Number of bound variables.
+    #[allow(dead_code)] // Phase 6: used by state-budget accounting
     pub fn len(&self) -> usize {
         self.bindings.len()
     }
 
     /// Whether no variables are bound.
+    #[allow(dead_code)] // Phase 6: used by state-budget accounting
     pub fn is_empty(&self) -> bool {
         self.bindings.is_empty()
     }

@@ -1,3 +1,6 @@
+// Array-theory helpers for mapping storage — Phase 6 API.
+#![allow(dead_code)]
+
 use z3::ast::{Array, BV};
 use z3::Sort;
 

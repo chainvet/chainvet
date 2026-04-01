@@ -1,3 +1,6 @@
+// These utilities are Phase 6 API used by detectors for fast constraint pruning.
+#![allow(dead_code)]
+
 use z3::ast::{Ast, Bool};
 
 /// Simplify a Bool constraint using Z3's built-in simplifier.
@@ -88,7 +91,8 @@ mod tests {
     fn test_simplify_bv_eq_self_yields_true() {
         // x == x should simplify to true for any bitvector x.
         let x = BV::new_const("x", 256);
-        let eq_self = x._eq(&x);
+        #[allow(clippy::eq_op)]
+        let eq_self = x.clone().eq(x);
         let simplified = simplify(&eq_self);
         assert_eq!(
             simplified.as_bool(),

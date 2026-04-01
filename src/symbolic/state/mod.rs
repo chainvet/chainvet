@@ -47,6 +47,7 @@ pub struct SymbolicState {
     /// Unique ID for this state (monotonically increasing).
     pub id: StateId,
     /// Parent state's ID (0 for initial state — creates a fork tree for debugging).
+    #[allow(dead_code)] // Phase 6: used by witness reconstruction to trace fork history
     pub parent_id: StateId,
     /// Variable bindings: `IrVar → SymbolicValue`.
     pub variables: VariableEnv,
@@ -91,6 +92,7 @@ impl SymbolicState {
     ///
     /// The new state gets a fresh ID and records this state as parent,
     /// creating a tree structure useful for debugging exploration order.
+    #[allow(dead_code)] // Phase 6: used by inter-procedural call handling
     pub fn clone_forked(&self, id_gen: &mut StateIdGen) -> Self {
         let mut forked = self.clone();
         forked.id = id_gen.next_id();

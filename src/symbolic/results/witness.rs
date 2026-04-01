@@ -125,7 +125,7 @@ mod tests {
     use z3::{Params, SatResult, Solver};
 
     /// Build a solver with model.completion=true and assert all initial constraints.
-    fn make_solver_with_ctx(call_ctx: &CallContext, constraints: &[(z3::ast::Bool, String)]) -> Solver {
+    fn make_solver_with_ctx(constraints: &[(z3::ast::Bool, String)]) -> Solver {
         let solver = Solver::new_for_logic("QF_ABV").unwrap_or_else(Solver::new);
         let mut params = Params::new();
         params.set_bool("model.completion", true);
@@ -141,7 +141,7 @@ mod tests {
         // Constrain block_timestamp to a specific known value and verify
         // that from_model() extracts that exact value.
         let (call_ctx, constraints) = CallContext::new_symbolic();
-        let solver = make_solver_with_ctx(&call_ctx, &constraints);
+        let solver = make_solver_with_ctx(&constraints);
 
         let known_ts: u64 = 1_700_000_000;
         let ts_val = BV::from_u64(known_ts, 256);
@@ -161,7 +161,7 @@ mod tests {
     fn test_witness_from_model_block_number() {
         // Constrain block_number to a known value and verify extraction.
         let (call_ctx, constraints) = CallContext::new_symbolic();
-        let solver = make_solver_with_ctx(&call_ctx, &constraints);
+        let solver = make_solver_with_ctx(&constraints);
 
         let known_bn: u64 = 12_345;
         let bn_val = BV::from_u64(known_bn, 256);
@@ -182,7 +182,7 @@ mod tests {
         // Constrain msg_value to 0 and verify all 32 bytes of the extracted
         // value are zero (big-endian uint256 representation).
         let (call_ctx, constraints) = CallContext::new_symbolic();
-        let solver = make_solver_with_ctx(&call_ctx, &constraints);
+        let solver = make_solver_with_ctx(&constraints);
 
         let zero_256 = BV::from_u64(0, 256);
         solver.assert(&call_ctx.msg_value.eq(&zero_256));
@@ -203,7 +203,7 @@ mod tests {
         // The variables field is always empty in from_model() — no named
         // symbolic variables are populated by from_model() itself.
         let (call_ctx, constraints) = CallContext::new_symbolic();
-        let solver = make_solver_with_ctx(&call_ctx, &constraints);
+        let solver = make_solver_with_ctx(&constraints);
 
         assert_eq!(solver.check(), SatResult::Sat);
         let model = solver.get_model().unwrap();
@@ -220,7 +220,7 @@ mod tests {
         // The initial constraint asserts msg_sender != 0, so the extracted
         // msg_sender must have at least one non-zero byte in any valid model.
         let (call_ctx, constraints) = CallContext::new_symbolic();
-        let solver = make_solver_with_ctx(&call_ctx, &constraints);
+        let solver = make_solver_with_ctx(&constraints);
 
         assert_eq!(solver.check(), SatResult::Sat);
         let model = solver.get_model().unwrap();

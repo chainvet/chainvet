@@ -15,6 +15,7 @@ pub struct WorklistEntry {
     /// Which CFG function this state belongs to.
     pub cfg_func_id: u32,
     /// The block we just came from (for future phi-node resolution).
+    #[allow(dead_code)] // Phase 6: used by SSA phi-node resolver
     pub predecessor_block: Option<BlockId>,
     /// How many times each loop header has been entered on this path.
     /// Used for loop unrolling bound enforcement.
@@ -57,6 +58,7 @@ pub struct SeConfig {
     /// Total analysis wall-clock timeout in seconds (0 = no timeout).
     pub total_timeout_s: u64,
     /// Upper bound on symbolic byte array lengths.
+    #[allow(dead_code)] // Phase 6: bounds SymBytes len in new_symbolic_bytes calls
     pub dynamic_bytes_bound: usize,
     /// Worklist ordering.
     pub exploration_strategy: ExplorationStrategyKind,

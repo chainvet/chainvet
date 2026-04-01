@@ -1,3 +1,6 @@
+// Dynamic bytes/string modeling — Phase 6 API.
+#![allow(dead_code)]
+
 use z3::ast::{Array, BV, Bool};
 use z3::Sort;
 
@@ -11,7 +14,7 @@ pub fn new_symbolic_bytes(name: &str, max_bound: u32) -> (SymbolicValue, Bool) {
     let val_sort = Sort::bitvector(8);
     let len = BV::new_const(format!("{name}_len"), 256);
     let content = Array::new_const(format!("{name}_data"), &key_sort, &val_sort);
-    let bound = len.bvule(&BV::from_u64(max_bound as u64, 256));
+    let bound = len.bvule(BV::from_u64(max_bound as u64, 256));
     let sv = SymbolicValue::SymBytes {
         len,
         content,

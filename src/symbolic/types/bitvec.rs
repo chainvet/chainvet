@@ -35,13 +35,13 @@ pub fn apply_binary_op(op: &str, lhs: &BV, rhs: &BV, width: u32) -> Result<Symbo
 
         // Logical (coerce BV operands to Bool via != 0)
         "&&" => {
-            let lb = lhs.eq(&BV::from_u64(0, width)).not();
-            let rb = rhs.eq(&BV::from_u64(0, width)).not();
+            let lb = lhs.eq(BV::from_u64(0, width)).not();
+            let rb = rhs.eq(BV::from_u64(0, width)).not();
             Ok(boolean(Bool::and(&[&lb, &rb])))
         }
         "||" => {
-            let lb = lhs.eq(&BV::from_u64(0, width)).not();
-            let rb = rhs.eq(&BV::from_u64(0, width)).not();
+            let lb = lhs.eq(BV::from_u64(0, width)).not();
+            let rb = rhs.eq(BV::from_u64(0, width)).not();
             Ok(boolean(Bool::or(&[&lb, &rb])))
         }
 
@@ -53,13 +53,13 @@ pub fn apply_binary_op(op: &str, lhs: &BV, rhs: &BV, width: u32) -> Result<Symbo
 pub fn apply_unary_op(op: &str, operand: &BV, width: u32, prefix: bool) -> Result<SymbolicValue> {
     match (op, prefix) {
         ("!", _) => {
-            let b = operand.eq(&BV::from_u64(0, width)).not();
+            let b = operand.eq(BV::from_u64(0, width)).not();
             Ok(boolean(b.not()))
         }
         ("-", true) => Ok(bv(operand.bvneg(), width)),
         ("~", _) => Ok(bv(operand.bvnot(), width)),
-        ("++", _) => Ok(bv(operand.bvadd(&BV::from_u64(1, width)), width)),
-        ("--", _) => Ok(bv(operand.bvsub(&BV::from_u64(1, width)), width)),
+        ("++", _) => Ok(bv(operand.bvadd(BV::from_u64(1, width)), width)),
+        ("--", _) => Ok(bv(operand.bvsub(BV::from_u64(1, width)), width)),
         _ => Err(Error::msg(format!("unsupported unary operator: {op}"))),
     }
 }
@@ -98,20 +98,20 @@ fn bv_exp(base: &BV, exp: &BV, width: u32) -> Result<SymbolicValue> {
     }
 
     // Symbolic base, concrete small exponent: repeated squaring with Z3 mul
-    if let Some(e) = concrete_exp {
-        if e <= 256 {
-            let mut result = BV::from_u64(1, width);
-            let mut b = base.clone();
-            let mut e = e;
-            while e > 0 {
-                if e & 1 == 1 {
-                    result = result.bvmul(&b);
-                }
-                b = b.bvmul(&b);
-                e >>= 1;
+    if let Some(e) = concrete_exp
+        && e <= 256
+    {
+        let mut result = BV::from_u64(1, width);
+        let mut b = base.clone();
+        let mut e = e;
+        while e > 0 {
+            if e & 1 == 1 {
+                result = result.bvmul(&b);
             }
-            return Ok(bv(result, width));
+            b = b.bvmul(&b);
+            e >>= 1;
         }
+        return Ok(bv(result, width));
     }
 
     // Symbolic or large exponent: overapproximate with fresh unconstrained variable

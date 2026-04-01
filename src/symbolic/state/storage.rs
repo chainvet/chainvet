@@ -496,6 +496,7 @@ mod tests {
 /// Result of resolving an `IrPlace` against the storage layout.
 ///
 /// Used by the executor (Phase 4) to determine how to read/write storage.
+#[allow(dead_code)] // Phase 6: used by executor resolve_place for typed storage accesses
 pub enum StorageAccess {
     /// Direct slot access (simple state variable or struct field).
     DirectSlot { slot: u64 },

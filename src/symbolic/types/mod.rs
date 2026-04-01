@@ -15,11 +15,19 @@ use z3::ast::{Array, BV, Bool};
 pub enum SymbolicValue {
     BitVec { width: u32, val: BV },
     Bool { val: Bool },
+    #[allow(dead_code)] // Phase 6: mapping/array storage type
     SymArray { key_width: u32, val_width: u32, val: Array },
-    SymBytes { len: BV, content: Array },
+    #[allow(dead_code)] // Phase 6: dynamic bytes/string type
+    SymBytes {
+        #[allow(dead_code)]
+        len: BV,
+        #[allow(dead_code)]
+        content: Array,
+    },
 }
 
 impl SymbolicValue {
+    #[allow(dead_code)] // Phase 6: used by detectors inspecting mapping values
     pub fn as_bv(&self) -> Option<&BV> {
         match self {
             SymbolicValue::BitVec { val, .. } => Some(val),
@@ -27,6 +35,7 @@ impl SymbolicValue {
         }
     }
 
+    #[allow(dead_code)] // Phase 6: used by detectors inspecting boolean conditions
     pub fn as_bool(&self) -> Option<&Bool> {
         match self {
             SymbolicValue::Bool { val } => Some(val),
@@ -34,6 +43,7 @@ impl SymbolicValue {
         }
     }
 
+    #[allow(dead_code)] // Phase 6: used by detectors inspecting mapping arrays
     pub fn as_array(&self) -> Option<&Array> {
         match self {
             SymbolicValue::SymArray { val, .. } => Some(val),
@@ -70,7 +80,7 @@ impl SymbolicValue {
         match self {
             SymbolicValue::Bool { val } => Ok(val.clone()),
             SymbolicValue::BitVec { val, width } => {
-                Ok(val.eq(&BV::from_u64(0, *width)).not())
+                Ok(val.eq(BV::from_u64(0, *width)).not())
             }
             SymbolicValue::SymArray { .. } => {
                 Err(Error::msg("cannot coerce SymArray to Bool"))
@@ -110,6 +120,7 @@ pub fn zero_bv(width: u32) -> SymbolicValue {
 }
 
 /// Create a concrete bitvector from a u64 value.
+#[allow(dead_code)] // Phase 6: used by detectors constructing concrete test values
 pub fn concrete_bv(value: u64, width: u32) -> SymbolicValue {
     SymbolicValue::BitVec {
         width,
@@ -118,6 +129,7 @@ pub fn concrete_bv(value: u64, width: u32) -> SymbolicValue {
 }
 
 /// Create a concrete boolean symbolic value.
+#[allow(dead_code)] // Phase 6: used by detectors constructing concrete conditions
 pub fn concrete_bool(value: bool) -> SymbolicValue {
     SymbolicValue::Bool {
         val: Bool::from_bool(value),
@@ -182,7 +194,7 @@ fn parse_number_literal(value: &str) -> SymbolicValue {
         let lo = n as u64;
         let bv_hi = BV::from_u64(hi, 256);
         let bv_lo = BV::from_u64(lo, 256);
-        let shifted = bv_hi.bvshl(&BV::from_u64(64, 256));
+        let shifted = bv_hi.bvshl(BV::from_u64(64, 256));
         return SymbolicValue::BitVec {
             width: 256,
             val: shifted.bvor(&bv_lo),
@@ -208,13 +220,13 @@ fn parse_hex_literal(value: &str) -> SymbolicValue {
     }
 
     // Parse as u64 if small enough
-    if hex_str.len() <= 16 {
-        if let Ok(n) = u64::from_str_radix(hex_str, 16) {
-            return SymbolicValue::BitVec {
-                width: 256,
-                val: BV::from_u64(n, 256),
-            };
-        }
+    if hex_str.len() <= 16
+        && let Ok(n) = u64::from_str_radix(hex_str, 16)
+    {
+        return SymbolicValue::BitVec {
+            width: 256,
+            val: BV::from_u64(n, 256),
+        };
     }
 
     // For larger hex values, build from 64-bit chunks
@@ -227,7 +239,7 @@ fn parse_hex_literal(value: &str) -> SymbolicValue {
             let chunk_bv = BV::from_u64(n, 256);
             let shift_bits = ((3 - chunk_idx) * 64) as u64;
             if shift_bits > 0 {
-                let shifted = chunk_bv.bvshl(&BV::from_u64(shift_bits, 256));
+                let shifted = chunk_bv.bvshl(BV::from_u64(shift_bits, 256));
                 result = result.bvor(&shifted);
             } else {
                 result = result.bvor(&chunk_bv);

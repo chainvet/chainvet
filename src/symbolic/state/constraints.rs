@@ -31,11 +31,13 @@ impl PathConstraints {
     }
 
     /// Number of constraints.
+    #[allow(dead_code)] // Phase 6: used by witness report and detector diagnostics
     pub fn len(&self) -> usize {
         self.constraints.len()
     }
 
     /// Whether no constraints have been added.
+    #[allow(dead_code)] // Phase 6: used by engine pre-checks before solver queries
     pub fn is_empty(&self) -> bool {
         self.constraints.is_empty()
     }

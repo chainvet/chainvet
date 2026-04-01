@@ -33,9 +33,15 @@ pub enum BlockOutcome {
         exit_block: Option<BlockId>,
     },
     /// Function returned with zero or more values.
-    Return { values: Vec<SymbolicValue> },
+    Return {
+        #[allow(dead_code)] // Phase 6: used to propagate return values to callers
+        values: Vec<SymbolicValue>,
+    },
     /// Execution reverted.
-    Revert { message: Option<SymbolicValue> },
+    Revert {
+        #[allow(dead_code)] // Phase 6: used to surface revert reasons in findings
+        message: Option<SymbolicValue>,
+    },
     /// Execution terminated without explicit return.
     Stop,
 }
@@ -45,6 +51,7 @@ pub enum BlockOutcome {
 /// All variants are logged as warnings and execution continues
 /// with a fallback value (e.g., fresh symbolic BV).
 #[derive(Debug)]
+#[allow(dead_code)] // Phase 6: UnresolvablePlace and SolverError raised by detector resolve paths
 pub enum ExecutorError {
     UnsupportedInstruction(String),
     UnresolvablePlace(String),
@@ -66,6 +73,7 @@ impl std::fmt::Display for ExecutorError {
 /// Mutates `state` (variable bindings, memory, storage, path constraints).
 /// Calls detector hooks on each instruction and at block exit.
 /// Returns the block's outcome for the engine to act on.
+#[allow(clippy::too_many_arguments)] // all params are distinct; Phase 6 may bundle into ExecutionContext
 pub fn execute_block(
     state: &mut SymbolicState,
     block: &crate::cfg::Block,
@@ -753,7 +761,7 @@ fn instr_span(instr: &IrInstr) -> Span {
 /// instead of silently picking true or false.
 fn fresh_symbolic_bool(prefix: &str) -> Bool {
     let bit = BV::fresh_const(prefix, 1);
-    bit._eq(&BV::from_u64(1, 1))
+    bit.eq(BV::from_u64(1, 1))
 }
 
 /// Attempt to extract a `Witness` from the current solver state.
@@ -804,7 +812,7 @@ pub fn pre_populate_call_context(state: &mut SymbolicState) {
 mod tests {
     use super::*;
     use crate::cfg::{Block, BlockId, CfgFunction, Edge};
-    use crate::ir::{ControlKind, IrBlock, IrFunction, IrModule, IrValue, IrVar};
+    use crate::ir::{ControlKind, IrValue, IrVar};
     use crate::norm::{Literal, Span};
     use crate::symbolic::detectors::DetectorRegistry;
     use crate::symbolic::solver::z3_backend::Z3Backend;
@@ -812,7 +820,7 @@ mod tests {
     use crate::symbolic::state::storage::StorageLayout;
     use crate::symbolic::state::{StateIdGen, SymbolicState};
     use crate::symbolic::types::hash::KeccakContext;
-    use crate::symbolic::types::{concrete_bv, fresh_bv, SymbolicValue};
+    use crate::symbolic::types::concrete_bv;
 
     // ---- Test helpers ----
 
@@ -972,7 +980,7 @@ mod tests {
             BlockOutcome::Fallthrough { target } => {
                 assert_eq!(target, 1, "Nop block with one successor should fall through to it");
             }
-            other => panic!("expected Fallthrough, got different variant"),
+            _ => panic!("expected Fallthrough, got different variant"),
         }
     }
 
@@ -1002,7 +1010,7 @@ mod tests {
 
         match run_block(&mut state, &cfg, 0) {
             BlockOutcome::Return { .. } => {}
-            other => panic!("expected Return outcome"),
+            _ => panic!("expected Return outcome"),
         }
     }
 
@@ -1018,7 +1026,7 @@ mod tests {
 
         match run_block(&mut state, &cfg, 0) {
             BlockOutcome::Revert { .. } => {}
-            other => panic!("expected Revert outcome"),
+            _ => panic!("expected Revert outcome"),
         }
     }
 
@@ -1051,7 +1059,7 @@ mod tests {
                 assert_eq!(true_block, 1, "first successor should be true_block");
                 assert_eq!(false_block, 2, "second successor should be false_block");
             }
-            other => panic!("expected Branch outcome from ControlKind::If with two edges"),
+            _ => panic!("expected Branch outcome from ControlKind::If with two edges"),
         }
     }
 }

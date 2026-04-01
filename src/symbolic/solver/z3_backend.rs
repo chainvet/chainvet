@@ -22,7 +22,7 @@ impl Z3Backend {
     /// - Sets per-query timeout if `timeout_ms > 0`.
     /// - Enables `model.completion` so models assign values to all declared variables.
     pub fn new(timeout_ms: u32) -> Self {
-        let solver = Solver::new_for_logic("QF_ABV").unwrap_or_else(Solver::new);
+        let solver = Solver::new_for_logic("QF_ABV").unwrap_or_default();
 
         let mut params = Params::new();
         params.set_bool("model.completion", true);
@@ -38,6 +38,7 @@ impl Z3Backend {
     }
 
     /// Number of `check_sat` / `check_sat_assuming` queries issued so far.
+    #[allow(dead_code)] // Phase 6: used by detector telemetry / report stats
     pub fn query_count(&self) -> u64 {
         self.query_count.get()
     }
@@ -74,9 +75,9 @@ impl SmtSolver for Z3Backend {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use z3::ast::{Ast, BV};
+    use z3::ast::BV;
     use z3::SatResult;
-
+    
     // -- Construction tests --
 
     #[test]
@@ -313,9 +314,9 @@ mod tests {
         let y = BV::new_const("y", 8);
 
         // x == 42
-        backend.assert_constraint(&x._eq(&BV::from_u64(42, 8)));
+        backend.assert_constraint(&x.eq(&BV::from_u64(42, 8)));
         // y == 7
-        backend.assert_constraint(&y._eq(&BV::from_u64(7, 8)));
+        backend.assert_constraint(&y.eq(&BV::from_u64(7, 8)));
 
         assert_eq!(backend.check_sat(), SatResult::Sat);
         let model = backend.get_model().unwrap();

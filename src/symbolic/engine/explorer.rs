@@ -15,9 +15,11 @@ pub trait ExplorationStrategy {
     fn pop(&mut self) -> Option<WorklistEntry>;
 
     /// Whether the worklist is empty.
+    #[allow(dead_code)] // Phase 6: used by priority/targeted scheduling strategies
     fn is_empty(&self) -> bool;
 
     /// Number of entries currently in the worklist.
+    #[allow(dead_code)] // Phase 6: used by coverage-guided scheduling for budget tracking
     fn len(&self) -> usize;
 }
 
@@ -103,6 +105,7 @@ impl ExplorationStrategy for BfsStrategy {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExplorationStrategyKind {
     Dfs,
+    #[allow(dead_code)] // Phase 6: BFS used by coverage-guided hybrid mode
     Bfs,
 }
 

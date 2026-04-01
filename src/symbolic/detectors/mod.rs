@@ -1,3 +1,6 @@
+// Detector infrastructure — Phase 6 API. Concrete detectors are registered here.
+#![allow(dead_code)]
+
 use crate::cfg::BlockId;
 use crate::ir::IrInstr;
 use crate::symbolic::results::SeFinding;

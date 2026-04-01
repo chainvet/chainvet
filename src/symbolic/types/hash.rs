@@ -61,6 +61,7 @@ impl KeccakContext {
     /// Used for mapping slot calculation: `keccak256(abi.encode(key, slot))`.
     /// If all parts are concrete, computes the real hash. Otherwise uses
     /// the uninterpreted function on the concatenated symbolic BV.
+    #[allow(dead_code)] // Phase 6: used for keccak256(abi.encode(key, slot)) storage slot computation
     pub fn hash_concat(&mut self, parts: &[&BV]) -> SymbolicValue {
         // Try to extract concrete u64 values from all parts.
         let concrete_parts: Vec<(u32, u64)> = parts
@@ -76,9 +77,9 @@ impl KeccakContext {
                 let val_bytes = n.to_be_bytes();
                 // Pad to the BV's width
                 if width_bytes > 8 {
-                    bytes.extend(std::iter::repeat(0u8).take(width_bytes - 8));
+                    bytes.extend(std::iter::repeat_n(0u8, width_bytes - 8));
                 }
-                let start = if width_bytes < 8 { 8 - width_bytes } else { 0 };
+                let start = 8_usize.saturating_sub(width_bytes);
                 bytes.extend_from_slice(&val_bytes[start..]);
             }
             return self.hash_concrete_bytes(&bytes);
@@ -131,7 +132,7 @@ impl KeccakContext {
             let chunk_bv = BV::from_u64(chunk_val, 256);
             let shift = ((3 - chunk_idx) * 64) as u64;
             if shift > 0 {
-                result = result.bvor(&chunk_bv.bvshl(&BV::from_u64(shift, 256)));
+                result = result.bvor(chunk_bv.bvshl(BV::from_u64(shift, 256)));
             } else {
                 result = result.bvor(&chunk_bv);
             }
@@ -185,7 +186,7 @@ mod tests {
             let chunk_bv = BV::from_u64(chunk_val, 256);
             let shift = ((3 - chunk_idx) * 64) as u64;
             if shift > 0 {
-                result = result.bvor(&chunk_bv.bvshl(&BV::from_u64(shift, 256)));
+                result = result.bvor(chunk_bv.bvshl(BV::from_u64(shift, 256)));
             } else {
                 result = result.bvor(&chunk_bv);
             }

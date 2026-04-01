@@ -20,6 +20,7 @@ pub struct CallContext {
     /// `block.coinbase`: `BV<160>`.
     pub block_coinbase: BV,
     /// `address(this)`: `BV<160>` — concrete address for the contract under analysis.
+    #[allow(dead_code)] // Phase 6: used by detectors checking address(this) == msg.sender
     pub this_address: BV,
     /// `address(this).balance`: `BV<256>`.
     pub this_balance: BV,
