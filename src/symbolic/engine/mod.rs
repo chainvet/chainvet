@@ -385,6 +385,20 @@ mod tests {
         NormalizedAst::empty()
     }
 
+    fn nop() -> IrInstr {
+        IrInstr::Nop { span: span() }
+    }
+
+    /// Build a CfgFunction directly from pre-made blocks and edges (no IR lowering).
+    fn make_cfg(id: u32, blocks: Vec<Block>, edges: Vec<Edge>) -> CfgFunction {
+        CfgFunction { id, blocks, edges }
+    }
+
+    /// Return a Z3 solver with a 500 ms per-query timeout for branch-feasibility probing.
+    fn default_solver() -> Z3Backend {
+        Z3Backend::new(500)
+    }
+
     // ---- run_engine tests ----
 
     #[test]
@@ -491,5 +505,228 @@ mod tests {
             "at least 2 blocks should be visited; got {}",
             result.coverage.blocks_visited
         );
+    }
+
+    // ---- limit-enforcement and structural tests ----
+
+    #[test]
+    fn test_infeasible_branch_is_pruned() {
+        // When an If condition is the concrete literal `false`, the true-branch is
+        // UNSAT and must be pruned. Only entry + false-branch block are explored.
+        use crate::norm::Literal;
+        let false_lit = IrValue::Literal(Literal {
+            kind: "bool".to_string(),
+            value: "false".to_string(),
+        });
+        let if_instr = IrInstr::Control {
+            kind: ControlKind::If { cond: false_lit },
+            span: span(),
+        };
+        let cfg = make_cfg(
+            0,
+            vec![
+                Block { id: 0, instrs: vec![if_instr] },
+                Block { id: 1, instrs: vec![nop()] }, // true-branch  — must be pruned
+                Block { id: 2, instrs: vec![nop()] }, // false-branch — must be explored
+            ],
+            vec![
+                Edge { from: 0, to: 1 },
+                Edge { from: 0, to: 2 },
+            ],
+        );
+        let result = run_engine(&[cfg], &empty_ast(), SeConfig::default(), &default_solver());
+        assert_eq!(
+            result.states_explored, 2,
+            "only entry + false-branch should be explored; got {}",
+            result.states_explored
+        );
+        assert_eq!(
+            result.coverage.blocks_visited, 2,
+            "entry + false-branch = 2 blocks visited; got {}",
+            result.coverage.blocks_visited
+        );
+    }
+
+    #[test]
+    fn test_revert_block_terminates_path() {
+        // A Revert terminator produces BlockOutcome::Revert, which the engine
+        // discards without pushing successors. No findings are produced.
+        let revert_instr = IrInstr::Control {
+            kind: ControlKind::Revert { value: None },
+            span: span(),
+        };
+        let cfg = make_cfg(
+            0,
+            vec![
+                Block { id: 0, instrs: vec![nop()] },
+                Block { id: 1, instrs: vec![revert_instr] },
+            ],
+            vec![Edge { from: 0, to: 1 }],
+        );
+        let result = run_engine(&[cfg], &empty_ast(), SeConfig::default(), &default_solver());
+        assert_eq!(result.states_explored, 2, "entry + revert block = 2 states");
+        assert!(result.findings.is_empty(), "no findings expected for a plain revert");
+    }
+
+    #[test]
+    fn test_dfs_and_bfs_produce_same_coverage() {
+        // Exploration order does not change reachability: DFS and BFS must visit
+        // identical block and state counts on the same 3-block branch CFG.
+        use crate::symbolic::engine::explorer::ExplorationStrategyKind;
+        let build = || {
+            let if_instr = IrInstr::Control {
+                kind: ControlKind::If { cond: IrValue::Var(IrVar::Named("x".into())) },
+                span: span(),
+            };
+            make_cfg(
+                0,
+                vec![
+                    Block { id: 0, instrs: vec![if_instr] },
+                    Block { id: 1, instrs: vec![nop()] },
+                    Block { id: 2, instrs: vec![nop()] },
+                ],
+                vec![Edge { from: 0, to: 1 }, Edge { from: 0, to: 2 }],
+            )
+        };
+        let ast = empty_ast();
+        let dfs = run_engine(
+            &[build()],
+            &ast,
+            SeConfig { exploration_strategy: ExplorationStrategyKind::Dfs, ..SeConfig::default() },
+            &default_solver(),
+        );
+        let bfs = run_engine(
+            &[build()],
+            &ast,
+            SeConfig { exploration_strategy: ExplorationStrategyKind::Bfs, ..SeConfig::default() },
+            &default_solver(),
+        );
+        assert_eq!(dfs.coverage.blocks_visited, bfs.coverage.blocks_visited);
+        assert_eq!(dfs.states_explored, bfs.states_explored);
+    }
+
+    #[test]
+    fn test_max_path_depth_stops_deep_chains() {
+        // An 8-block linear chain with max_path_depth=3 must stop after at most
+        // 3 executed states (the check skips states at depth >= limit).
+        let blocks: Vec<Block> = (0u32..8).map(|i| Block { id: i, instrs: vec![nop()] }).collect();
+        let edges: Vec<Edge> = (0u32..7).map(|i| Edge { from: i, to: i + 1 }).collect();
+        let cfg = make_cfg(0, blocks, edges);
+        let config = SeConfig { max_path_depth: 3, ..SeConfig::default() };
+        let result = run_engine(&[cfg], &empty_ast(), config, &default_solver());
+        assert!(
+            result.states_explored <= 3,
+            "max_path_depth=3 should stop at ≤3 states; got {}",
+            result.states_explored
+        );
+    }
+
+    #[test]
+    fn test_max_states_stops_explosion() {
+        // A 3-level binary tree (7 blocks) with symbolic conditions. With
+        // max_states=3 the engine must stop at or before 3 states_explored.
+        let sym_if = || IrInstr::Control {
+            kind: ControlKind::If { cond: IrValue::Var(IrVar::Named("x".into())) },
+            span: span(),
+        };
+        let cfg = make_cfg(
+            0,
+            vec![
+                Block { id: 0, instrs: vec![sym_if()] },
+                Block { id: 1, instrs: vec![sym_if()] },
+                Block { id: 2, instrs: vec![sym_if()] },
+                Block { id: 3, instrs: vec![nop()] },
+                Block { id: 4, instrs: vec![nop()] },
+                Block { id: 5, instrs: vec![nop()] },
+                Block { id: 6, instrs: vec![nop()] },
+            ],
+            vec![
+                Edge { from: 0, to: 1 }, Edge { from: 0, to: 2 },
+                Edge { from: 1, to: 3 }, Edge { from: 1, to: 4 },
+                Edge { from: 2, to: 5 }, Edge { from: 2, to: 6 },
+            ],
+        );
+        let config = SeConfig { max_states: 3, ..SeConfig::default() };
+        let result = run_engine(&[cfg], &empty_ast(), config, &default_solver());
+        assert!(
+            result.states_explored <= 3,
+            "max_states=3 should cap exploration at 3; got {}",
+            result.states_explored
+        );
+    }
+
+    #[test]
+    fn test_max_loop_unrolling_prevents_infinite_loop() {
+        // A Loop with cond: None would cycle forever without a bound.
+        // With max_loop_unrolling=2 the engine must terminate.
+        let loop_instr = IrInstr::Control {
+            kind: ControlKind::Loop { cond: None },
+            span: span(),
+        };
+        let cfg = make_cfg(
+            0,
+            vec![
+                Block { id: 0, instrs: vec![loop_instr] },
+                Block { id: 1, instrs: vec![nop()] }, // body  (first successor)
+                Block { id: 2, instrs: vec![nop()] }, // exit  (second successor)
+            ],
+            vec![Edge { from: 0, to: 1 }, Edge { from: 0, to: 2 }],
+        );
+        let config = SeConfig { max_loop_unrolling: 2, ..SeConfig::default() };
+        let result = run_engine(&[cfg], &empty_ast(), config, &default_solver());
+        // Termination is proved by reaching this assertion at all.
+        assert!(
+            result.states_explored <= 5,
+            "loop with max_loop_unrolling=2 must not run away; got {}",
+            result.states_explored
+        );
+        assert!(result.findings.is_empty());
+    }
+
+    #[test]
+    fn test_multi_function_cfgs_explored_independently() {
+        // Two CFG functions, each with one entry block, must each be explored.
+        let cfg0 = make_cfg(0, vec![Block { id: 0, instrs: vec![nop()] }], vec![]);
+        let cfg1 = make_cfg(1, vec![Block { id: 0, instrs: vec![nop()] }], vec![]);
+        let result = run_engine(&[cfg0, cfg1], &empty_ast(), SeConfig::default(), &default_solver());
+        assert_eq!(result.states_explored, 2);
+        assert_eq!(result.coverage.blocks_visited, 2);
+        assert_eq!(result.coverage.functions_visited, 2);
+    }
+
+    #[test]
+    fn test_coverage_percentage_nonzero_after_execution() {
+        // After executing any block the block_coverage_pct must be positive.
+        let if_instr = IrInstr::Control {
+            kind: ControlKind::If { cond: IrValue::Var(IrVar::Named("x".into())) },
+            span: span(),
+        };
+        let cfg = make_cfg(
+            0,
+            vec![
+                Block { id: 0, instrs: vec![if_instr] },
+                Block { id: 1, instrs: vec![nop()] },
+                Block { id: 2, instrs: vec![nop()] },
+            ],
+            vec![Edge { from: 0, to: 1 }, Edge { from: 0, to: 2 }],
+        );
+        let result = run_engine(&[cfg], &empty_ast(), SeConfig::default(), &default_solver());
+        assert!(result.coverage.block_coverage_pct > 0.0);
+        assert!(result.coverage.blocks_visited >= 1);
+    }
+
+    #[test]
+    fn test_dangling_edge_to_missing_block_does_not_panic() {
+        // A Fallthrough edge pointing to a non-existent block must not panic.
+        // The engine does `None => continue` on the missing-block lookup.
+        let cfg = make_cfg(
+            0,
+            vec![Block { id: 0, instrs: vec![nop()] }],
+            vec![Edge { from: 0, to: 99 }],
+        );
+        let result = run_engine(&[cfg], &empty_ast(), SeConfig::default(), &default_solver());
+        // states_explored is incremented before the block-lookup check, so the
+        // missing block 99 is counted before the None => continue fires: exactly 2.
+        assert_eq!(result.states_explored, 2);
     }
 }
