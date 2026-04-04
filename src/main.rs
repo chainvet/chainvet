@@ -1,14 +1,17 @@
 mod analysis;
 mod cfg;
+mod core;
 
 mod frontend;
 mod fuzzing;
 mod ir;
+mod meta;
 mod norm;
 mod report;
 mod ssa;
-mod symbolic;
+mod surfaced;
 mod util;
+mod web;
 
 use crate::util::error::Error;
 use crate::util::error::Result;
@@ -16,28 +19,15 @@ use crate::util::error::Result;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum AnalysisMode {
     Static,
-    Symbolic,
     Fuzzing,
-    Hybrid,
 }
 
 impl AnalysisMode {
     fn from_flag(flag: &str) -> Option<Self> {
         match flag {
             "--static" => Some(Self::Static),
-            "--symbolic" => Some(Self::Symbolic),
             "--fuzzing" => Some(Self::Fuzzing),
-            "--hybrid" => Some(Self::Hybrid),
             _ => None,
-        }
-    }
-
-    fn as_str(self) -> &'static str {
-        match self {
-            Self::Static => "static",
-            Self::Symbolic => "symbolic",
-            Self::Fuzzing => "fuzzing",
-            Self::Hybrid => "hybrid",
         }
     }
 }
@@ -51,7 +41,7 @@ fn main() {
 
 fn print_usage() {
     eprintln!(
-        "usage: static-analyzer [--static|--symbolic|--fuzzing|--hybrid] <path> [--json|--text|--format <json|text>] [--dump-ir <text|json|tuple>]"
+        "usage: static-analyzer --web | [--static|--fuzzing] <path> [--json|--text|--format <json|text>] [--dump-ir <text|json|tuple>]"
     );
 }
 
@@ -61,6 +51,7 @@ fn run() -> Result<()> {
     let mut dump_ir = None;
     let mut mode = AnalysisMode::Static;
     let mut mode_flag = None::<&'static str>;
+    let mut web_mode = false;
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         if let Some(next_mode) = AnalysisMode::from_flag(&arg) {
@@ -74,15 +65,14 @@ fn run() -> Result<()> {
                 mode = next_mode;
                 mode_flag = Some(match next_mode {
                     AnalysisMode::Static => "--static",
-                    AnalysisMode::Symbolic => "--symbolic",
                     AnalysisMode::Fuzzing => "--fuzzing",
-                    AnalysisMode::Hybrid => "--hybrid",
                 });
             }
             continue;
         }
 
         match arg.as_str() {
+            "--web" => web_mode = true,
             "--json" => format = report::OutputFormat::Json,
             "--text" => format = report::OutputFormat::Text,
             "--help" | "-h" => {
@@ -136,6 +126,15 @@ fn run() -> Result<()> {
         }
     }
 
+    if web_mode {
+        if input.is_some() || mode_flag.is_some() || dump_ir.is_some() {
+            return Err(Error::msg(
+                "--web cannot be combined with an input path, analysis mode, or --dump-ir",
+            ));
+        }
+        return web::serve(std::env::current_dir()?);
+    }
+
     let Some(input) = input else {
         print_usage();
         return Ok(());
@@ -154,21 +153,12 @@ fn run() -> Result<()> {
                 println!("{payload}");
                 return Ok(());
             }
-            report::print_report(&output, format)?;
-        }
-        AnalysisMode::Symbolic => {
-            let output = frontend::load_project(&input)?;
-            symbolic::run(&output, format)?;
+            report::print_report(&output, &input, format)?;
         }
         AnalysisMode::Fuzzing => {
             let output = frontend::load_project(&input)?;
             let config = fuzzing::types::FuzzConfig::default();
-            fuzzing::run_fuzzer(&output.ast, &config);
-        }
-        AnalysisMode::Hybrid => {
-            return Err(Error::msg(
-                "hybrid mode placeholder: not implemented yet (planned static + symbolic + fuzzing pipeline)",
-            ));
+            fuzzing::run_fuzzer(&output, &config, format)?;
         }
     }
 

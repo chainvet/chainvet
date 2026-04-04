@@ -89,11 +89,20 @@ pub fn detect_all(
 
 /// Returns `true` if the function has a modifier whose name (case-insensitive)
 /// matches one of the common access-control patterns.
-fn has_access_control_modifier(func: &crate::norm::Function) -> bool {
-    func.modifiers.iter().any(|m| {
-        let lower = m.to_lowercase();
-        AC_MODIFIERS.iter().any(|ac| lower.contains(ac))
-    })
+fn has_access_control_modifier(ast: &NormalizedAst, func: &crate::norm::Function) -> bool {
+    crate::frontend::has_authority_modifier_hint(func, ast)
+        || func.modifiers.iter().any(|m| {
+            let lower = m.to_lowercase();
+            AC_MODIFIERS.iter().any(|ac| lower.contains(ac))
+        })
+}
+
+fn has_access_control_guard(ast: &NormalizedAst, func: &crate::norm::Function) -> bool {
+    crate::frontend::has_sender_authority_check_hint(func, ast)
+}
+
+fn has_public_sender_payout_hint(ast: &NormalizedAst, func: &crate::norm::Function) -> bool {
+    crate::frontend::has_public_sender_payout_hint(func, ast)
 }
 
 /// Returns `true` if the expression at `expr_id` is `msg.sender`.
@@ -133,6 +142,109 @@ fn body_contains_msg_sender(ast: &NormalizedAst, func: &crate::norm::Function) -
     for_each_expr_in_stmt(ast, body, &mut |eid, _| {
         if !found && is_msg_sender(ast, eid) {
             found = true;
+        }
+    });
+    found
+}
+
+fn authority_like_name(name: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    lower
+        .split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+        .filter(|token| !token.is_empty())
+        .any(|token| {
+            matches!(
+                token,
+                "owner"
+                    | "owners"
+                    | "admin"
+                    | "operator"
+                    | "governance"
+                    | "auth"
+                    | "authority"
+                    | "role"
+                    | "roles"
+            ) || token.ends_with("owner")
+                || token.ends_with("owners")
+                || token.ends_with("admin")
+                || token.contains("owner")
+        })
+}
+
+fn expr_is_authority_target(ast: &NormalizedAst, expr_id: u32) -> bool {
+    let Some(expr) = ast.expressions.get(expr_id as usize) else {
+        return false;
+    };
+    match &expr.kind {
+        ExprKind::Ident(name) => authority_like_name(name),
+        ExprKind::Member { base, field } => {
+            authority_like_name(field) || expr_is_authority_target(ast, *base)
+        }
+        ExprKind::Index { base, .. } => expr_is_authority_target(ast, *base),
+        _ => false,
+    }
+}
+
+fn expr_is_constructor_authority_target(ast: &NormalizedAst, expr_id: u32) -> bool {
+    let Some(expr) = ast.expressions.get(expr_id as usize) else {
+        return false;
+    };
+    match &expr.kind {
+        ExprKind::Ident(name) => authority_like_name(name) || name.eq_ignore_ascii_case("creator"),
+        _ => expr_is_authority_target(ast, expr_id),
+    }
+}
+
+fn body_assigns_msg_sender_to_authority_target(
+    ast: &NormalizedAst,
+    func: &crate::norm::Function,
+) -> bool {
+    let Some(body) = func.body else { return false };
+    let mut found = false;
+    for_each_expr_in_stmt(ast, body, &mut |_eid, expr| {
+        if found {
+            return;
+        }
+        if let ExprKind::Assign { lhs, rhs, .. } = &expr.kind
+            && is_msg_sender(ast, *rhs)
+            && expr_is_constructor_authority_target(ast, *lhs)
+        {
+            found = true;
+        }
+    });
+    found
+}
+
+fn initializer_mentions_authority_context(
+    ast: &NormalizedAst,
+    func: &crate::norm::Function,
+) -> bool {
+    if func
+        .params
+        .iter()
+        .any(|param| authority_like_name(param) || param.eq_ignore_ascii_case("creator"))
+    {
+        return true;
+    }
+
+    let Some(body) = func.body else { return false };
+    let mut found = false;
+    for_each_expr_in_stmt(ast, body, &mut |_eid, expr| {
+        if found {
+            return;
+        }
+        match &expr.kind {
+            ExprKind::Ident(name) => {
+                if authority_like_name(name) || name.eq_ignore_ascii_case("creator") {
+                    found = true;
+                }
+            }
+            ExprKind::Member { field, .. } => {
+                if authority_like_name(field) || field.eq_ignore_ascii_case("creator") {
+                    found = true;
+                }
+            }
+            _ => {}
         }
     });
     found
@@ -247,6 +359,17 @@ fn is_mint_or_burn_name(name: &str) -> bool {
         || lower.ends_with("burn")
         || lower.contains("_mint")
         || lower.contains("_burn")
+}
+
+/// Returns `true` if the function name looks like an initializer / setup hook.
+fn is_initializer_name(name: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    lower == "initialize"
+        || lower == "initialise"
+        || lower == "init"
+        || lower.starts_with("initialize")
+        || lower.starts_with("initialise")
+        || lower.starts_with("init")
 }
 
 // ── Generic AST walkers ──────────────────────────────────────────────────────
@@ -425,7 +548,7 @@ fn detect_arbitrary_transfer_from(ast: &NormalizedAst) -> Vec<Finding> {
     let mut findings = Vec::new();
     for func in &ast.functions {
         // If function already has an access-control modifier, skip
-        if has_access_control_modifier(func) {
+        if has_access_control_modifier(ast, func) {
             continue;
         }
         // If function body contains msg.sender somewhere, skip
@@ -545,7 +668,7 @@ fn detect_contract_destructable(ast: &NormalizedAst, call_graph: &CallGraph) -> 
 
         // Only flag when the function HAS access control (AC-13 handles unprotected)
         if let Some(func) = ast.functions.get(site.function as usize) {
-            if has_access_control_modifier(func) {
+            if has_access_control_modifier(ast, func) {
                 findings.push(Finding {
                     kind: FindingKind::ContractDestructable,
                     severity: Severity::Medium,
@@ -816,22 +939,31 @@ fn detect_default_visibility(ast: &NormalizedAst) -> Vec<Finding> {
 fn detect_uninit_permission_check(ast: &NormalizedAst) -> Vec<Finding> {
     let mut findings = Vec::new();
     for func in &ast.functions {
-        let name = func.name.as_deref().unwrap_or("").to_lowercase();
-        let is_initializer = name == "initialize"
-            || name == "init"
-            || name == "initialise"
-            || name.starts_with("initialize_")
-            || name.starts_with("init_");
+        if matches!(func.visibility, Visibility::Internal | Visibility::Private) {
+            continue;
+        }
+        if crate::frontend::is_legacy_named_constructor(func, ast) {
+            continue;
+        }
+
+        let name = func.name.as_deref().unwrap_or("");
+        let authority_init = body_assigns_msg_sender_to_authority_target(ast, func);
+        let named_initializer = is_initializer_name(name);
+        let is_initializer = named_initializer || authority_init;
 
         if !is_initializer {
             continue;
         }
-        if has_access_control_modifier(func) {
+        if !authority_init && !initializer_mentions_authority_context(ast, func) {
+            continue;
+        }
+        if has_access_control_modifier(ast, func) {
             continue;
         }
 
-        // Also skip if function checks msg.sender in body
-        if body_contains_msg_sender(ast, func) {
+        // Skip if msg.sender appears only as a guard, but keep public authority
+        // initializers that directly assign ownership from msg.sender.
+        if body_contains_msg_sender(ast, func) && !authority_init {
             continue;
         }
 
@@ -839,7 +971,12 @@ fn detect_uninit_permission_check(ast: &NormalizedAst) -> Vec<Finding> {
             kind: FindingKind::UninitializedPermissionCheck,
             severity: Severity::High,
             message: format!(
-                "initialization function '{}' lacks access control modifier or msg.sender check",
+                "{} '{}' lacks access control modifier or msg.sender guard",
+                if authority_init && !named_initializer {
+                    "authority-initialization function"
+                } else {
+                    "initialization function"
+                },
                 func.name.as_deref().unwrap_or("<unnamed>")
             ),
             span: func.span,
@@ -1008,7 +1145,7 @@ fn detect_unprotected_selfdestruct(ast: &NormalizedAst, call_graph: &CallGraph) 
         }
 
         if let Some(func) = ast.functions.get(site.function as usize) {
-            if !has_access_control_modifier(func) {
+            if !has_access_control_guard(ast, func) {
                 findings.push(Finding {
                     kind: FindingKind::UnprotectedSelfdestruct,
                     severity: Severity::High,
@@ -1032,10 +1169,13 @@ fn detect_unprotected_ether_withdrawal(ast: &NormalizedAst) -> Vec<Finding> {
         if !matches!(func.kind, FunctionKind::Function) {
             continue;
         }
-        if has_access_control_modifier(func) {
+        if has_access_control_guard(ast, func) {
             continue;
         }
         if matches!(func.visibility, Visibility::Internal | Visibility::Private) {
+            continue;
+        }
+        if has_public_sender_payout_hint(ast, func) {
             continue;
         }
 
@@ -1113,8 +1253,20 @@ fn detect_unsafe_delegatecall(call_graph: &CallGraph) -> Vec<Finding> {
 fn detect_unused_return_value(ast: &NormalizedAst) -> Vec<Finding> {
     let mut findings = Vec::new();
     for func in &ast.functions {
+        let baseline = findings.len();
         if let Some(body) = func.body {
             walk_for_unchecked(ast, body, func.id, &mut findings);
+        }
+        if findings.len() == baseline {
+            if let Some(method) = function_source_unchecked_call(ast, func) {
+                findings.push(Finding {
+                    kind: FindingKind::UnusedReturnValue,
+                    severity: Severity::Medium,
+                    message: format!("return value of low-level {method} is not checked"),
+                    span: func.span,
+                    function: Some(func.id),
+                });
+            }
         }
     }
     findings
@@ -1175,16 +1327,88 @@ fn walk_for_unchecked(
 
 fn low_level_call_name(ast: &NormalizedAst, expr_id: u32) -> Option<String> {
     let expr = ast.expressions.get(expr_id as usize)?;
-    let call = expr.meta.call.as_ref()?;
-    let name = match &call.target {
-        CallTarget::Member { name, .. } => name.as_str(),
-        CallTarget::Direct { name } => name.as_str(),
-        CallTarget::Unknown => return None,
-    };
-    match name {
-        "call" | "delegatecall" | "callcode" | "staticcall" | "send" => Some(name.to_string()),
-        _ => None,
+    if let Some(call) = &expr.meta.call {
+        let name = match &call.target {
+            CallTarget::Member { name, .. } => name.as_str(),
+            CallTarget::Direct { name } => name.as_str(),
+            CallTarget::Unknown => "",
+        };
+        match name {
+            "call" | "delegatecall" | "callcode" | "staticcall" | "send" => {
+                return Some(name.to_string());
+            }
+            _ => {}
+        }
     }
+
+    if let ExprKind::Call { callee, .. } = &expr.kind {
+        if let Some(callee_expr) = ast.expressions.get(*callee as usize) {
+            match &callee_expr.kind {
+                ExprKind::Member { field, .. } => match field.as_str() {
+                    "call" | "delegatecall" | "callcode" | "staticcall" | "send" => {
+                        return Some(field.clone());
+                    }
+                    _ => {}
+                },
+                ExprKind::Ident(name) => match name.as_str() {
+                    "call" | "delegatecall" | "callcode" | "staticcall" | "send" => {
+                        return Some(name.clone());
+                    }
+                    _ => {}
+                },
+                _ => {}
+            }
+        }
+    }
+
+    if let Some(source) = get_source_at_span(ast, &expr.span) {
+        let lower = source.to_ascii_lowercase();
+        for method in ["send", "call", "delegatecall", "callcode", "staticcall"] {
+            let member_pat = format!(".{method}(");
+            let direct_pat = format!("{method}(");
+            if lower.contains(&member_pat) || lower.contains(&direct_pat) {
+                return Some(method.to_string());
+            }
+        }
+    }
+
+    None
+}
+
+fn function_source_unchecked_call(
+    ast: &NormalizedAst,
+    func: &crate::norm::Function,
+) -> Option<&'static str> {
+    let source = get_source_at_span(ast, &func.span)?;
+    for raw_line in source.lines() {
+        let line = raw_line.trim().to_ascii_lowercase();
+        if line.is_empty() || line.starts_with("//") {
+            continue;
+        }
+        if line.contains("require(")
+            || line.contains("assert(")
+            || line.contains("if(")
+            || line.contains("if (")
+        {
+            continue;
+        }
+        if line.contains(".send(") {
+            return Some("send");
+        }
+        if line.contains(".delegatecall(") {
+            return Some("delegatecall");
+        }
+        if line.contains(".callcode(") {
+            return Some("callcode");
+        }
+        if line.contains(".staticcall(") {
+            return Some("staticcall");
+        }
+        if line.contains(".call(") {
+            return Some("call");
+        }
+    }
+    None
 }
 
 // ── AC-17  Usage of public mint or burn ──────────────────────────────────────
@@ -1204,7 +1428,7 @@ fn detect_public_mint_burn(ast: &NormalizedAst) -> Vec<Finding> {
         ) {
             continue;
         }
-        if has_access_control_modifier(func) {
+        if has_access_control_modifier(ast, func) {
             continue;
         }
 
@@ -1249,4 +1473,153 @@ fn detect_arbitrary_storage_write(ast: &NormalizedAst) -> Vec<Finding> {
         });
     }
     findings
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::analysis;
+    use crate::frontend::parser::load_via_parser_sources;
+    use crate::norm::SourceFile;
+
+    fn parse(source: &str) -> NormalizedAst {
+        load_via_parser_sources(vec![SourceFile {
+            id: 0,
+            path: "test.sol".to_string(),
+            source: source.to_string(),
+        }])
+        .expect("parser should succeed")
+    }
+
+    #[test]
+    fn guarded_selfdestruct_is_not_reported_as_unprotected() {
+        let ast = parse(
+            r#"
+            pragma solidity ^0.4.24;
+            contract Vault {
+                address owner;
+                function kill() public {
+                    require(msg.sender == owner);
+                    selfdestruct(owner);
+                }
+            }
+            "#,
+        );
+        let call_graph = analysis::build_call_graph(&ast);
+
+        let findings = detect_unprotected_selfdestruct(&ast, &call_graph);
+        assert!(
+            findings.is_empty(),
+            "guarded selfdestruct should be suppressed"
+        );
+    }
+
+    #[test]
+    fn public_reward_claim_payout_is_not_reported_as_unprotected_withdrawal() {
+        let ast = parse(
+            r#"
+            pragma solidity ^0.4.24;
+            contract FindThisHash {
+                bytes32 constant public hash = 0x0;
+                function solve(string solution) public {
+                    require(hash == sha3(solution));
+                    msg.sender.transfer(1 ether);
+                }
+            }
+            "#,
+        );
+
+        let findings = detect_unprotected_ether_withdrawal(&ast);
+        assert!(
+            findings.is_empty(),
+            "public reward claim payout should not be treated as arbitrary withdrawal"
+        );
+    }
+
+    #[test]
+    fn self_service_balance_withdraw_is_not_reported_as_unprotected_withdrawal() {
+        let ast = parse(
+            r#"
+            pragma solidity ^0.4.24;
+            contract SimpleDAO {
+                mapping(address => uint256) public credit;
+                function withdraw(uint256 amount) public {
+                    if (credit[msg.sender] >= amount) {
+                        msg.sender.call.value(amount)();
+                        credit[msg.sender] -= amount;
+                    }
+                }
+            }
+            "#,
+        );
+
+        let findings = detect_unprotected_ether_withdrawal(&ast);
+        assert!(
+            findings.is_empty(),
+            "self-service caller balance withdrawal should not be treated as arbitrary withdrawal"
+        );
+    }
+
+    #[test]
+    fn plain_public_withdrawal_still_emits_unprotected_withdrawal() {
+        let ast = parse(
+            r#"
+            pragma solidity ^0.4.24;
+            contract Vault {
+                function withdraw() public {
+                    msg.sender.transfer(1 ether);
+                }
+            }
+            "#,
+        );
+
+        let findings = detect_unprotected_ether_withdrawal(&ast);
+        assert!(
+            findings
+                .iter()
+                .any(|finding| { finding.kind == FindingKind::UnprotectedEtherWithdrawal })
+        );
+    }
+
+    #[test]
+    fn generic_init_function_without_authority_context_is_not_flagged() {
+        let ast = parse(
+            r#"
+            pragma solidity ^0.4.11;
+            contract IntegerOverflowMappingSym1 {
+                mapping(uint256 => uint256) map;
+                function init(uint256 k, uint256 v) public {
+                    map[k] -= v;
+                }
+            }
+            "#,
+        );
+
+        let findings = detect_uninit_permission_check(&ast);
+        assert!(
+            findings.is_empty(),
+            "generic init function without authority semantics should be suppressed"
+        );
+    }
+
+    #[test]
+    fn authority_initializer_without_guard_is_still_flagged() {
+        let ast = parse(
+            r#"
+            pragma solidity ^0.4.24;
+            contract Wallet {
+                address creator;
+                function initWallet() public {
+                    creator = msg.sender;
+                }
+            }
+            "#,
+        );
+
+        let findings = detect_uninit_permission_check(&ast);
+        assert!(findings.iter().any(|finding| {
+            finding.kind == FindingKind::UninitializedPermissionCheck
+                && finding.message.contains("initWallet")
+        }));
+    }
 }
