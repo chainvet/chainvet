@@ -82,8 +82,16 @@ pub fn run(output: &FrontendOutput, format: OutputFormat) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::frontend::{FrontendMode, FrontendOutput};
+    use crate::frontend::{CompilerInfo, FrontendMode, FrontendOutput};
     use crate::norm::NormalizedAst;
+
+    fn test_compiler_info() -> CompilerInfo {
+        CompilerInfo {
+            compiler_name: "test".to_string(),
+            compiler_version: None,
+            legacy_omitted_visibility_is_public: false,
+        }
+    }
 
     // ── run() early-exit branch ───────────────────────────────────────────────
 
@@ -95,6 +103,7 @@ mod tests {
         let output = FrontendOutput {
             mode: FrontendMode::Full,
             ast: NormalizedAst::empty(),
+            compiler: test_compiler_info(),
         };
         let result = run(&output, OutputFormat::Text);
         assert!(result.is_ok(), "run() must succeed on an empty AST");
@@ -106,6 +115,7 @@ mod tests {
         let output = FrontendOutput {
             mode: FrontendMode::Full,
             ast: NormalizedAst::empty(),
+            compiler: test_compiler_info(),
         };
         let result = run(&output, OutputFormat::Json);
         assert!(result.is_ok(), "run() with JSON format must succeed on an empty AST");
@@ -117,6 +127,7 @@ mod tests {
         let output = FrontendOutput {
             mode: FrontendMode::Partial,
             ast: NormalizedAst::empty(),
+            compiler: test_compiler_info(),
         };
         let result = run(&output, OutputFormat::Text);
         assert!(result.is_ok(), "run() with Partial mode must succeed on an empty AST");

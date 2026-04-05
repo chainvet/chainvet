@@ -12,8 +12,8 @@ rand = "0.8"
 sha2 = "0.10"
 z3 = "0.19.11"
 tiny-keccak = { version = "2", features = ["keccak"] }
+axum = "0.7"
+tokio = { version = "1", features = ["rt-multi-thread", "net"] }
 
 [dev-dependencies]
 proptest = "1"
-axum = "0.7"
-tokio = { version = "1", features = ["rt-multi-thread", "net"] }
