@@ -15,3 +15,5 @@ tiny-keccak = { version = "2", features = ["keccak"] }
 
 [dev-dependencies]
 proptest = "1"
+axum = "0.7"
+tokio = { version = "1", features = ["rt-multi-thread", "net"] }

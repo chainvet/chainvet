@@ -47,7 +47,11 @@ struct ContractRange {
 }
 
 pub fn load_via_parser(path: &str) -> Result<NormalizedAst> {
-    let sources = crate::frontend::load_sources(path)?;
+    let sources = crate::frontend::collect_target_sources(path)?;
+    load_via_parser_sources(sources)
+}
+
+pub fn load_via_parser_sources(sources: Vec<SourceFile>) -> Result<NormalizedAst> {
     if sources.is_empty() {
         return Err(Error::msg("no Solidity files found"));
     }
@@ -58,6 +62,20 @@ pub fn load_via_parser(path: &str) -> Result<NormalizedAst> {
         if !parse_file_tree_sitter(file, &mut ast) {
             parse_file_legacy(file, &mut ast);
         }
+    }
+
+    Ok(ast)
+}
+
+pub fn load_via_legacy_sources(sources: Vec<SourceFile>) -> Result<NormalizedAst> {
+    if sources.is_empty() {
+        return Err(Error::msg("no Solidity files found"));
+    }
+
+    let mut ast = NormalizedAst::from_sources(sources);
+    let files = ast.files.clone();
+    for file in &files {
+        parse_file_legacy(file, &mut ast);
     }
 
     Ok(ast)
@@ -518,6 +536,19 @@ fn parse_ts_statement(node: Node, ctx: &mut TsContext) -> Option<u32> {
             .named_child(0)
             .and_then(|child| parse_ts_statement(child, ctx)),
         "block" | "block_statement" | "function_body" => Some(parse_ts_block(node, ctx)),
+        "ERROR" => {
+            let mut cursor = node.walk();
+            for child in node.named_children(&mut cursor) {
+                if let Some(stmt_id) = parse_ts_statement(child, ctx) {
+                    return Some(stmt_id);
+                }
+            }
+            if let Some(expr) = first_ts_expr_child(node) {
+                let expr_id = parse_ts_expr(expr, ctx);
+                return Some(push_stmt(ctx.ast, StmtKind::Expr(expr_id), span));
+            }
+            None
+        }
         "expression_statement" => {
             let expr = first_ts_expr_child(node).map(|expr| parse_ts_expr(expr, ctx));
             let expr_id = expr.unwrap_or_else(|| push_expr(ctx.ast, Expr::unknown(span)));
@@ -774,7 +805,7 @@ fn parse_ts_expr(node: Node, ctx: &mut TsContext) -> u32 {
                 },
             )
         }
-        "index_expression" | "index_access" => {
+        "index_expression" | "index_access" | "subscript_expression" => {
             let base_node = node
                 .child_by_field_name("expression")
                 .or_else(|| node.child_by_field_name("object"))
@@ -809,6 +840,7 @@ fn parse_ts_expr(node: Node, ctx: &mut TsContext) -> u32 {
             let callee_node = node
                 .child_by_field_name("function")
                 .or_else(|| node.child_by_field_name("callee"))
+                .or_else(|| node.child_by_field_name("expression"))
                 .or_else(|| first_ts_expr_child(node));
             let callee = callee_node
                 .map(|expr| parse_ts_expr(expr, ctx))
@@ -821,8 +853,29 @@ fn parse_ts_expr(node: Node, ctx: &mut TsContext) -> u32 {
             let (args, options) = if let Some(args_node) = args_node {
                 parse_ts_argument_list(args_node, ctx)
             } else {
-                (Vec::new(), Vec::new())
+                parse_ts_inline_call_args(node, callee_node, ctx)
             };
+            if options.is_empty() {
+                if let Some((base_callee, legacy_option, chain)) =
+                    parse_legacy_ts_call_option(ctx.ast, callee, &args)
+                {
+                    let meta = ExprMeta {
+                        chain: Some(chain),
+                        call: None,
+                    };
+                    return push_expr(
+                        ctx.ast,
+                        Expr {
+                            kind: ExprKind::CallOptions {
+                                callee: base_callee,
+                                options: vec![legacy_option],
+                            },
+                            span: span_from_node(node, ctx.file_id),
+                            meta,
+                        },
+                    );
+                }
+            }
             let chain = chain_from_expr(ctx.ast, callee).unwrap_or_default();
             let target = call_target_from_chain(&chain);
             let mut chain_with_call = chain.clone();
@@ -866,9 +919,13 @@ fn parse_ts_expr(node: Node, ctx: &mut TsContext) -> u32 {
         "assignment_expression" => {
             let lhs_node = node
                 .child_by_field_name("left")
+                .or_else(|| node.child_by_field_name("left_hand_side"))
+                .or_else(|| node.child_by_field_name("lhs"))
                 .or_else(|| first_ts_expr_child(node));
             let rhs_node = node
                 .child_by_field_name("right")
+                .or_else(|| node.child_by_field_name("right_hand_side"))
+                .or_else(|| node.child_by_field_name("rhs"))
                 .or_else(|| second_ts_expr_child(node));
             let lhs = lhs_node
                 .map(|expr| parse_ts_expr(expr, ctx))
@@ -901,9 +958,13 @@ fn parse_ts_expr(node: Node, ctx: &mut TsContext) -> u32 {
         "augmented_assignment_expression" => {
             let lhs_node = node
                 .child_by_field_name("left")
+                .or_else(|| node.child_by_field_name("left_hand_side"))
+                .or_else(|| node.child_by_field_name("lhs"))
                 .or_else(|| first_ts_expr_child(node));
             let rhs_node = node
                 .child_by_field_name("right")
+                .or_else(|| node.child_by_field_name("right_hand_side"))
+                .or_else(|| node.child_by_field_name("rhs"))
                 .or_else(|| second_ts_expr_child(node));
             let lhs = lhs_node
                 .map(|expr| parse_ts_expr(expr, ctx))
@@ -1146,6 +1207,11 @@ fn parse_ts_expr(node: Node, ctx: &mut TsContext) -> u32 {
                     push_expr(ctx.ast, Expr::unknown(span_from_node(node, ctx.file_id)))
                 })
         }
+        "ERROR" => first_ts_expr_child(node)
+            .map(|expr| parse_ts_expr(expr, ctx))
+            .unwrap_or_else(|| {
+                push_expr(ctx.ast, Expr::unknown(span_from_node(node, ctx.file_id)))
+            }),
         _ => push_expr(ctx.ast, Expr::unknown(span_from_node(node, ctx.file_id))),
     }
 }
@@ -1155,6 +1221,30 @@ fn parse_ts_argument_list(node: Node, ctx: &mut TsContext) -> (Vec<u32>, Vec<Cal
     let mut options = Vec::new();
     let mut cursor = node.walk();
     for child in node.named_children(&mut cursor) {
+        if child.kind() == "call_argument" {
+            let (more_args, more_options) = parse_ts_call_argument(child, ctx);
+            args.extend(more_args);
+            options.extend(more_options);
+        } else if is_ts_expr_node(child.kind()) {
+            args.push(parse_ts_expr(child, ctx));
+        }
+    }
+    (args, options)
+}
+
+fn parse_ts_inline_call_args(
+    node: Node,
+    callee_node: Option<Node>,
+    ctx: &mut TsContext,
+) -> (Vec<u32>, Vec<CallOption>) {
+    let callee_id = callee_node.map(|child| child.id());
+    let mut args = Vec::new();
+    let mut options = Vec::new();
+    let mut cursor = node.walk();
+    for child in node.named_children(&mut cursor) {
+        if Some(child.id()) == callee_id {
+            continue;
+        }
         if child.kind() == "call_argument" {
             let (more_args, more_options) = parse_ts_call_argument(child, ctx);
             args.extend(more_args);
@@ -1267,6 +1357,7 @@ fn is_ts_expr_node(kind: &str) -> bool {
             | "member_expression"
             | "index_expression"
             | "index_access"
+            | "subscript_expression"
             | "call_expression"
             | "assignment_expression"
             | "binary_expression"
@@ -1281,6 +1372,29 @@ fn is_ts_expr_node(kind: &str) -> bool {
             | "true"
             | "false"
     )
+}
+
+fn parse_legacy_ts_call_option(
+    ast: &NormalizedAst,
+    callee: u32,
+    args: &[u32],
+) -> Option<(u32, CallOption, Vec<ChainSegment>)> {
+    if args.len() != 1 {
+        return None;
+    }
+    let expr = ast.expressions.get(callee as usize)?;
+    let ExprKind::Member { base, field } = &expr.kind else {
+        return None;
+    };
+
+    let option = match field.as_str() {
+        "value" => CallOption::Value(args[0]),
+        "gas" => CallOption::Gas(args[0]),
+        "salt" => CallOption::Salt(args[0]),
+        _ => return None,
+    };
+    let chain = chain_from_expr(ast, *base).unwrap_or_default();
+    Some((*base, option, chain))
 }
 
 fn literal_from_ts_node(node: Node, source: &[u8]) -> Option<crate::norm::Literal> {
@@ -1675,17 +1789,34 @@ fn parse_body(
             idx = end_idx + 1;
             continue;
         }
+        if let Some((stmt_id, end_idx)) = parse_var_decl_stmt(tokens, idx, file_id, ast, end_idx) {
+            statements.push(stmt_id);
+            idx = end_idx + 1;
+            continue;
+        }
+        if let Some(semi) = find_semicolon(tokens, idx, end_idx) {
+            if semi > idx {
+                if let Some((expr_id, consumed)) =
+                    parse_expr_in_range(tokens, idx, semi - 1, file_id, ast)
+                {
+                    if consumed == semi - 1 {
+                        statements.push(push_stmt(
+                            ast,
+                            StmtKind::Expr(expr_id),
+                            span_for(file_id, tokens[idx].start, tokens[semi].end),
+                        ));
+                        idx = semi + 1;
+                        continue;
+                    }
+                }
+            }
+        }
         if let Some((expr_id, end_idx)) = parse_call_expr(tokens, idx, file_id, ast) {
             statements.push(push_stmt(
                 ast,
                 StmtKind::Expr(expr_id),
                 span_for(file_id, tokens[idx].start, tokens[end_idx].end),
             ));
-            idx = end_idx + 1;
-            continue;
-        }
-        if let Some((stmt_id, end_idx)) = parse_var_decl_stmt(tokens, idx, file_id, ast, end_idx) {
-            statements.push(stmt_id);
             idx = end_idx + 1;
             continue;
         }
@@ -2341,12 +2472,34 @@ fn parse_atom_expr_in_range(
         if end_idx_expr == end_idx {
             return Some((expr_id, end_idx_expr));
         }
+        if let Some(call_id) = parse_trailing_call_expr(
+            tokens,
+            start_idx,
+            end_idx,
+            file_id,
+            ast,
+            expr_id,
+            end_idx_expr,
+        ) {
+            return Some((call_id, end_idx));
+        }
     }
     if let Some((expr_id, end_idx_expr)) =
         parse_chain_expr(tokens, start_idx, file_id, ast, end_idx + 1)
     {
         if end_idx_expr == end_idx {
             return Some((expr_id, end_idx_expr));
+        }
+        if let Some(call_id) = parse_trailing_call_expr(
+            tokens,
+            start_idx,
+            end_idx,
+            file_id,
+            ast,
+            expr_id,
+            end_idx_expr,
+        ) {
+            return Some((call_id, end_idx));
         }
     }
     if start_idx != end_idx {
@@ -2385,6 +2538,87 @@ fn parse_atom_expr_in_range(
         return Some((expr_id, start_idx));
     }
     None
+}
+
+fn parse_trailing_call_expr(
+    tokens: &[Token],
+    start_idx: usize,
+    end_idx: usize,
+    file_id: u32,
+    ast: &mut NormalizedAst,
+    callee_expr: u32,
+    consumed_idx: usize,
+) -> Option<u32> {
+    let open_idx = consumed_idx.checked_add(1)?;
+    if open_idx > end_idx || !tokens.get(open_idx)?.is_symbol('(') {
+        return None;
+    }
+    let close_idx = find_matching_paren(tokens, open_idx)?;
+    if close_idx != end_idx {
+        return None;
+    }
+
+    let callee = normalize_legacy_call_option_expr(ast, callee_expr).unwrap_or(callee_expr);
+    let args = parse_call_args(
+        tokens,
+        open_idx + 1,
+        close_idx.saturating_sub(1),
+        file_id,
+        ast,
+    );
+    let chain = chain_from_expr(ast, callee).unwrap_or_default();
+    let target = call_target_from_chain(&chain);
+    let mut chain_with_call = chain.clone();
+    chain_with_call.push(ChainSegment::Call);
+    let span = span_for(file_id, tokens[start_idx].start, tokens[close_idx].end);
+    Some(push_expr(
+        ast,
+        Expr {
+            kind: ExprKind::Call { callee, args },
+            span,
+            meta: ExprMeta {
+                chain: Some(chain_with_call),
+                call: Some(CallMeta {
+                    target,
+                    chain,
+                    options: Vec::new(),
+                }),
+            },
+        },
+    ))
+}
+
+fn normalize_legacy_call_option_expr(ast: &mut NormalizedAst, expr_id: u32) -> Option<u32> {
+    let expr = ast.expressions.get(expr_id as usize)?.clone();
+    let ExprKind::Call { callee, args } = expr.kind else {
+        return None;
+    };
+    if args.len() != 1 {
+        return None;
+    }
+    let callee_expr = ast.expressions.get(callee as usize)?;
+    let ExprKind::Member { base, field } = &callee_expr.kind else {
+        return None;
+    };
+
+    let option = match field.as_str() {
+        "value" => CallOption::Value(args[0]),
+        "gas" => CallOption::Gas(args[0]),
+        "salt" => CallOption::Salt(args[0]),
+        _ => return None,
+    };
+    let chain = chain_from_expr(ast, *base);
+    Some(push_expr(
+        ast,
+        Expr {
+            kind: ExprKind::CallOptions {
+                callee: *base,
+                options: vec![option],
+            },
+            span: expr.span,
+            meta: ExprMeta { chain, call: None },
+        },
+    ))
 }
 
 fn strip_wrapping_parens(
@@ -3108,6 +3342,31 @@ mod tests {
         ast
     }
 
+    fn first_function_expr<'a>(
+        ast: &'a NormalizedAst,
+        function_name: &str,
+    ) -> &'a crate::norm::Expr {
+        let function = ast
+            .functions
+            .iter()
+            .find(|func| func.name.as_deref() == Some(function_name))
+            .expect("function");
+        let body = function.body.expect("function body");
+        let body_stmt = ast.statements.get(body as usize).expect("body statement");
+        let StmtKind::Block(stmts) = &body_stmt.kind else {
+            panic!("expected block body");
+        };
+        let stmt_id = *stmts.first().expect("statement");
+        let stmt = ast
+            .statements
+            .get(stmt_id as usize)
+            .expect("expression statement");
+        let StmtKind::Expr(expr_id) = stmt.kind else {
+            panic!("expected expression statement");
+        };
+        ast.expressions.get(expr_id as usize).expect("expression")
+    }
+
     fn contains_block_timestamp(ast: &NormalizedAst, expr_id: u32) -> bool {
         let Some(expr) = ast.expressions.get(expr_id as usize) else {
             return false;
@@ -3322,6 +3581,84 @@ mod tests {
             }
             _ => panic!("expected identifier rhs for multiplication"),
         }
+    }
+
+    #[test]
+    fn legacy_parser_keeps_index_assignment_lhs_for_legacy_shape() {
+        let src = r#"
+            contract C {
+                mapping(address => uint) userBalance;
+                function f() public {
+                    userBalance[msg.sender] = 0;
+                }
+            }
+        "#;
+        let ast = parse_legacy(src);
+        let expr = first_function_expr(&ast, "f");
+        let ExprKind::Assign { lhs, rhs, .. } = &expr.kind else {
+            panic!("expected assignment expression");
+        };
+        let lhs_expr = ast.expressions.get(*lhs as usize).expect("lhs");
+        let rhs_expr = ast.expressions.get(*rhs as usize).expect("rhs");
+
+        assert!(
+            matches!(lhs_expr.kind, ExprKind::Index { .. }),
+            "unexpected lhs shape: {:?}",
+            lhs_expr.kind
+        );
+        assert!(
+            matches!(rhs_expr.kind, ExprKind::Literal(_)),
+            "unexpected rhs shape: {:?}",
+            rhs_expr.kind
+        );
+    }
+
+    #[test]
+    fn legacy_parser_keeps_legacy_call_value_as_call_options() {
+        let src = r#"
+            contract C {
+                mapping(address => uint) userBalance;
+                function f() public {
+                    msg.sender.call.value(userBalance[msg.sender])();
+                }
+            }
+        "#;
+        let ast = parse_legacy(src);
+        let expr = first_function_expr(&ast, "f");
+        let ExprKind::Call { callee, args } = &expr.kind else {
+            panic!("expected outer call expression");
+        };
+        assert!(
+            args.is_empty(),
+            "outer legacy call should have no direct args"
+        );
+
+        let callee_expr = ast.expressions.get(*callee as usize).expect("callee");
+        let ExprKind::CallOptions {
+            callee: inner,
+            options,
+        } = &callee_expr.kind
+        else {
+            panic!("expected call options as outer callee");
+        };
+        assert_eq!(options.len(), 1, "expected one legacy call option");
+        match options.first().expect("option") {
+            CallOption::Value(value_expr) => {
+                let value = ast
+                    .expressions
+                    .get(*value_expr as usize)
+                    .expect("value expr");
+                assert!(
+                    matches!(value.kind, ExprKind::Index { .. }),
+                    "unexpected value option shape: {:?}",
+                    value.kind
+                );
+            }
+            _ => panic!("expected value(...) option"),
+        }
+
+        let inner_expr = ast.expressions.get(*inner as usize).expect("inner callee");
+        assert!(matches!(inner_expr.kind, ExprKind::Member { .. }));
     }
 }
 

@@ -5,7 +5,7 @@
 //!   BM-03 – Weak PRNG (pseudorandom number generator)
 
 use crate::norm::{
-    CallOption, CallTarget, ChainSegment, ExprKind, NormalizedAst, StmtKind, Visibility,
+    CallOption, CallTarget, ChainSegment, ExprKind, NormalizedAst, Span, StmtKind, Visibility,
 };
 
 use super::{Finding, FindingKind, Severity};
@@ -33,13 +33,17 @@ const ORDER_SENSITIVE_VAR_HINTS: &[&str] = &[
     "price",
     "rate",
     "reward",
-    "amount",
-    "balance",
-    "quota",
     "allowance",
-    "fee",
-    "bonus",
-    "share",
+    "allowances",
+    "allow",
+    "allowed",
+    "approval",
+    "approved",
+    "nonce",
+    "bid",
+    "bids",
+    "auction",
+    "quote",
 ];
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -55,6 +59,134 @@ pub fn detect_all(ast: &NormalizedAst) -> Vec<Finding> {
     findings.extend(detect_weak_prng(ast)); // BM-03
 
     findings
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::frontend::parser::load_via_parser_sources;
+    use crate::norm::SourceFile;
+
+    fn parse(source: &str) -> NormalizedAst {
+        load_via_parser_sources(vec![SourceFile {
+            id: 0,
+            path: "test.sol".to_string(),
+            source: source.to_string(),
+        }])
+        .expect("parser should succeed")
+    }
+
+    #[test]
+    fn price_based_transfer_still_emits_tod() {
+        let ast = parse(
+            r#"
+            pragma solidity ^0.4.24;
+            contract Sale {
+                uint public price;
+                function buy() public payable {
+                    require(msg.value >= price);
+                    msg.sender.transfer(price);
+                }
+            }
+            "#,
+        );
+
+        let findings = detect_transaction_order_dependency(&ast);
+        assert!(
+            findings
+                .iter()
+                .any(|finding| { finding.kind == FindingKind::TransactionOrderDependency })
+        );
+    }
+
+    #[test]
+    fn balance_based_withdraw_does_not_emit_tod() {
+        let ast = parse(
+            r#"
+            pragma solidity ^0.4.24;
+            contract Wallet {
+                mapping(address => uint256) balances;
+                function withdraw(uint256 amount) public {
+                    require(amount <= balances[msg.sender]);
+                    msg.sender.transfer(amount);
+                    balances[msg.sender] -= amount;
+                }
+            }
+            "#,
+        );
+
+        let findings = detect_transaction_order_dependency(&ast);
+        assert!(
+            findings.is_empty(),
+            "ordinary balance accounting should not be treated as transaction-order dependency"
+        );
+    }
+
+    #[test]
+    fn timestamp_return_comparison_emits_bm01() {
+        let ast = parse(
+            r#"
+            pragma solidity ^0.4.24;
+            contract TimedCrowdsale {
+                function isSaleFinished() public view returns (bool) {
+                    return block.timestamp >= 1546300800;
+                }
+            }
+            "#,
+        );
+
+        let findings = detect_dangerous_timestamp(&ast);
+        assert!(
+            findings
+                .iter()
+                .any(|finding| finding.kind == FindingKind::DangerousBlockTimestamp)
+        );
+    }
+
+    #[test]
+    fn logging_timestamp_assignment_does_not_emit_bm01() {
+        let ast = parse(
+            r#"
+            pragma solidity ^0.4.24;
+            contract Logger {
+                struct Message { uint time; }
+                Message lastMsg;
+                function addMessage() public {
+                    lastMsg.time = now;
+                }
+            }
+            "#,
+        );
+
+        let findings = detect_dangerous_timestamp(&ast);
+        assert!(
+            findings.is_empty(),
+            "plain bookkeeping assignments from `now` should not emit timestamp dependency"
+        );
+    }
+
+    #[test]
+    fn migrate_named_function_does_not_trip_rate_hint() {
+        let ast = parse(
+            r#"
+            pragma solidity ^0.4.24;
+            contract Wallet {
+                address creator;
+                constructor() public { creator = msg.sender; }
+                function migrateTo(address to) public {
+                    require(creator == msg.sender);
+                    to.transfer(address(this).balance);
+                }
+            }
+            "#,
+        );
+
+        let findings = detect_transaction_order_dependency(&ast);
+        assert!(
+            findings.is_empty(),
+            "identifier substring matches like `migrateTo` should not trigger TOD hints"
+        );
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -228,6 +360,46 @@ fn for_each_stmt(ast: &NormalizedAst, stmt_id: u32, cb: &mut impl FnMut(u32, &cr
 }
 
 // ── Block-value detection helpers ────────────────────────────────────────────
+
+fn get_source_at_span<'a>(ast: &'a NormalizedAst, span: &Span) -> Option<&'a str> {
+    let file = ast.files.get(span.file as usize)?;
+    let start = span.start as usize;
+    let end = span.end as usize;
+    if end <= file.source.len() && start <= end {
+        Some(&file.source[start..end])
+    } else {
+        None
+    }
+}
+
+fn function_source_lower(ast: &NormalizedAst, func: &crate::norm::Function) -> Option<String> {
+    get_source_at_span(ast, &func.span).map(|source| source.to_ascii_lowercase())
+}
+
+fn source_identifier_tokens(lower: &str) -> impl Iterator<Item = &str> {
+    lower
+        .split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+        .filter(|token| !token.is_empty())
+}
+
+fn source_contains_transfer_call(lower: &str) -> bool {
+    [
+        ".transfer(",
+        ".transferfrom(",
+        ".send(",
+        ".call(",
+        ".approve(",
+        ".safetransferfrom(",
+        ".delegatecall(",
+    ]
+    .iter()
+    .any(|pattern| lower.contains(pattern))
+}
+
+fn source_contains_order_sensitive_hint(lower: &str) -> bool {
+    source_identifier_tokens(lower)
+        .any(|token| ORDER_SENSITIVE_VAR_HINTS.iter().any(|hint| token == *hint))
+}
 
 /// Returns `true` if `expr_id` is (or contains) `block.timestamp` or `now`.
 /// Checks three representations that the normalizer may produce:
@@ -566,12 +738,29 @@ fn block_value_label(ast: &NormalizedAst, expr_id: u32) -> &'static str {
 //   1. Walk every function body.
 //   2. For each `if` / `while` / `for` condition, check whether the
 //      condition expression contains `block.timestamp` or `now`.
-//   3. Also flag assignments/variable declarations that store
-//      `block.timestamp` into a variable used later in logic.
+//   3. Also flag boolean-ish return expressions like
+//      `return block.timestamp >= SOME_DEADLINE`.
 //   4. Flag any use of `block.timestamp` as an argument passed to another
 //      function call (the callee might rely on it for logic).
 //
 // Severity: Low — the manipulation window is small, but the risk exists.
+
+fn is_decision_like_expr(ast: &NormalizedAst, expr_id: u32) -> bool {
+    let Some(expr) = ast.expressions.get(expr_id as usize) else {
+        return false;
+    };
+    match &expr.kind {
+        ExprKind::Binary { op, .. } => {
+            matches!(
+                op.as_str(),
+                ">" | "<" | ">=" | "<=" | "==" | "!=" | "&&" | "||"
+            )
+        }
+        ExprKind::Unary { op, .. } => op == "!",
+        ExprKind::Conditional { .. } => true,
+        _ => false,
+    }
+}
 
 fn detect_dangerous_timestamp(ast: &NormalizedAst) -> Vec<Finding> {
     let mut findings = Vec::new();
@@ -632,21 +821,21 @@ fn detect_dangerous_timestamp(ast: &NormalizedAst) -> Vec<Finding> {
             }
         });
 
-        // --- 2. Check assignments: `x = block.timestamp` -----------------
-        for_each_expr_in_stmt(ast, body, &mut |_eid, expr| {
-            if let ExprKind::Assign { rhs, .. } = &expr.kind {
-                if contains_timestamp(ast, *rhs) {
-                    findings.push(Finding {
-                        kind: FindingKind::DangerousBlockTimestamp,
-                        severity: Severity::Low,
-                        message: "assignment from `block.timestamp` / `now`; \
-                            value is miner-manipulable and should not be \
-                            relied upon for critical logic"
-                            .into(),
-                        span: expr.span,
-                        function: Some(func.id),
-                    });
-                }
+        // --- 2. Check direct boolean-ish returns -------------------------
+        for_each_stmt(ast, body, &mut |_sid, stmt| {
+            if let StmtKind::Return(Some(expr_id)) = &stmt.kind
+                && contains_timestamp(ast, *expr_id)
+                && is_decision_like_expr(ast, *expr_id)
+            {
+                findings.push(Finding {
+                    kind: FindingKind::DangerousBlockTimestamp,
+                    severity: Severity::Low,
+                    message: "`block.timestamp` / `now` used in returned decision logic; \
+                        callers may rely on this miner-manipulable value"
+                        .into(),
+                    span: stmt.span,
+                    function: Some(func.id),
+                });
             }
         });
 
@@ -667,26 +856,6 @@ fn detect_dangerous_timestamp(ast: &NormalizedAst) -> Vec<Finding> {
                         });
                         break; // one finding per call is enough
                     }
-                }
-            }
-        });
-
-        // --- 4. Check variable declarations: `uint t = block.timestamp` ---
-        for_each_stmt(ast, body, &mut |_sid, stmt| {
-            if let StmtKind::VarDecl {
-                init: Some(init), ..
-            } = &stmt.kind
-            {
-                if contains_timestamp(ast, *init) {
-                    findings.push(Finding {
-                        kind: FindingKind::DangerousBlockTimestamp,
-                        severity: Severity::Low,
-                        message: "variable initialized from `block.timestamp` / `now`; \
-                            value is miner-manipulable"
-                            .into(),
-                        span: stmt.span,
-                        function: Some(func.id),
-                    });
                 }
             }
         });
@@ -732,6 +901,7 @@ fn detect_transaction_order_dependency(ast: &NormalizedAst) -> Vec<Finding> {
         }
 
         let Some(body) = func.body else { continue };
+        let source_lower = function_source_lower(ast, func);
 
         // --- Step 1:  Does the body reference an order-sensitive var? ------
         let mut reads_sensitive = false;
@@ -740,9 +910,18 @@ fn detect_transaction_order_dependency(ast: &NormalizedAst) -> Vec<Finding> {
                 reads_sensitive = true;
             }
         });
+        if !reads_sensitive {
+            if let Some(source_lower) = source_lower.as_deref() {
+                reads_sensitive = source_contains_order_sensitive_hint(source_lower);
+            }
+        }
 
         // --- Step 2:  Does the body contain a value-transfer call? ---------
-        let has_transfer = stmt_contains_transfer(ast, body);
+        let has_transfer = stmt_contains_transfer(ast, body)
+            || source_lower
+                .as_deref()
+                .map(source_contains_transfer_call)
+                .unwrap_or(false);
 
         if !reads_sensitive {
             continue;

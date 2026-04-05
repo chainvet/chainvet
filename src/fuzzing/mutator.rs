@@ -1,7 +1,8 @@
 use rand::Rng;
 
-use crate::fuzzing::types::{ContractAbi, Dictionary, FuzzValue, Individual, Transaction};
-
+use crate::fuzzing::types::{
+    ContractAbi, DependencyMap, Dictionary, FuzzValue, Individual, Transaction,
+};
 /// Mutate an individual to produce a new test case.
 /// Selects from 10 mutation strategies including the new havoc and arithmetic modes.
 pub fn mutate_individual(ind: &Individual, abi: &ContractAbi, rng: &mut impl Rng) -> Individual {
@@ -17,14 +18,44 @@ pub fn mutate_individual_with_dict(
     dict: Option<&Dictionary>,
     havoc_only: bool,
 ) -> Individual {
+    mutate_individual_core(ind, abi, None, rng, dict, havoc_only)
+}
+
+/// Mutate an individual with optional dependency guidance from storage RW map.
+/// When deps are provided, one strategy can force a writer->reader chain prefix.
+pub fn mutate_individual_guided_with_dict(
+    ind: &Individual,
+    abi: &ContractAbi,
+    deps: &DependencyMap,
+    rng: &mut impl Rng,
+    dict: Option<&Dictionary>,
+    havoc_only: bool,
+) -> Individual {
+    mutate_individual_core(ind, abi, Some(deps), rng, dict, havoc_only)
+}
+
+fn mutate_individual_core(
+    ind: &Individual,
+    abi: &ContractAbi,
+    deps: Option<&DependencyMap>,
+    rng: &mut impl Rng,
+    dict: Option<&Dictionary>,
+    havoc_only: bool,
+) -> Individual {
     let mut mutant = ind.clone();
 
     if havoc_only {
         havoc_mutate(&mut mutant, abi, rng, dict);
+        if let Some(deps) = deps {
+            if rng.gen_bool(0.20) {
+                inject_dependency_chain(&mut mutant, abi, deps, rng, dict);
+            }
+        }
         return mutant;
     }
 
-    let strategy: u32 = rng.gen_range(0..10);
+    let strategy_space = if deps.is_some() { 11 } else { 10 };
+    let strategy: u32 = rng.gen_range(0..strategy_space);
 
     match strategy {
         0 => mutate_value_with_dict(&mut mutant, rng, dict),
@@ -36,7 +67,14 @@ pub fn mutate_individual_with_dict(
         6 => mutate_environment(&mut mutant, rng),
         7 => havoc_mutate(&mut mutant, abi, rng, dict),
         8 => mutate_arithmetic(&mut mutant, rng),
-        _ => mutate_sender_role(&mut mutant, rng),
+        9 => mutate_sender_role(&mut mutant, rng),
+        _ => {
+            if let Some(deps) = deps {
+                inject_dependency_chain(&mut mutant, abi, deps, rng, dict);
+            } else {
+                mutate_sender_role(&mut mutant, rng);
+            }
+        }
     }
 
     mutant
@@ -273,11 +311,128 @@ fn havoc_mutate(
     }
 }
 
+fn inject_dependency_chain(
+    ind: &mut Individual,
+    abi: &ContractAbi,
+    deps: &DependencyMap,
+    rng: &mut impl Rng,
+    dict: Option<&Dictionary>,
+) {
+    let Some((writer, reader)) = pick_writer_reader_pair(deps, rng) else {
+        return;
+    };
+
+    let pool = ind.environment.address_pool_size.max(2);
+    let writer_sender = if rng.gen_bool(0.7) {
+        0
+    } else {
+        rng.gen_range(0..pool)
+    };
+    let reader_sender = if rng.gen_bool(0.7) {
+        1
+    } else {
+        rng.gen_range(0..pool)
+    };
+
+    let writer_tx = make_tx_for_function(abi, writer, rng, dict, pool, writer_sender);
+    let reader_tx = make_tx_for_function(abi, reader, rng, dict, pool, reader_sender);
+    let (Some(writer_tx), Some(reader_tx)) = (writer_tx, reader_tx) else {
+        return;
+    };
+
+    if ind.transactions.is_empty() {
+        ind.transactions.push(writer_tx);
+        ind.transactions.push(reader_tx);
+        return;
+    }
+
+    if ind.transactions.len() == 1 {
+        ind.transactions[0] = writer_tx;
+        ind.transactions.push(reader_tx);
+        return;
+    }
+
+    ind.transactions[0] = writer_tx;
+    ind.transactions[1] = reader_tx;
+}
+
+fn pick_writer_reader_pair(deps: &DependencyMap, rng: &mut impl Rng) -> Option<(u32, u32)> {
+    let mut pairs = Vec::new();
+    for (writer_id, writer_fd) in &deps.functions {
+        if writer_fd.writes.is_empty() {
+            continue;
+        }
+        for (reader_id, reader_fd) in &deps.functions {
+            if writer_id == reader_id || reader_fd.reads.is_empty() {
+                continue;
+            }
+            if reader_fd
+                .reads
+                .intersection(&writer_fd.writes)
+                .next()
+                .is_some()
+            {
+                pairs.push((*writer_id, *reader_id));
+            }
+        }
+    }
+
+    if pairs.is_empty() {
+        return None;
+    }
+    Some(pairs[rng.gen_range(0..pairs.len())])
+}
+
+fn make_tx_for_function(
+    abi: &ContractAbi,
+    function_id: u32,
+    rng: &mut impl Rng,
+    dict: Option<&Dictionary>,
+    address_pool_size: usize,
+    sender: usize,
+) -> Option<Transaction> {
+    let func = abi.functions.iter().find(|f| f.id == function_id)?;
+    if !func.is_fuzz_callable() {
+        return None;
+    }
+
+    let args = func
+        .params
+        .iter()
+        .map(|_| crate::fuzzing::generator::random_value_with_dict(rng, dict))
+        .collect::<Vec<_>>();
+
+    let value = if func.is_payable {
+        random_payable_value(rng)
+    } else {
+        0
+    };
+
+    Some(Transaction {
+        function_id,
+        args,
+        sender: sender.min(address_pool_size.saturating_sub(1)),
+        value,
+    })
+}
+
+fn random_payable_value(rng: &mut impl Rng) -> u128 {
+    let strategy: u32 = rng.gen_range(0..5);
+    match strategy {
+        0 => 0,
+        1 => 1,
+        2 => rng.gen_range(1..1_000_000),
+        3 => rng.gen_range(1_000_000..1_000_000_000_000_000_000),
+        _ => u128::MAX,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::fuzzing::types::{Environment, FunctionAbi, ParamInfo};
+    use crate::fuzzing::types::{DependencyMap, Environment, FunctionAbi, FunctionDeps, ParamInfo};
     use crate::norm::{FunctionKind, Mutability, Visibility};
+    use std::collections::{HashMap, HashSet};
 
     fn sample_individual() -> Individual {
         Individual {
@@ -421,5 +576,44 @@ mod tests {
             }
         }
         assert!(changed, "arithmetic mutation should change a numeric value");
+    }
+
+    #[test]
+    fn guided_mutation_can_inject_writer_reader_chain() {
+        let ind = sample_individual();
+        let abi = sample_abi();
+        let mut deps = DependencyMap::default();
+        deps.functions.insert(
+            0,
+            FunctionDeps {
+                reads: HashSet::new(),
+                writes: HashSet::from(["balance".to_string()]),
+            },
+        );
+        deps.functions.insert(
+            1,
+            FunctionDeps {
+                reads: HashSet::from(["balance".to_string()]),
+                writes: HashSet::new(),
+            },
+        );
+
+        let mut injected = false;
+        for seed in 0..64u64 {
+            let mut rng = <rand::rngs::StdRng as rand::SeedableRng>::seed_from_u64(seed);
+            let mutant =
+                mutate_individual_guided_with_dict(&ind, &abi, &deps, &mut rng, None, false);
+            if mutant.transactions.len() >= 2
+                && mutant.transactions[0].function_id == 0
+                && mutant.transactions[1].function_id == 1
+            {
+                injected = true;
+                break;
+            }
+        }
+        assert!(
+            injected,
+            "expected guided mutator to inject writer->reader chain"
+        );
     }
 }
