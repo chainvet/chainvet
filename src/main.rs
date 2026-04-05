@@ -10,6 +10,7 @@ mod norm;
 mod report;
 mod ssa;
 mod surfaced;
+mod symbolic;
 mod util;
 mod web;
 
@@ -19,6 +20,7 @@ use crate::util::error::Result;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum AnalysisMode {
     Static,
+    Symbolic,
     Fuzzing,
 }
 
@@ -26,6 +28,7 @@ impl AnalysisMode {
     fn from_flag(flag: &str) -> Option<Self> {
         match flag {
             "--static" => Some(Self::Static),
+            "--symbolic" => Some(Self::Symbolic),
             "--fuzzing" => Some(Self::Fuzzing),
             _ => None,
         }
@@ -41,7 +44,7 @@ fn main() {
 
 fn print_usage() {
     eprintln!(
-        "usage: static-analyzer --web | [--static|--fuzzing] <path> [--json|--text|--format <json|text>] [--dump-ir <text|json|tuple>]"
+        "usage: static-analyzer --web | [--static|--symbolic|--fuzzing|--hybrid] <path> [--json|--text|--format <json|text>] [--dump-ir <text|json|tuple>]"
     );
 }
 
@@ -65,6 +68,7 @@ fn run() -> Result<()> {
                 mode = next_mode;
                 mode_flag = Some(match next_mode {
                     AnalysisMode::Static => "--static",
+                    AnalysisMode::Symbolic => "--symbolic",
                     AnalysisMode::Fuzzing => "--fuzzing",
                 });
             }
@@ -154,6 +158,10 @@ fn run() -> Result<()> {
                 return Ok(());
             }
             report::print_report(&output, &input, format)?;
+        }
+        AnalysisMode::Symbolic => {
+            let output = frontend::load_project(&input)?;
+            symbolic::run(&output, format)?;
         }
         AnalysisMode::Fuzzing => {
             let output = frontend::load_project(&input)?;
