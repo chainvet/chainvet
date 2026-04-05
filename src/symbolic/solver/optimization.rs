@@ -1,14 +1,15 @@
-// These utilities are Phase 6 API used by detectors for fast constraint pruning.
-#![allow(dead_code)]
+// Constraint simplification utilities used by detectors for fast pruning.
 
 use z3::ast::{Ast, Bool};
 
 /// Simplify a Bool constraint using Z3's built-in simplifier.
+#[allow(dead_code)]
 pub fn simplify(constraint: &Bool) -> Bool {
     constraint.simplify()
 }
 
 /// Check if a constraint is trivially true (simplifies to `true`).
+#[allow(dead_code)]
 pub fn is_trivially_true(constraint: &Bool) -> bool {
     constraint.simplify().as_bool() == Some(true)
 }

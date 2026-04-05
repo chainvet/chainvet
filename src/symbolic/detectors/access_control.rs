@@ -51,10 +51,6 @@ impl Detector for AccessControlDetector {
         "access-control"
     }
 
-    fn name(&self) -> &'static str {
-        "Access Control Detector"
-    }
-
     fn on_instruction(
         &mut self,
         state: &SymbolicState,
@@ -98,7 +94,7 @@ impl Detector for AccessControlDetector {
                         Severity::Medium,
                         Confidence::Medium,
                         "tx.origin used for authentication; use msg.sender instead",
-                        span.clone(),
+                        *span,
                         state,
                     )];
                 }
@@ -118,7 +114,7 @@ impl Detector for AccessControlDetector {
                         Severity::High,
                         Confidence::High,
                         "selfdestruct reachable without sender restriction",
-                        span.clone(),
+                        *span,
                     );
                 }
                 vec![]
@@ -142,7 +138,7 @@ impl Detector for AccessControlDetector {
                         Severity::High,
                         Confidence::Medium,
                         "ETH transfer to user-controlled address without access control",
-                        span.clone(),
+                        *span,
                     ));
                 }
 
@@ -153,7 +149,7 @@ impl Detector for AccessControlDetector {
                         Severity::High,
                         Confidence::Low,
                         "ETH-sending call without msg.sender check",
-                        span.clone(),
+                        *span,
                         state,
                     ));
                 }
@@ -168,18 +164,17 @@ impl Detector for AccessControlDetector {
                     class: PlaceClass::Storage,
                     ..
                 } = dest
+                    && is_user_controlled_value(idx)
                 {
-                    if is_user_controlled_value(idx) {
-                        return check_reachable_and_emit(
-                            state,
-                            solver,
-                            SeVulnKind::ArbitraryStorageWrite,
-                            Severity::High,
-                            Confidence::Medium,
-                            "Storage write at user-controlled index may overwrite arbitrary slots",
-                            span.clone(),
-                        );
-                    }
+                    return check_reachable_and_emit(
+                        state,
+                        solver,
+                        SeVulnKind::ArbitraryStorageWrite,
+                        Severity::High,
+                        Confidence::Medium,
+                        "Storage write at user-controlled index may overwrite arbitrary slots",
+                        *span,
+                    );
                 }
                 vec![]
             }
@@ -200,6 +195,181 @@ impl Detector for AccessControlDetector {
     fn reset(&mut self) {
         self.tx_origin_loaded = false;
         self.has_sender_check = false;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ir::{ControlKind, IrCallOption, IrInstr, IrPlace, IrValue, IrVar, PlaceClass};
+    use crate::norm::Span;
+    use crate::symbolic::results::finding::SeVulnKind;
+    use crate::symbolic::solver::z3_backend::Z3Backend;
+    use crate::symbolic::state::call_context::CallContext;
+    use crate::symbolic::state::{StateIdGen, SymbolicState};
+
+    fn span() -> Span {
+        Span { file: 0, start: 0, end: 0 }
+    }
+
+    fn make_state_and_solver() -> (SymbolicState, Z3Backend) {
+        let mut id_gen = StateIdGen::new();
+        let (call_ctx, _) = CallContext::new_symbolic();
+        let state = SymbolicState::initial(&mut id_gen, 0, call_ctx);
+        (state, Z3Backend::new(0))
+    }
+
+    #[test]
+    fn test_nop_no_findings() {
+        // A Nop instruction should produce no access control findings.
+        let (state, solver) = make_state_and_solver();
+        let mut det = AccessControlDetector::new();
+        let findings = det.on_instruction(&state, &IrInstr::Nop { span: span() }, &solver);
+        assert!(findings.is_empty());
+    }
+
+    #[test]
+    fn test_selfdestruct_without_sender_check_emits_finding() {
+        // A selfdestruct call with empty path constraints should emit UnprotectedSelfdestruct.
+        let (state, solver) = make_state_and_solver();
+        let mut det = AccessControlDetector::new();
+        let instr = IrInstr::Call {
+            dest: vec![],
+            callee: IrValue::Var(IrVar::Named("selfdestruct".to_string())),
+            args: vec![IrValue::Var(IrVar::Temp(0))],
+            options: vec![],
+            span: span(),
+        };
+        let findings = det.on_instruction(&state, &instr, &solver);
+        assert_eq!(findings.len(), 1, "selfdestruct without sender check should emit finding");
+        assert_eq!(findings[0].kind, SeVulnKind::UnprotectedSelfdestruct);
+    }
+
+    #[test]
+    fn test_load_tx_origin_then_if_emits_tx_origin_auth() {
+        // Load tx.origin followed by a Control{If} should emit TxOriginAuth.
+        let (state, solver) = make_state_and_solver();
+        let mut det = AccessControlDetector::new();
+
+        let load_instr = IrInstr::Load {
+            dest: IrVar::Temp(0),
+            src: IrPlace::Var {
+                var: IrVar::Named("tx.origin".to_string()),
+                class: PlaceClass::Unknown,
+            },
+            span: span(),
+        };
+        det.on_instruction(&state, &load_instr, &solver);
+
+        let if_instr = IrInstr::Control {
+            kind: ControlKind::If {
+                cond: IrValue::Var(IrVar::Temp(0)),
+            },
+            span: span(),
+        };
+        let findings = det.on_instruction(&state, &if_instr, &solver);
+        assert_eq!(findings.len(), 1, "tx.origin load then branch should emit TxOriginAuth");
+        assert_eq!(findings[0].kind, SeVulnKind::TxOriginAuth);
+    }
+
+    #[test]
+    fn test_eth_transfer_without_sender_emits_access_control_missing() {
+        // An ETH-transferring call with no msg.sender check should emit AccessControlMissing.
+        let (state, solver) = make_state_and_solver();
+        let mut det = AccessControlDetector::new();
+        let instr = IrInstr::Call {
+            dest: vec![],
+            callee: IrValue::Var(IrVar::Named("recipient".to_string())),
+            args: vec![],
+            options: vec![IrCallOption::Value(IrValue::Var(IrVar::Temp(0)))],
+            span: span(),
+        };
+        let findings = det.on_instruction(&state, &instr, &solver);
+        assert!(
+            findings.iter().any(|f| f.kind == SeVulnKind::AccessControlMissing),
+            "ETH transfer without sender check should emit AccessControlMissing"
+        );
+    }
+
+    #[test]
+    fn test_arbitrary_storage_write_emits_finding() {
+        // Store to Index{class:Storage, index:Some(Var(Temp))} should emit ArbitraryStorageWrite.
+        let (state, solver) = make_state_and_solver();
+        let mut det = AccessControlDetector::new();
+        let instr = IrInstr::Store {
+            dest: IrPlace::Index {
+                base: IrValue::Var(IrVar::Named("s".to_string())),
+                index: Some(IrValue::Var(IrVar::Temp(1))),
+                root: None,
+                class: PlaceClass::Storage,
+            },
+            src: IrValue::Var(IrVar::Temp(0)),
+            span: span(),
+        };
+        let findings = det.on_instruction(&state, &instr, &solver);
+        assert_eq!(findings.len(), 1, "user-controlled storage index should emit ArbitraryStorageWrite");
+        assert_eq!(findings[0].kind, SeVulnKind::ArbitraryStorageWrite);
+    }
+
+    #[test]
+    fn test_reset_clears_flags() {
+        // After reset, loading tx.origin and then a branch should not emit TxOriginAuth.
+        let (state, solver) = make_state_and_solver();
+        let mut det = AccessControlDetector::new();
+
+        let load_instr = IrInstr::Load {
+            dest: IrVar::Temp(0),
+            src: IrPlace::Var {
+                var: IrVar::Named("tx.origin".to_string()),
+                class: PlaceClass::Unknown,
+            },
+            span: span(),
+        };
+        det.on_instruction(&state, &load_instr, &solver);
+        det.reset();
+
+        let if_instr = IrInstr::Control {
+            kind: ControlKind::If {
+                cond: IrValue::Var(IrVar::Temp(0)),
+            },
+            span: span(),
+        };
+        let findings = det.on_instruction(&state, &if_instr, &solver);
+        assert!(
+            !findings.iter().any(|f| f.kind == SeVulnKind::TxOriginAuth),
+            "reset should clear tx_origin_loaded flag"
+        );
+    }
+
+    #[test]
+    fn test_msg_sender_load_sets_has_sender_check() {
+        // Loading msg.sender sets has_sender_check, so subsequent ETH call won't emit
+        // AccessControlMissing.
+        let (state, solver) = make_state_and_solver();
+        let mut det = AccessControlDetector::new();
+
+        let load_instr = IrInstr::Load {
+            dest: IrVar::Temp(0),
+            src: IrPlace::Var {
+                var: IrVar::Named("msg.sender".to_string()),
+                class: PlaceClass::Unknown,
+            },
+            span: span(),
+        };
+        det.on_instruction(&state, &load_instr, &solver);
+
+        let call_instr = IrInstr::Call {
+            dest: vec![],
+            callee: IrValue::Var(IrVar::Named("recipient".to_string())),
+            args: vec![],
+            options: vec![IrCallOption::Value(IrValue::Var(IrVar::Temp(0)))],
+            span: span(),
+        };
+        let findings = det.on_instruction(&state, &call_instr, &solver);
+        assert!(
+            !findings.iter().any(|f| f.kind == SeVulnKind::AccessControlMissing),
+            "after loading msg.sender, AccessControlMissing should not be emitted"
+        );
     }
 }
 

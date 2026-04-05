@@ -1,15 +1,11 @@
 use std::collections::HashMap;
 
-use z3::SatResult;
-use z3::ast::Bool;
-
 use crate::analysis::detectors::Severity;
 use crate::cfg::BlockId;
 use crate::ir::{IrCallOption, IrInstr, IrPlace, IrValue, IrVar, PlaceClass};
 use crate::norm::Span;
 use crate::symbolic::detectors::Detector;
 use crate::symbolic::results::finding::{Confidence, SeFinding, SeVulnKind};
-use crate::symbolic::results::witness::Witness;
 use crate::symbolic::solver::SmtSolver;
 use crate::symbolic::state::{StateId, SymbolicState};
 
@@ -29,7 +25,6 @@ pub struct ReentrancyDetector {
 }
 
 struct ExternalCallInfo {
-    span: Span,
     sends_eth: bool,
     /// `state.instruction_count` at the call site.
     call_instruction_count: u32,
@@ -85,10 +80,6 @@ impl Detector for ReentrancyDetector {
         "reentrancy"
     }
 
-    fn name(&self) -> &'static str {
-        "Reentrancy Detector"
-    }
-
     fn on_instruction(
         &mut self,
         state: &SymbolicState,
@@ -103,13 +94,11 @@ impl Detector for ReentrancyDetector {
             IrInstr::Call {
                 callee,
                 options,
-                span,
                 ..
             } if Self::is_external_call(callee, options) => {
                 self.call_seen.insert(
                     state.id,
                     ExternalCallInfo {
-                        span: span.clone(),
                         sends_eth: Self::sends_eth(options),
                         call_instruction_count: state.instruction_count,
                     },
@@ -123,27 +112,27 @@ impl Detector for ReentrancyDetector {
                 span,
                 ..
             } if is_storage_place(dest) => {
-                if let Some(info) = self.find_ancestor_call(state) {
-                    if state.instruction_count > info.call_instruction_count {
-                        let severity = if info.sends_eth {
-                            Severity::High
-                        } else {
-                            Severity::Medium
-                        };
-                        let confidence = if info.sends_eth {
-                            Confidence::High
-                        } else {
-                            Confidence::Medium
-                        };
-                        return vec![make_finding(
-                            SeVulnKind::Reentrancy,
-                            severity,
-                            confidence,
-                            "Reentrancy: state written after external call violates CEI pattern",
-                            span.clone(),
-                            state,
-                        )];
-                    }
+                if let Some(info) = self.find_ancestor_call(state)
+                    && state.instruction_count > info.call_instruction_count
+                {
+                    let severity = if info.sends_eth {
+                        Severity::High
+                    } else {
+                        Severity::Medium
+                    };
+                    let confidence = if info.sends_eth {
+                        Confidence::High
+                    } else {
+                        Confidence::Medium
+                    };
+                    return vec![make_finding(
+                        SeVulnKind::Reentrancy,
+                        severity,
+                        confidence,
+                        "Reentrancy: state written after external call violates CEI pattern",
+                        *span,
+                        state,
+                    )];
                 }
                 vec![]
             }
@@ -175,15 +164,6 @@ fn is_storage_place(place: &IrPlace) -> bool {
     }
 }
 
-fn path_bools(state: &SymbolicState) -> Vec<Bool> {
-    state
-        .path_constraints
-        .constraints()
-        .iter()
-        .map(|(c, _)| c.clone())
-        .collect()
-}
-
 fn make_finding(
     kind: SeVulnKind,
     severity: Severity,
@@ -211,39 +191,156 @@ fn make_finding(
     }
 }
 
-fn make_finding_with_witness(
-    kind: SeVulnKind,
-    severity: Severity,
-    confidence: Confidence,
-    message: &str,
-    span: Span,
-    state: &SymbolicState,
-    solver: &dyn SmtSolver,
-) -> Vec<SeFinding> {
-    let assumptions = path_bools(state);
-    match solver.check_sat_assuming(&assumptions) {
-        SatResult::Sat => {
-            let witness = solver
-                .get_model()
-                .map(|m| Witness::from_model(&m, &state.call_context));
-            vec![SeFinding {
-                kind,
-                severity,
-                confidence,
-                message: message.to_string(),
-                span,
-                function_id: None,
-                path_constraints: state
-                    .path_constraints
-                    .descriptions()
-                    .iter()
-                    .map(|s| s.to_string())
-                    .collect(),
-                witness,
-                state_id: state.id,
-                path_depth: state.path_depth,
-            }]
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ir::{IrCallOption, IrInstr, IrPlace, IrValue, IrVar, PlaceClass};
+    use crate::norm::Span;
+    use crate::symbolic::results::finding::SeVulnKind;
+    use crate::symbolic::solver::z3_backend::Z3Backend;
+    use crate::symbolic::state::call_context::CallContext;
+    use crate::symbolic::state::{StateIdGen, SymbolicState};
+
+    fn span() -> Span {
+        Span { file: 0, start: 0, end: 0 }
+    }
+
+    fn make_state_and_solver() -> (SymbolicState, Z3Backend) {
+        let mut id_gen = StateIdGen::new();
+        let (call_ctx, _) = CallContext::new_symbolic();
+        let state = SymbolicState::initial(&mut id_gen, 0, call_ctx);
+        (state, Z3Backend::new(0))
+    }
+
+    fn external_call_instr() -> IrInstr {
+        // A Call with a Value option is treated as an external call.
+        IrInstr::Call {
+            dest: vec![],
+            callee: IrValue::Var(IrVar::Named("call".to_string())),
+            args: vec![],
+            options: vec![IrCallOption::Value(IrValue::Var(IrVar::Temp(0)))],
+            span: span(),
         }
-        _ => vec![],
+    }
+
+    fn storage_write_instr() -> IrInstr {
+        IrInstr::Store {
+            dest: IrPlace::Var {
+                var: IrVar::Named("balance".to_string()),
+                class: PlaceClass::Storage,
+            },
+            src: IrValue::Var(IrVar::Temp(1)),
+            span: span(),
+        }
+    }
+
+    fn memory_write_instr() -> IrInstr {
+        IrInstr::Store {
+            dest: IrPlace::Var {
+                var: IrVar::Named("local".to_string()),
+                class: PlaceClass::Memory,
+            },
+            src: IrValue::Var(IrVar::Temp(1)),
+            span: span(),
+        }
+    }
+
+    #[test]
+    fn test_no_findings_on_nop() {
+        // A Nop instruction should never trigger reentrancy detector findings.
+        let (state, solver) = make_state_and_solver();
+        let mut det = ReentrancyDetector::new();
+        let findings = det.on_instruction(&state, &IrInstr::Nop { span: span() }, &solver);
+        assert!(findings.is_empty(), "Nop should produce no findings");
+    }
+
+    #[test]
+    fn test_external_call_does_not_immediately_emit() {
+        // An external call (with Value option) records state but emits no finding itself.
+        let (state, solver) = make_state_and_solver();
+        let mut det = ReentrancyDetector::new();
+        let findings = det.on_instruction(&state, &external_call_instr(), &solver);
+        assert!(findings.is_empty(), "external call alone should not emit a finding");
+    }
+
+    #[test]
+    fn test_storage_write_after_external_call_emits_reentrancy() {
+        // External call followed by storage write with higher instruction_count → Reentrancy.
+        let (mut state, solver) = make_state_and_solver();
+        let mut det = ReentrancyDetector::new();
+
+        // Process the external call at instruction_count=0.
+        state.instruction_count = 0;
+        det.on_instruction(&state, &external_call_instr(), &solver);
+
+        // Increment instruction_count to simulate instructions after the call.
+        state.instruction_count = 1;
+        let findings = det.on_instruction(&state, &storage_write_instr(), &solver);
+        assert_eq!(findings.len(), 1, "storage write after external call should emit Reentrancy");
+        assert_eq!(findings[0].kind, SeVulnKind::Reentrancy);
+    }
+
+    #[test]
+    fn test_storage_write_before_call_no_finding() {
+        // Storage write at instruction_count=0, then call records count=1 → write came before call.
+        // We test this by doing the write first without any prior call recorded.
+        let (mut state, solver) = make_state_and_solver();
+        let mut det = ReentrancyDetector::new();
+
+        // Storage write with no prior external call → no reentrancy.
+        state.instruction_count = 0;
+        let findings = det.on_instruction(&state, &storage_write_instr(), &solver);
+        assert!(findings.is_empty(), "storage write with no prior call should not emit finding");
+    }
+
+    #[test]
+    fn test_non_external_call_no_tracking() {
+        // A call to "require" with no options is not an external call → no tracking.
+        let (mut state, solver) = make_state_and_solver();
+        let mut det = ReentrancyDetector::new();
+
+        let require_call = IrInstr::Call {
+            dest: vec![],
+            callee: IrValue::Var(IrVar::Named("require".to_string())),
+            args: vec![IrValue::Var(IrVar::Temp(0))],
+            options: vec![],
+            span: span(),
+        };
+        state.instruction_count = 0;
+        det.on_instruction(&state, &require_call, &solver);
+
+        // Storage write after a non-external call should not trigger reentrancy.
+        state.instruction_count = 1;
+        let findings = det.on_instruction(&state, &storage_write_instr(), &solver);
+        assert!(findings.is_empty(), "require call should not be tracked as external call");
+    }
+
+    #[test]
+    fn test_reset_clears_state() {
+        // After reset, a storage write following a prior external call should not emit.
+        let (mut state, solver) = make_state_and_solver();
+        let mut det = ReentrancyDetector::new();
+
+        state.instruction_count = 0;
+        det.on_instruction(&state, &external_call_instr(), &solver);
+        det.reset();
+
+        state.instruction_count = 1;
+        let findings = det.on_instruction(&state, &storage_write_instr(), &solver);
+        assert!(findings.is_empty(), "reset should clear external call tracking");
+    }
+
+    #[test]
+    fn test_non_storage_write_no_finding() {
+        // A write to Memory (not Storage) after an external call should not trigger reentrancy.
+        let (mut state, solver) = make_state_and_solver();
+        let mut det = ReentrancyDetector::new();
+
+        state.instruction_count = 0;
+        det.on_instruction(&state, &external_call_instr(), &solver);
+
+        state.instruction_count = 1;
+        let findings = det.on_instruction(&state, &memory_write_instr(), &solver);
+        assert!(findings.is_empty(), "memory write should not trigger reentrancy");
     }
 }

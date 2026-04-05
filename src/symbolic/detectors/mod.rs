@@ -1,5 +1,4 @@
-// Detector infrastructure — Phase 6 API. Concrete detectors are registered here.
-#![allow(dead_code)]
+// Detector infrastructure — vulnerability detectors for the SE engine.
 
 pub mod access_control;
 pub mod arithmetic;
@@ -33,9 +32,6 @@ use crate::symbolic::state::SymbolicState;
 pub trait Detector {
     /// Unique identifier (e.g., `"integer-overflow"`).
     fn id(&self) -> &'static str;
-
-    /// Human-readable name (e.g., `"Integer Overflow Detector"`).
-    fn name(&self) -> &'static str;
 
     /// Called for each IR instruction during block interpretation.
     ///
@@ -130,17 +126,20 @@ impl DetectorRegistry {
     }
 
     /// Filter to only keep detectors whose IDs appear in `enabled`.
+    #[allow(dead_code)]
     pub fn with_filter(mut self, enabled: &[&str]) -> Self {
         self.detectors.retain(|d| enabled.contains(&d.id()));
         self
     }
 
     /// Number of registered detectors.
+    #[allow(dead_code)]
     pub fn len(&self) -> usize {
         self.detectors.len()
     }
 
     /// Whether the registry has no detectors.
+    #[allow(dead_code)]
     pub fn is_empty(&self) -> bool {
         self.detectors.is_empty()
     }
@@ -185,10 +184,6 @@ mod tests {
     impl Detector for MockDetector {
         fn id(&self) -> &'static str {
             self.id
-        }
-
-        fn name(&self) -> &'static str {
-            "Mock Detector"
         }
 
         fn on_instruction(

@@ -1,6 +1,3 @@
-// Finding types are Phase 6 API — produced by detectors, not yet constructed.
-#![allow(dead_code)]
-
 // Reuses Severity and Category from static analysis — these are stable,
 // engine-agnostic classifications shared across all analysis modes.
 use crate::analysis::detectors::{Category, Severity};

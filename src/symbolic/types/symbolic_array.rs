@@ -1,5 +1,4 @@
-// Array-theory helpers for mapping storage — Phase 6 API.
-#![allow(dead_code)]
+// Array-theory helpers for mapping and storage access.
 
 use z3::ast::{Array, BV};
 use z3::Sort;
@@ -8,6 +7,7 @@ use super::SymbolicValue;
 use crate::util::error::{Error, Result};
 
 /// Create a fresh symbolic array (e.g., for a mapping `mapping(uint256 => uint256)`).
+#[allow(dead_code)]
 pub fn new_symbolic_array(name: &str, key_width: u32, val_width: u32) -> SymbolicValue {
     let key_sort = Sort::bitvector(key_width);
     let val_sort = Sort::bitvector(val_width);
@@ -19,6 +19,7 @@ pub fn new_symbolic_array(name: &str, key_width: u32, val_width: u32) -> Symboli
 }
 
 /// Create a constant array where every index maps to the given default value.
+#[allow(dead_code)]
 pub fn const_array(default_val: &BV, key_width: u32, val_width: u32) -> SymbolicValue {
     let key_sort = Sort::bitvector(key_width);
     SymbolicValue::SymArray {
@@ -43,6 +44,7 @@ pub fn array_select(arr: &Array, index: &BV, val_width: u32) -> Result<SymbolicV
 
 /// Write a value to an array at the given index.
 /// Returns a new `SymbolicValue::SymArray` with the updated mapping.
+#[allow(dead_code)]
 pub fn array_store(
     arr: &Array,
     index: &BV,

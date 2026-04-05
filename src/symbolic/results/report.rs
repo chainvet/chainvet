@@ -46,8 +46,12 @@ fn print_se_text(
     println!("{} finding(s):", findings.len());
     for f in findings {
         println!(
-            "[{:?}] {:?} — {} (confidence: {:?})",
-            f.severity, f.kind, f.message, f.confidence
+            "[{}] {} ({}) — {} [confidence: {}]",
+            f.severity.as_str(),
+            f.kind.as_str(),
+            f.category().as_str(),
+            f.message,
+            f.confidence.as_str(),
         );
         if !f.path_constraints.is_empty() {
             for c in &f.path_constraints {

@@ -20,10 +20,6 @@ impl Detector for StorageDetector {
         "storage"
     }
 
-    fn name(&self) -> &'static str {
-        "Storage and Memory Detector"
-    }
-
     fn on_instruction(
         &mut self,
         state: &SymbolicState,
@@ -37,18 +33,18 @@ impl Detector for StorageDetector {
                     var: IrVar::Named(n),
                     ..
                 } = src
+                    && (n == "msg.value" || n == "msg_value")
+                    && state.path_depth > 0
                 {
-                    if (n == "msg.value" || n == "msg_value") && state.path_depth > 0 {
-                        return vec![make_finding(
-                            SeVulnKind::MsgValueInLoop,
-                            Severity::Medium,
-                            Confidence::Low,
-                            "msg.value accessed inside a loop; each iteration may transfer ETH \
-                             from the original call, leading to fund loss",
-                            span.clone(),
-                            state,
-                        )];
-                    }
+                    return vec![make_finding(
+                        SeVulnKind::MsgValueInLoop,
+                        Severity::Medium,
+                        Confidence::Low,
+                        "msg.value accessed inside a loop; each iteration may transfer ETH \
+                         from the original call, leading to fund loss",
+                        *span,
+                        state,
+                    )];
                 }
                 vec![]
             }
@@ -62,7 +58,7 @@ impl Detector for StorageDetector {
                         Confidence::Low,
                         "Inline assembly bypasses Solidity safety checks; memory/storage may be \
                          manipulated in unexpected ways",
-                        span.clone(),
+                        *span,
                         state,
                     ),
                     make_finding(
@@ -71,7 +67,7 @@ impl Detector for StorageDetector {
                         Confidence::Low,
                         "Inline assembly may contain arbitrary JUMP instructions; \
                          static analysis required for full verification",
-                        span.clone(),
+                        *span,
                         state,
                     ),
                 ]
@@ -91,6 +87,109 @@ impl Detector for StorageDetector {
     }
 
     fn reset(&mut self) {}
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ir::{IrInstr, IrPlace, IrVar, PlaceClass};
+    use crate::norm::Span;
+    use crate::symbolic::results::finding::SeVulnKind;
+    use crate::symbolic::solver::z3_backend::Z3Backend;
+    use crate::symbolic::state::call_context::CallContext;
+    use crate::symbolic::state::{StateIdGen, SymbolicState};
+
+    fn span() -> Span {
+        Span { file: 0, start: 0, end: 0 }
+    }
+
+    fn make_state_and_solver() -> (SymbolicState, Z3Backend) {
+        let mut id_gen = StateIdGen::new();
+        let (call_ctx, _) = CallContext::new_symbolic();
+        let state = SymbolicState::initial(&mut id_gen, 0, call_ctx);
+        (state, Z3Backend::new(0))
+    }
+
+    fn inline_asm_instr() -> IrInstr {
+        IrInstr::InlineAsm {
+            language: Some("assembly".to_string()),
+            span: span(),
+        }
+    }
+
+    fn msg_value_load_instr() -> IrInstr {
+        IrInstr::Load {
+            dest: IrVar::Temp(0),
+            src: IrPlace::Var {
+                var: IrVar::Named("msg.value".to_string()),
+                class: PlaceClass::Unknown,
+            },
+            span: span(),
+        }
+    }
+
+    #[test]
+    fn test_nop_no_findings() {
+        // Nop should produce no storage/memory findings.
+        let (state, solver) = make_state_and_solver();
+        let mut det = StorageDetector;
+        let findings = det.on_instruction(&state, &IrInstr::Nop { span: span() }, &solver);
+        assert!(findings.is_empty());
+    }
+
+    #[test]
+    fn test_msg_value_at_depth_zero_no_finding() {
+        // Loading msg.value at path_depth=0 should not trigger MsgValueInLoop.
+        let (mut state, solver) = make_state_and_solver();
+        state.path_depth = 0;
+        let mut det = StorageDetector;
+        let findings = det.on_instruction(&state, &msg_value_load_instr(), &solver);
+        assert!(findings.is_empty(), "msg.value at depth=0 should not trigger MsgValueInLoop");
+    }
+
+    #[test]
+    fn test_msg_value_in_loop_emits_finding() {
+        // Loading msg.value at path_depth=1 (inside a loop) should emit MsgValueInLoop.
+        let (mut state, solver) = make_state_and_solver();
+        state.path_depth = 1;
+        let mut det = StorageDetector;
+        let findings = det.on_instruction(&state, &msg_value_load_instr(), &solver);
+        assert_eq!(findings.len(), 1, "msg.value inside loop should emit MsgValueInLoop");
+        assert_eq!(findings[0].kind, SeVulnKind::MsgValueInLoop);
+    }
+
+    #[test]
+    fn test_inline_asm_emits_unsafe_assembly() {
+        // InlineAsm should emit UnsafeAssembly.
+        let (state, solver) = make_state_and_solver();
+        let mut det = StorageDetector;
+        let findings = det.on_instruction(&state, &inline_asm_instr(), &solver);
+        assert!(
+            findings.iter().any(|f| f.kind == SeVulnKind::UnsafeAssembly),
+            "inline assembly should emit UnsafeAssembly"
+        );
+    }
+
+    #[test]
+    fn test_inline_asm_emits_arbitrary_function_jump() {
+        // InlineAsm should also emit ArbitraryFunctionJump.
+        let (state, solver) = make_state_and_solver();
+        let mut det = StorageDetector;
+        let findings = det.on_instruction(&state, &inline_asm_instr(), &solver);
+        assert!(
+            findings.iter().any(|f| f.kind == SeVulnKind::ArbitraryFunctionJump),
+            "inline assembly should emit ArbitraryFunctionJump"
+        );
+    }
+
+    #[test]
+    fn test_inline_asm_emits_two_findings() {
+        // A single InlineAsm instruction should produce exactly two findings (UnsafeAssembly + ArbitraryFunctionJump).
+        let (state, solver) = make_state_and_solver();
+        let mut det = StorageDetector;
+        let findings = det.on_instruction(&state, &inline_asm_instr(), &solver);
+        assert_eq!(findings.len(), 2, "InlineAsm should produce exactly two findings");
+    }
 }
 
 fn make_finding(

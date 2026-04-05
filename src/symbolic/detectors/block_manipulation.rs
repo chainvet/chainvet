@@ -56,10 +56,6 @@ impl Detector for BlockManipulationDetector {
         "block-manipulation"
     }
 
-    fn name(&self) -> &'static str {
-        "Block Manipulation Detector"
-    }
-
     fn on_instruction(
         &mut self,
         state: &SymbolicState,
@@ -115,7 +111,7 @@ impl Detector for BlockManipulationDetector {
                         Severity::Low,
                         Confidence::Low,
                         "Branch condition depends on block.timestamp; miners can manipulate this value",
-                        span.clone(),
+                        *span,
                         state,
                     ));
                 }
@@ -126,7 +122,7 @@ impl Detector for BlockManipulationDetector {
                         Severity::High,
                         Confidence::Low,
                         "Randomness derived from block variables is predictable and miner-manipulable",
-                        span.clone(),
+                        *span,
                         state,
                     ));
                 }
@@ -151,6 +147,120 @@ impl Detector for BlockManipulationDetector {
         self.timestamp_vars.clear();
         self.block_vars.clear();
         self.prng_vars.clear();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ir::{ControlKind, IrInstr, IrPlace, IrValue, IrVar, PlaceClass};
+    use crate::norm::Span;
+    use crate::symbolic::results::finding::SeVulnKind;
+    use crate::symbolic::solver::z3_backend::Z3Backend;
+    use crate::symbolic::state::call_context::CallContext;
+    use crate::symbolic::state::{StateIdGen, SymbolicState};
+
+    fn span() -> Span {
+        Span { file: 0, start: 0, end: 0 }
+    }
+
+    fn make_state_and_solver() -> (SymbolicState, Z3Backend) {
+        let mut id_gen = StateIdGen::new();
+        let (call_ctx, _) = CallContext::new_symbolic();
+        let state = SymbolicState::initial(&mut id_gen, 0, call_ctx);
+        (state, Z3Backend::new(0))
+    }
+
+    fn load_named(dest: IrVar, name: &str) -> IrInstr {
+        IrInstr::Load {
+            dest,
+            src: IrPlace::Var {
+                var: IrVar::Named(name.to_string()),
+                class: PlaceClass::Unknown,
+            },
+            span: span(),
+        }
+    }
+
+    fn if_cond(var: IrVar) -> IrInstr {
+        IrInstr::Control {
+            kind: ControlKind::If { cond: IrValue::Var(var) },
+            span: span(),
+        }
+    }
+
+    #[test]
+    fn test_nop_no_findings() {
+        // Nop should produce no block manipulation findings.
+        let (state, solver) = make_state_and_solver();
+        let mut det = BlockManipulationDetector::new();
+        let findings = det.on_instruction(&state, &IrInstr::Nop { span: span() }, &solver);
+        assert!(findings.is_empty());
+    }
+
+    #[test]
+    fn test_load_timestamp_then_if_emits_timestamp_dependency() {
+        // Load block.timestamp into Temp(0), then Control{If{cond:Temp(0)}} → TimestampDependency.
+        let (state, solver) = make_state_and_solver();
+        let mut det = BlockManipulationDetector::new();
+
+        det.on_instruction(&state, &load_named(IrVar::Temp(0), "block.timestamp"), &solver);
+        let findings = det.on_instruction(&state, &if_cond(IrVar::Temp(0)), &solver);
+        assert_eq!(findings.len(), 1, "timestamp used in branch should emit TimestampDependency");
+        assert_eq!(findings[0].kind, SeVulnKind::TimestampDependency);
+    }
+
+    #[test]
+    fn test_load_block_var_modulo_then_if_emits_weak_prng() {
+        // Load block.number, compute % to get prng_var, use in If → WeakPRNG.
+        let (state, solver) = make_state_and_solver();
+        let mut det = BlockManipulationDetector::new();
+
+        // Load block.number into Temp(0).
+        det.on_instruction(&state, &load_named(IrVar::Temp(0), "block.number"), &solver);
+
+        // Binary{op:"%", dest:Temp(1), lhs:Temp(0), ...} → prng_vars gets Temp(1).
+        let modulo_instr = IrInstr::Binary {
+            dest: IrVar::Temp(1),
+            op: "%".to_string(),
+            lhs: IrValue::Var(IrVar::Temp(0)),
+            rhs: IrValue::Var(IrVar::Named("n".to_string())),
+            span: span(),
+        };
+        det.on_instruction(&state, &modulo_instr, &solver);
+
+        let findings = det.on_instruction(&state, &if_cond(IrVar::Temp(1)), &solver);
+        assert!(
+            findings.iter().any(|f| f.kind == SeVulnKind::WeakPRNG),
+            "block.number % n used in branch should emit WeakPRNG"
+        );
+    }
+
+    #[test]
+    fn test_non_block_load_no_tracking() {
+        // Loading a non-block variable and using it in a branch should not produce findings.
+        let (state, solver) = make_state_and_solver();
+        let mut det = BlockManipulationDetector::new();
+
+        det.on_instruction(&state, &load_named(IrVar::Temp(0), "some_random_var"), &solver);
+        let findings = det.on_instruction(&state, &if_cond(IrVar::Temp(0)), &solver);
+        assert!(findings.is_empty(), "non-block variable in branch should not produce findings");
+    }
+
+    #[test]
+    fn test_reset_clears_sets() {
+        // After reset, timestamp loaded before reset should no longer trigger TimestampDependency.
+        let (state, solver) = make_state_and_solver();
+        let mut det = BlockManipulationDetector::new();
+
+        det.on_instruction(&state, &load_named(IrVar::Temp(0), "block.timestamp"), &solver);
+        det.reset();
+
+        let findings = det.on_instruction(&state, &if_cond(IrVar::Temp(0)), &solver);
+        assert!(
+            !findings.iter().any(|f| f.kind == SeVulnKind::TimestampDependency),
+            "reset should clear timestamp_vars set"
+        );
     }
 }
 

@@ -1,5 +1,4 @@
-// Dynamic bytes/string modeling — Phase 6 API.
-#![allow(dead_code)]
+// Dynamic bytes/string modeling for symbolic execution.
 
 use z3::ast::{Array, BV, Bool};
 use z3::Sort;
@@ -9,6 +8,7 @@ use super::SymbolicValue;
 /// Create a fresh symbolic byte array with a symbolic length bounded by `max_bound`.
 /// Returns `(SymbolicValue::SymBytes, bound_constraint)` where the constraint
 /// enforces `len <= max_bound`.
+#[allow(dead_code)]
 pub fn new_symbolic_bytes(name: &str, max_bound: u32) -> (SymbolicValue, Bool) {
     let key_sort = Sort::bitvector(256);
     let val_sort = Sort::bitvector(8);
@@ -39,6 +39,7 @@ pub fn concrete_bytes_array(data: &[u8]) -> Array {
 
 /// Read a single byte from a SymBytes value at the given index.
 /// Returns `SymbolicValue::BitVec { width: 8 }`.
+#[allow(dead_code)]
 pub fn bytes_read(content: &Array, index: &BV) -> SymbolicValue {
     let result = content.select(index);
     // Array<BV256, BV8> select always produces BV8
@@ -60,6 +61,7 @@ pub fn bytes_read(content: &Array, index: &BV) -> SymbolicValue {
 ///
 /// Since Z3 arrays can't directly express this conditional indexing, we model it
 /// as a fresh array with constraints pushed via the returned constraint Bool.
+#[allow(dead_code)]
 pub fn bytes_concat(
     a_len: &BV,
     a_content: &Array,

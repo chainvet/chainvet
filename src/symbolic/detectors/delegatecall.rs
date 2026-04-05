@@ -19,10 +19,6 @@ impl Detector for DelegatecallDetector {
         "delegatecall"
     }
 
-    fn name(&self) -> &'static str {
-        "Delegatecall Detector"
-    }
-
     fn on_instruction(
         &mut self,
         state: &SymbolicState,
@@ -56,7 +52,7 @@ impl Detector for DelegatecallDetector {
                 Severity::High,
                 Confidence::Medium,
                 "delegatecall to user-controlled address can execute arbitrary code",
-                span.clone(),
+                *span,
                 state,
             ));
         }
@@ -72,7 +68,7 @@ impl Detector for DelegatecallDetector {
                 Severity::High,
                 Confidence::Medium,
                 "delegatecall with ETH value inside a loop can drain contract balance",
-                span.clone(),
+                *span,
                 state,
             ));
         }
@@ -90,6 +86,117 @@ impl Detector for DelegatecallDetector {
     }
 
     fn reset(&mut self) {}
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ir::{IrCallOption, IrInstr, IrValue, IrVar};
+    use crate::norm::Span;
+    use crate::symbolic::results::finding::SeVulnKind;
+    use crate::symbolic::solver::z3_backend::Z3Backend;
+    use crate::symbolic::state::call_context::CallContext;
+    use crate::symbolic::state::{StateIdGen, SymbolicState};
+
+    fn span() -> Span {
+        Span { file: 0, start: 0, end: 0 }
+    }
+
+    fn make_state_and_solver() -> (SymbolicState, Z3Backend) {
+        let mut id_gen = StateIdGen::new();
+        let (call_ctx, _) = CallContext::new_symbolic();
+        let state = SymbolicState::initial(&mut id_gen, 0, call_ctx);
+        (state, Z3Backend::new(0))
+    }
+
+    #[test]
+    fn test_nop_no_findings() {
+        // Nop should produce no delegatecall findings.
+        let (state, solver) = make_state_and_solver();
+        let mut det = DelegatecallDetector;
+        let findings = det.on_instruction(&state, &IrInstr::Nop { span: span() }, &solver);
+        assert!(findings.is_empty());
+    }
+
+    #[test]
+    fn test_non_delegatecall_no_findings() {
+        // A regular "call" (not delegatecall) should produce no findings.
+        let (state, solver) = make_state_and_solver();
+        let mut det = DelegatecallDetector;
+        let instr = IrInstr::Call {
+            dest: vec![],
+            callee: IrValue::Var(IrVar::Named("call".to_string())),
+            args: vec![IrValue::Var(IrVar::Temp(0))],
+            options: vec![],
+            span: span(),
+        };
+        let findings = det.on_instruction(&state, &instr, &solver);
+        assert!(findings.is_empty(), "non-delegatecall should produce no findings");
+    }
+
+    #[test]
+    fn test_delegatecall_to_temp_var_emits_unsafe() {
+        // delegatecall where first arg is a Temp var (user-controlled) → UnsafeDelegatecall.
+        let (state, solver) = make_state_and_solver();
+        let mut det = DelegatecallDetector;
+        let instr = IrInstr::Call {
+            dest: vec![],
+            callee: IrValue::Var(IrVar::Named("delegatecall".to_string())),
+            args: vec![IrValue::Var(IrVar::Temp(0))],
+            options: vec![],
+            span: span(),
+        };
+        let findings = det.on_instruction(&state, &instr, &solver);
+        assert_eq!(findings.len(), 1, "delegatecall to temp var should emit UnsafeDelegatecall");
+        assert_eq!(findings[0].kind, SeVulnKind::UnsafeDelegatecall);
+    }
+
+    #[test]
+    fn test_delegatecall_with_value_in_loop_emits_payable_delegatecall() {
+        // delegatecall with a Value option at path_depth=1 should emit PayableDelegatecallInLoop.
+        let (mut state, solver) = make_state_and_solver();
+        state.path_depth = 1;
+        let mut det = DelegatecallDetector;
+        let instr = IrInstr::Call {
+            dest: vec![],
+            callee: IrValue::Var(IrVar::Named("delegatecall".to_string())),
+            args: vec![IrValue::Var(IrVar::Temp(0))],
+            options: vec![IrCallOption::Value(IrValue::Var(IrVar::Temp(1)))],
+            span: span(),
+        };
+        let findings = det.on_instruction(&state, &instr, &solver);
+        assert!(
+            findings.iter().any(|f| f.kind == SeVulnKind::PayableDelegatecallInLoop),
+            "delegatecall with value at path_depth>0 should emit PayableDelegatecallInLoop"
+        );
+    }
+
+    #[test]
+    fn test_delegatecall_with_value_at_depth_zero_no_payable_finding() {
+        // At path_depth=0, delegatecall with value should NOT emit PayableDelegatecallInLoop.
+        let (mut state, solver) = make_state_and_solver();
+        state.path_depth = 0;
+        let mut det = DelegatecallDetector;
+        let instr = IrInstr::Call {
+            dest: vec![],
+            callee: IrValue::Var(IrVar::Named("delegatecall".to_string())),
+            args: vec![IrValue::Var(IrVar::Temp(0))],
+            options: vec![IrCallOption::Value(IrValue::Var(IrVar::Temp(1)))],
+            span: span(),
+        };
+        let findings = det.on_instruction(&state, &instr, &solver);
+        assert!(
+            !findings.iter().any(|f| f.kind == SeVulnKind::PayableDelegatecallInLoop),
+            "path_depth=0 should not emit PayableDelegatecallInLoop"
+        );
+    }
+
+    #[test]
+    fn test_reset_is_noop() {
+        // DelegatecallDetector is stateless; reset() should not panic.
+        let mut det = DelegatecallDetector;
+        det.reset(); // must not panic
+    }
 }
 
 fn is_delegatecall(callee: &IrValue) -> bool {

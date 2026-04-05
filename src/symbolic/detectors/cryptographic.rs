@@ -35,10 +35,6 @@ impl Detector for CryptographicDetector {
         "cryptographic"
     }
 
-    fn name(&self) -> &'static str {
-        "Cryptographic Detector"
-    }
-
     fn on_instruction(
         &mut self,
         state: &SymbolicState,
@@ -50,27 +46,23 @@ impl Detector for CryptographicDetector {
             IrInstr::Call { dest, callee, span, .. }
                 if is_ecrecover(callee) =>
             {
-                let mut findings = Vec::new();
-
-                // SignatureMalleability: if ecrecover is called, the `s` parameter
-                // (conventionally args[3]) is rarely validated against secp256k1n/2.
-                // We emit a low-confidence pattern finding on every ecrecover call.
-                findings.push(make_finding(
-                    SeVulnKind::SignatureMalleability,
-                    Severity::Medium,
-                    Confidence::Low,
-                    "ecrecover does not check that `s` is in the lower half of the curve; \
-                     signature can be malleated to a different valid form",
-                    span.clone(),
-                    state,
-                ));
-
                 // Record the result variable for zero-check tracking.
                 for v in dest {
                     self.ecrecover_results.insert(v.clone());
                 }
 
-                findings
+                // SignatureMalleability: if ecrecover is called, the `s` parameter
+                // (conventionally args[3]) is rarely validated against secp256k1n/2.
+                // We emit a low-confidence pattern finding on every ecrecover call.
+                vec![make_finding(
+                    SeVulnKind::SignatureMalleability,
+                    Severity::Medium,
+                    Confidence::Low,
+                    "ecrecover does not check that `s` is in the lower half of the curve; \
+                     signature can be malleated to a different valid form",
+                    *span,
+                    state,
+                )]
             }
 
             // Binary comparison: detect `ecrecover_result == 0` (proper zero-check).
@@ -89,10 +81,10 @@ impl Detector for CryptographicDetector {
                     None
                 };
 
-                if let Some(v) = checked_var {
-                    if self.ecrecover_results.contains(v) {
-                        self.zero_checked.insert(v.clone());
-                    }
+                if let Some(v) = checked_var
+                    && self.ecrecover_results.contains(v)
+                {
+                    self.zero_checked.insert(v.clone());
                 }
                 vec![]
             }
@@ -108,7 +100,7 @@ impl Detector for CryptographicDetector {
                             Confidence::Low,
                             "ecrecover return value not checked for address(0); \
                              invalid signatures may be silently accepted",
-                            span.clone(),
+                            *span,
                             state,
                         ));
                     }
@@ -132,6 +124,122 @@ impl Detector for CryptographicDetector {
     fn reset(&mut self) {
         self.ecrecover_results.clear();
         self.zero_checked.clear();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ir::{IrInstr, IrValue, IrVar};
+    use crate::norm::{Literal, Span};
+    use crate::symbolic::results::finding::SeVulnKind;
+    use crate::symbolic::solver::z3_backend::Z3Backend;
+    use crate::symbolic::state::call_context::CallContext;
+    use crate::symbolic::state::{StateIdGen, SymbolicState};
+
+    fn span() -> Span {
+        Span { file: 0, start: 0, end: 0 }
+    }
+
+    fn make_state_and_solver() -> (SymbolicState, Z3Backend) {
+        let mut id_gen = StateIdGen::new();
+        let (call_ctx, _) = CallContext::new_symbolic();
+        let state = SymbolicState::initial(&mut id_gen, 0, call_ctx);
+        (state, Z3Backend::new(0))
+    }
+
+    fn ecrecover_instr() -> IrInstr {
+        IrInstr::Call {
+            dest: vec![IrVar::Temp(0)],
+            callee: IrValue::Var(IrVar::Named("ecrecover".to_string())),
+            args: vec![],
+            options: vec![],
+            span: span(),
+        }
+    }
+
+    fn return_instr() -> IrInstr {
+        IrInstr::Return { values: vec![], span: span() }
+    }
+
+    fn zero_check_instr() -> IrInstr {
+        // Binary{op:"==", lhs:Var(Temp(0)), rhs:Literal{value:"0"}} — zero-check of ecrecover result.
+        IrInstr::Binary {
+            dest: IrVar::Temp(1),
+            op: "==".to_string(),
+            lhs: IrValue::Var(IrVar::Temp(0)),
+            rhs: IrValue::Literal(Literal {
+                kind: "number".to_string(),
+                value: "0".to_string(),
+            }),
+            span: span(),
+        }
+    }
+
+    #[test]
+    fn test_nop_no_findings() {
+        // Nop should produce no cryptographic findings.
+        let (state, solver) = make_state_and_solver();
+        let mut det = CryptographicDetector::new();
+        let findings = det.on_instruction(&state, &IrInstr::Nop { span: span() }, &solver);
+        assert!(findings.is_empty());
+    }
+
+    #[test]
+    fn test_ecrecover_emits_signature_malleability() {
+        // Every ecrecover call should emit SignatureMalleability (low-confidence pattern).
+        let (state, solver) = make_state_and_solver();
+        let mut det = CryptographicDetector::new();
+        let findings = det.on_instruction(&state, &ecrecover_instr(), &solver);
+        assert!(
+            findings.iter().any(|f| f.kind == SeVulnKind::SignatureMalleability),
+            "ecrecover should always emit SignatureMalleability"
+        );
+    }
+
+    #[test]
+    fn test_ecrecover_without_zero_check_emits_missing_sig_verification_at_return() {
+        // ecrecover result not zero-checked, then Return → MissingSignatureVerification.
+        let (state, solver) = make_state_and_solver();
+        let mut det = CryptographicDetector::new();
+
+        det.on_instruction(&state, &ecrecover_instr(), &solver);
+        let findings = det.on_instruction(&state, &return_instr(), &solver);
+        assert!(
+            findings.iter().any(|f| f.kind == SeVulnKind::MissingSignatureVerification),
+            "ecrecover result not checked before return should emit MissingSignatureVerification"
+        );
+    }
+
+    #[test]
+    fn test_ecrecover_with_zero_check_no_missing_sig_finding() {
+        // ecrecover result zero-checked before return → no MissingSignatureVerification.
+        // (SignatureMalleability may still fire.)
+        let (state, solver) = make_state_and_solver();
+        let mut det = CryptographicDetector::new();
+
+        det.on_instruction(&state, &ecrecover_instr(), &solver);
+        det.on_instruction(&state, &zero_check_instr(), &solver);
+        let findings = det.on_instruction(&state, &return_instr(), &solver);
+        assert!(
+            !findings.iter().any(|f| f.kind == SeVulnKind::MissingSignatureVerification),
+            "zero-checked ecrecover should not emit MissingSignatureVerification"
+        );
+    }
+
+    #[test]
+    fn test_reset_clears_state() {
+        // After reset, a prior ecrecover result should be forgotten; Return won't emit missing sig.
+        let (state, solver) = make_state_and_solver();
+        let mut det = CryptographicDetector::new();
+
+        det.on_instruction(&state, &ecrecover_instr(), &solver);
+        det.reset();
+        let findings = det.on_instruction(&state, &return_instr(), &solver);
+        assert!(
+            !findings.iter().any(|f| f.kind == SeVulnKind::MissingSignatureVerification),
+            "reset should clear ecrecover_results set"
+        );
     }
 }
 
