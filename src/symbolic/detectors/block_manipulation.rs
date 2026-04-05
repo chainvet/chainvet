@@ -3,8 +3,7 @@ use std::collections::HashSet;
 use crate::analysis::detectors::Severity;
 use crate::cfg::BlockId;
 use crate::ir::{ControlKind, IrInstr, IrPlace, IrVar, IrValue};
-use crate::norm::Span;
-use crate::symbolic::detectors::Detector;
+use crate::symbolic::detectors::{make_finding, place_matches, Detector};
 use crate::symbolic::results::finding::{Confidence, SeFinding, SeVulnKind};
 use crate::symbolic::solver::SmtSolver;
 use crate::symbolic::state::SymbolicState;
@@ -32,18 +31,24 @@ impl BlockManipulationDetector {
         }
     }
 
-    fn is_timestamp_name(name: &str) -> bool {
-        name == "block.timestamp"
-            || name == "block_timestamp"
-            || name == "now"
+    fn is_timestamp_place(place: &IrPlace) -> bool {
+        place_matches(place, "block", "timestamp")
+            || matches!(
+                place,
+                IrPlace::Var { var: IrVar::Named(n), .. }
+                    if n == "now"
+            )
     }
 
-    fn is_block_entropy_name(name: &str) -> bool {
-        name == "block.number"
-            || name == "block_number"
-            || name == "block.difficulty"
-            || name == "block.prevrandao"
-            || name == "blockhash"
+    fn is_block_entropy_place(place: &IrPlace) -> bool {
+        place_matches(place, "block", "number")
+            || place_matches(place, "block", "difficulty")
+            || place_matches(place, "block", "prevrandao")
+            || matches!(
+                place,
+                IrPlace::Var { var: IrVar::Named(n), .. }
+                    if n == "blockhash"
+            )
     }
 
     fn value_in_set(val: &IrValue, set: &HashSet<IrVar>) -> bool {
@@ -65,16 +70,12 @@ impl Detector for BlockManipulationDetector {
         match instr {
             // Track loads of block environment variables.
             IrInstr::Load { dest, src, .. } => {
-                if let IrPlace::Var {
-                    var: IrVar::Named(n),
-                    ..
-                } = src
-                {
-                    if Self::is_timestamp_name(n) {
-                        self.timestamp_vars.insert(dest.clone());
-                    } else if Self::is_block_entropy_name(n) {
-                        self.block_vars.insert(dest.clone());
-                    }
+                // Match both IrPlace::Var{Named("block.timestamp")} and
+                // IrPlace::Member{root:"block", field:"timestamp"} forms.
+                if Self::is_timestamp_place(src) {
+                    self.timestamp_vars.insert(dest.clone());
+                } else if Self::is_block_entropy_place(src) {
+                    self.block_vars.insert(dest.clone());
                 }
                 vec![]
             }
@@ -113,6 +114,7 @@ impl Detector for BlockManipulationDetector {
                         "Branch condition depends on block.timestamp; miners can manipulate this value",
                         *span,
                         state,
+                        None,
                     ));
                 }
 
@@ -124,6 +126,7 @@ impl Detector for BlockManipulationDetector {
                         "Randomness derived from block variables is predictable and miner-manipulable",
                         *span,
                         state,
+                        None,
                     ));
                 }
 
@@ -262,31 +265,38 @@ mod tests {
             "reset should clear timestamp_vars set"
         );
     }
-}
 
-fn make_finding(
-    kind: SeVulnKind,
-    severity: Severity,
-    confidence: Confidence,
-    message: &str,
-    span: Span,
-    state: &SymbolicState,
-) -> SeFinding {
-    SeFinding {
-        kind,
-        severity,
-        confidence,
-        message: message.to_string(),
-        span,
-        function_id: None,
-        path_constraints: state
-            .path_constraints
-            .descriptions()
-            .iter()
-            .map(|s| s.to_string())
-            .collect(),
-        witness: None,
-        state_id: state.id,
-        path_depth: state.path_depth,
+    #[test]
+    fn test_block_timestamp_as_member_place_emits_timestamp_dependency() {
+        // Simulates the actual IR for `block.timestamp` as a Member place:
+        //   Load Temp(0) <- Member{base:Named("block"), field:"timestamp", root:Some("block")}
+        //   Control{If{cond:Var(Temp(0))}}
+        // Should emit TimestampDependency.
+        let (state, solver) = make_state_and_solver();
+        let mut det = BlockManipulationDetector::new();
+
+        det.on_instruction(
+            &state,
+            &IrInstr::Load {
+                dest: IrVar::Temp(0),
+                src: IrPlace::Member {
+                    base: IrValue::Var(IrVar::Named("block".to_string())),
+                    field: "timestamp".to_string(),
+                    root: Some("block".to_string()),
+                    class: PlaceClass::Unknown,
+                },
+                span: span(),
+            },
+            &solver,
+        );
+
+        let findings = det.on_instruction(&state, &if_cond(IrVar::Temp(0)), &solver);
+        assert_eq!(
+            findings.len(),
+            1,
+            "block.timestamp as Member place in branch should emit TimestampDependency"
+        );
+        assert_eq!(findings[0].kind, SeVulnKind::TimestampDependency);
     }
 }
+

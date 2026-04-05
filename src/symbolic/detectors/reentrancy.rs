@@ -2,9 +2,8 @@ use std::collections::HashMap;
 
 use crate::analysis::detectors::Severity;
 use crate::cfg::BlockId;
-use crate::ir::{IrCallOption, IrInstr, IrPlace, IrValue, IrVar, PlaceClass};
-use crate::norm::Span;
-use crate::symbolic::detectors::Detector;
+use crate::ir::{IrCallOption, IrInstr, IrPlace, IrValue, PlaceClass};
+use crate::symbolic::detectors::{make_finding, CalleeTracker, Detector};
 use crate::symbolic::results::finding::{Confidence, SeFinding, SeVulnKind};
 use crate::symbolic::solver::SmtSolver;
 use crate::symbolic::state::{StateId, SymbolicState};
@@ -22,6 +21,8 @@ pub struct ReentrancyDetector {
     call_seen: HashMap<StateId, ExternalCallInfo>,
     /// Parent state ID map for ancestor traversal across forks.
     parent_map: HashMap<StateId, StateId>,
+    /// Tracks member-load chains for resolving Temp callees.
+    tracker: CalleeTracker,
 }
 
 struct ExternalCallInfo {
@@ -35,13 +36,14 @@ impl ReentrancyDetector {
         Self {
             call_seen: HashMap::new(),
             parent_map: HashMap::new(),
+            tracker: CalleeTracker::new(),
         }
     }
 
     /// Walk ancestor chain to find the nearest external call on this path.
     fn find_ancestor_call(&self, state: &SymbolicState) -> Option<&ExternalCallInfo> {
         let mut id = state.id;
-        loop {
+        for _ in 0..1000 {
             if let Some(info) = self.call_seen.get(&id) {
                 return Some(info);
             }
@@ -50,28 +52,32 @@ impl ReentrancyDetector {
                 _ => return None,
             }
         }
+        None
     }
 
     /// Returns true if this call is an external call.
     ///
-    /// Primary signal: `options` is non-empty (carries `value` or `gas`).
-    /// Secondary signal: callee name is one of the known external call builtins.
-    fn is_external_call(callee: &IrValue, options: &[IrCallOption]) -> bool {
+    /// Checks three signals (in order):
+    /// 1. `options` is non-empty (carries `value` or `gas`)
+    /// 2. Callee is a Named external call builtin
+    /// 3. Callee is a Temp loaded from a `.call`/`.send`/etc. member chain
+    fn is_external_call(&self, callee: &IrValue, options: &[IrCallOption]) -> bool {
         if !options.is_empty() {
             return true;
         }
-        matches!(
-            callee,
-            IrValue::Var(IrVar::Named(n))
-                if matches!(n.as_str(), "call" | "send" | "delegatecall" | "staticcall")
-        )
+        self.tracker
+            .chain_contains_field(callee, &["call", "send", "delegatecall", "staticcall"])
     }
 
-    /// Returns true if any option carries an ETH value.
-    fn sends_eth(options: &[IrCallOption]) -> bool {
+    /// Returns true if the call sends ETH.
+    ///
+    /// Checks both `IrCallOption::Value` and `.value()` in the member chain
+    /// (the IR may represent `.call.value(amt)()` as a member load, not an option).
+    fn sends_eth(&self, callee: &IrValue, options: &[IrCallOption]) -> bool {
         options
             .iter()
             .any(|o| matches!(o, IrCallOption::Value(_)))
+            || self.tracker.chain_contains_field(callee, &["value"])
     }
 }
 
@@ -89,17 +95,22 @@ impl Detector for ReentrancyDetector {
         // Maintain parent map for ancestor traversal.
         self.parent_map.entry(state.id).or_insert(state.parent_id);
 
+        // Track member loads for callee resolution.
+        if let IrInstr::Load { dest, src, .. } = instr {
+            self.tracker.track_load(dest, src);
+        }
+
         match instr {
             // External call seen — record it for CEI checking.
             IrInstr::Call {
                 callee,
                 options,
                 ..
-            } if Self::is_external_call(callee, options) => {
+            } if self.is_external_call(callee, options) => {
                 self.call_seen.insert(
                     state.id,
                     ExternalCallInfo {
-                        sends_eth: Self::sends_eth(options),
+                        sends_eth: self.sends_eth(callee, options),
                         call_instruction_count: state.instruction_count,
                     },
                 );
@@ -132,6 +143,7 @@ impl Detector for ReentrancyDetector {
                         "Reentrancy: state written after external call violates CEI pattern",
                         *span,
                         state,
+                        None,
                     )];
                 }
                 vec![]
@@ -153,6 +165,7 @@ impl Detector for ReentrancyDetector {
     fn reset(&mut self) {
         self.call_seen.clear();
         self.parent_map.clear();
+        self.tracker.reset();
     }
 }
 
@@ -161,33 +174,6 @@ fn is_storage_place(place: &IrPlace) -> bool {
         IrPlace::Var { class, .. } => *class == PlaceClass::Storage,
         IrPlace::Member { class, .. } => *class == PlaceClass::Storage,
         IrPlace::Index { class, .. } => *class == PlaceClass::Storage,
-    }
-}
-
-fn make_finding(
-    kind: SeVulnKind,
-    severity: Severity,
-    confidence: Confidence,
-    message: &str,
-    span: Span,
-    state: &SymbolicState,
-) -> SeFinding {
-    SeFinding {
-        kind,
-        severity,
-        confidence,
-        message: message.to_string(),
-        span,
-        function_id: None,
-        path_constraints: state
-            .path_constraints
-            .descriptions()
-            .iter()
-            .map(|s| s.to_string())
-            .collect(),
-        witness: None,
-        state_id: state.id,
-        path_depth: state.path_depth,
     }
 }
 
@@ -342,5 +328,95 @@ mod tests {
         state.instruction_count = 1;
         let findings = det.on_instruction(&state, &memory_write_instr(), &solver);
         assert!(findings.is_empty(), "memory write should not trigger reentrancy");
+    }
+
+    #[test]
+    fn test_reentrancy_via_member_chain_call_value() {
+        // Simulates the actual IR shape for `msg.sender.call.value(amount)()`:
+        //   Load Temp(3) <- Member{base:Named("msg"), field:"sender"}
+        //   Load Temp(4) <- Member{base:Var(Temp(3)), field:"call"}
+        //   Load Temp(5) <- Member{base:Var(Temp(4)), field:"value"}
+        //   Call callee:Var(Temp(5))
+        //   Store to storage  (should trigger Reentrancy)
+        let (mut state, solver) = make_state_and_solver();
+        let mut det = ReentrancyDetector::new();
+
+        // Load msg.sender -> Temp(3)
+        state.instruction_count = 0;
+        det.on_instruction(
+            &state,
+            &IrInstr::Load {
+                dest: IrVar::Temp(3),
+                src: IrPlace::Member {
+                    base: IrValue::Var(IrVar::Named("msg".to_string())),
+                    field: "sender".to_string(),
+                    root: Some("msg".to_string()),
+                    class: PlaceClass::Unknown,
+                },
+                span: span(),
+            },
+            &solver,
+        );
+
+        // Load Temp(3).call -> Temp(4)
+        state.instruction_count = 1;
+        det.on_instruction(
+            &state,
+            &IrInstr::Load {
+                dest: IrVar::Temp(4),
+                src: IrPlace::Member {
+                    base: IrValue::Var(IrVar::Temp(3)),
+                    field: "call".to_string(),
+                    root: Some("msg".to_string()),
+                    class: PlaceClass::Unknown,
+                },
+                span: span(),
+            },
+            &solver,
+        );
+
+        // Load Temp(4).value -> Temp(5)
+        state.instruction_count = 2;
+        det.on_instruction(
+            &state,
+            &IrInstr::Load {
+                dest: IrVar::Temp(5),
+                src: IrPlace::Member {
+                    base: IrValue::Var(IrVar::Temp(4)),
+                    field: "value".to_string(),
+                    root: Some("msg".to_string()),
+                    class: PlaceClass::Unknown,
+                },
+                span: span(),
+            },
+            &solver,
+        );
+
+        // Call Temp(5) — external call via member chain (contains "call" and "value")
+        state.instruction_count = 3;
+        let findings = det.on_instruction(
+            &state,
+            &IrInstr::Call {
+                dest: vec![],
+                callee: IrValue::Var(IrVar::Temp(5)),
+                args: vec![IrValue::Var(IrVar::Temp(0))],
+                options: vec![],
+                span: span(),
+            },
+            &solver,
+        );
+        assert!(findings.is_empty(), "external call alone should not emit finding");
+
+        // Storage write after the call -> should trigger Reentrancy
+        state.instruction_count = 4;
+        let findings = det.on_instruction(&state, &storage_write_instr(), &solver);
+        assert_eq!(
+            findings.len(),
+            1,
+            "storage write after member-chain external call should emit Reentrancy"
+        );
+        assert_eq!(findings[0].kind, SeVulnKind::Reentrancy);
+        // The call sends ETH (chain contains "value"), so severity should be High.
+        assert_eq!(findings[0].severity, Severity::High);
     }
 }

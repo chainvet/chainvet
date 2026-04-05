@@ -1,3 +1,6 @@
 /target
 **/*.rs.bk
 Cargo.lock
+/smartbugs-curated
+benchmark_se_results.json
+benchmark_se.py

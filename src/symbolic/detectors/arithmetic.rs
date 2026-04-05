@@ -6,7 +6,7 @@ use crate::symbolic::solver::optimization::is_trivially_false;
 use crate::cfg::BlockId;
 use crate::ir::{IrInstr, IrPlace, IrValue, IrVar};
 use crate::norm::Span;
-use crate::symbolic::detectors::Detector;
+use crate::symbolic::detectors::{make_finding, Detector};
 use crate::symbolic::results::finding::{Confidence, SeFinding, SeVulnKind};
 use crate::symbolic::results::witness::Witness;
 use crate::symbolic::solver::SmtSolver;
@@ -44,34 +44,6 @@ fn path_bools(state: &SymbolicState) -> Vec<Bool> {
         .iter()
         .map(|(c, _)| c.clone())
         .collect()
-}
-
-fn make_finding(
-    kind: SeVulnKind,
-    severity: Severity,
-    confidence: Confidence,
-    message: &str,
-    span: Span,
-    state: &SymbolicState,
-    witness: Option<Witness>,
-) -> SeFinding {
-    SeFinding {
-        kind,
-        severity,
-        confidence,
-        message: message.to_string(),
-        span,
-        function_id: None,
-        path_constraints: state
-            .path_constraints
-            .descriptions()
-            .iter()
-            .map(|s| s.to_string())
-            .collect(),
-        witness,
-        state_id: state.id,
-        path_depth: state.path_depth,
-    }
 }
 
 impl Detector for ArithmeticDetector {
@@ -148,95 +120,108 @@ impl ArithmeticDetector {
     ) -> Vec<SeFinding> {
         match op {
             "/" => {
-                // Track the result variable so the next `*` can detect div-before-mul.
                 self.last_div_dest = Some(dest.clone());
                 vec![]
             }
-
-            "*" => {
-                let div_finding = self.check_div_before_mul(state, lhs, rhs, span);
-
-                // Always reset after seeing `*`.
-                self.last_div_dest = None;
-
-                if let Some(f) = div_finding {
-                    return vec![f];
-                }
-
-                // Multiplication overflow check via BV512 zero-extension.
-                let (Some(lhs_bv), Some(rhs_bv)) =
-                    (eval_to_bv(state, lhs), eval_to_bv(state, rhs))
-                else {
-                    return vec![];
-                };
-                // Extend both operands from BV256 to BV512 to capture the full product.
-                let lhs_512 = lhs_bv.zero_ext(256);
-                let rhs_512 = rhs_bv.zero_ext(256);
-                let product_512 = lhs_512.bvmul(&rhs_512);
-                // High 256 bits nonzero ⟹ overflow.
-                let high = product_512.extract(511, 256);
-                let zero_256 = BV::from_u64(0, 256);
-                let overflow_cond = high.bvugt(&zero_256);
-                check_sat_and_emit(
-                    state,
-                    solver,
-                    overflow_cond,
-                    SeVulnKind::IntegerOverflow,
-                    Severity::High,
-                    Confidence::High,
-                    "Integer multiplication can overflow: product exceeds uint256 max",
-                    *span,
-                )
-            }
-
+            "*" => self.check_mul(state, solver, lhs, rhs, span),
             "+" => {
                 self.last_div_dest = None;
-                let (Some(lhs_bv), Some(rhs_bv)) =
-                    (eval_to_bv(state, lhs), eval_to_bv(state, rhs))
-                else {
-                    return vec![];
-                };
-                // Unsigned addition overflow: wrapped result < lhs.
-                let result_bv = lhs_bv.bvadd(&rhs_bv);
-                let overflow_cond = result_bv.bvult(&lhs_bv);
-                check_sat_and_emit(
-                    state,
-                    solver,
-                    overflow_cond,
-                    SeVulnKind::IntegerOverflow,
-                    Severity::High,
-                    Confidence::High,
-                    "Integer addition can overflow: result wraps around",
-                    *span,
-                )
+                Self::check_add(state, solver, lhs, rhs, span)
             }
-
             "-" => {
                 self.last_div_dest = None;
-                let (Some(lhs_bv), Some(rhs_bv)) =
-                    (eval_to_bv(state, lhs), eval_to_bv(state, rhs))
-                else {
-                    return vec![];
-                };
-                // Unsigned subtraction underflow: lhs < rhs.
-                let underflow_cond = lhs_bv.bvult(&rhs_bv);
-                check_sat_and_emit(
-                    state,
-                    solver,
-                    underflow_cond,
-                    SeVulnKind::IntegerUnderflow,
-                    Severity::High,
-                    Confidence::High,
-                    "Integer subtraction can underflow: result wraps below zero",
-                    *span,
-                )
+                Self::check_sub(state, solver, lhs, rhs, span)
             }
-
             _ => {
                 self.last_div_dest = None;
                 vec![]
             }
         }
+    }
+
+    fn check_mul(
+        &mut self,
+        state: &SymbolicState,
+        solver: &dyn SmtSolver,
+        lhs: &IrValue,
+        rhs: &IrValue,
+        span: &Span,
+    ) -> Vec<SeFinding> {
+        let div_finding = self.check_div_before_mul(state, lhs, rhs, span);
+        self.last_div_dest = None;
+
+        if let Some(f) = div_finding {
+            return vec![f];
+        }
+
+        let (Some(lhs_bv), Some(rhs_bv)) = (eval_to_bv(state, lhs), eval_to_bv(state, rhs))
+        else {
+            return vec![];
+        };
+        let lhs_512 = lhs_bv.zero_ext(256);
+        let rhs_512 = rhs_bv.zero_ext(256);
+        let product_512 = lhs_512.bvmul(&rhs_512);
+        let high = product_512.extract(511, 256);
+        let overflow_cond = high.bvugt(&BV::from_u64(0, 256));
+        check_sat_and_emit(
+            state,
+            solver,
+            overflow_cond,
+            SeVulnKind::IntegerOverflow,
+            Severity::High,
+            Confidence::High,
+            "Integer multiplication can overflow: product exceeds uint256 max",
+            *span,
+        )
+    }
+
+    fn check_add(
+        state: &SymbolicState,
+        solver: &dyn SmtSolver,
+        lhs: &IrValue,
+        rhs: &IrValue,
+        span: &Span,
+    ) -> Vec<SeFinding> {
+        let (Some(lhs_bv), Some(rhs_bv)) = (eval_to_bv(state, lhs), eval_to_bv(state, rhs))
+        else {
+            return vec![];
+        };
+        let result_bv = lhs_bv.bvadd(&rhs_bv);
+        let overflow_cond = result_bv.bvult(&lhs_bv);
+        check_sat_and_emit(
+            state,
+            solver,
+            overflow_cond,
+            SeVulnKind::IntegerOverflow,
+            Severity::High,
+            Confidence::High,
+            "Integer addition can overflow: result wraps around",
+            *span,
+        )
+    }
+
+    fn check_sub(
+        state: &SymbolicState,
+        solver: &dyn SmtSolver,
+        lhs: &IrValue,
+        rhs: &IrValue,
+        span: &Span,
+    ) -> Vec<SeFinding> {
+        let (Some(lhs_bv), Some(rhs_bv)) = (eval_to_bv(state, lhs), eval_to_bv(state, rhs))
+        else {
+            return vec![];
+        };
+        let underflow_cond = lhs_bv.bvult(&rhs_bv);
+        check_sat_and_emit(
+            state,
+            solver,
+            underflow_cond,
+            SeVulnKind::IntegerUnderflow,
+            Severity::High,
+            Confidence::High,
+            "Integer subtraction can underflow: result wraps below zero",
+            *span,
+        )
     }
 
     fn check_div_before_mul(

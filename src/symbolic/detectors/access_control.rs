@@ -7,7 +7,7 @@ use crate::ir::{
     ControlKind, IrCallOption, IrInstr, IrPlace, IrValue, IrVar, PlaceClass,
 };
 use crate::norm::Span;
-use crate::symbolic::detectors::Detector;
+use crate::symbolic::detectors::{make_finding, place_matches, CalleeTracker, Detector};
 use crate::symbolic::results::finding::{Confidence, SeFinding, SeVulnKind};
 use crate::symbolic::results::witness::Witness;
 use crate::symbolic::solver::SmtSolver;
@@ -26,6 +26,8 @@ pub struct AccessControlDetector {
     tx_origin_loaded: bool,
     /// Set when `msg.sender`, `owner`, or `onlyOwner` appears in path constraints or branch cond.
     has_sender_check: bool,
+    /// Tracks member-load chains for resolving Temp callees.
+    tracker: CalleeTracker,
 }
 
 impl AccessControlDetector {
@@ -33,6 +35,7 @@ impl AccessControlDetector {
         Self {
             tx_origin_loaded: false,
             has_sender_check: false,
+            tracker: CalleeTracker::new(),
         }
     }
 
@@ -58,127 +61,27 @@ impl Detector for AccessControlDetector {
         solver: &dyn SmtSolver,
     ) -> Vec<SeFinding> {
         match instr {
-            // Track tx.origin loads.
-            IrInstr::Load { src, .. } => {
-                if let IrPlace::Var {
-                    var: IrVar::Named(n),
-                    ..
-                } = src
-                {
-                    let name = n.as_str();
-                    if name == "tx.origin" || name == "tx_origin" {
-                        self.tx_origin_loaded = true;
-                    }
-                    if name == "msg.sender" || name == "msg_sender" {
-                        self.has_sender_check = true;
-                    }
-                }
-                vec![]
-            }
-
-            // Track sender-check via conditional instructions.
+            IrInstr::Load { dest, src, .. } => self.handle_load(dest, src),
             IrInstr::Control {
                 kind: ControlKind::If { cond },
                 span,
-            } => {
-                let cond_str = format!("{cond:?}");
-                if cond_str.contains("msg.sender") || cond_str.contains("msg_sender") {
-                    self.has_sender_check = true;
-                }
-
-                // tx.origin authentication: loaded and used as auth condition without msg.sender.
-                if self.tx_origin_loaded && !Self::has_sender_restriction(state) {
-                    self.tx_origin_loaded = false;
-                    return vec![make_finding(
-                        SeVulnKind::TxOriginAuth,
-                        Severity::Medium,
-                        Confidence::Medium,
-                        "tx.origin used for authentication; use msg.sender instead",
-                        *span,
-                        state,
-                    )];
-                }
-                self.tx_origin_loaded = false;
-                vec![]
+            } => self.handle_control_if(cond, *span, state),
+            IrInstr::Call { callee, span, .. } if is_selfdestruct(callee) => {
+                self.handle_selfdestruct(state, solver, *span)
             }
-
-            // Call to selfdestruct/suicide without sender restriction.
-            IrInstr::Call { callee, span, .. }
-                if is_selfdestruct(callee) =>
-            {
-                if !Self::has_sender_restriction(state) {
-                    return check_reachable_and_emit(
-                        state,
-                        solver,
-                        SeVulnKind::UnprotectedSelfdestruct,
-                        Severity::High,
-                        Confidence::High,
-                        "selfdestruct reachable without sender restriction",
-                        *span,
-                    );
-                }
-                vec![]
-            }
-
-            // ETH-transferring call without sender check.
             IrInstr::Call {
                 callee,
                 options,
                 span,
                 ..
-            } if has_value_option(options) => {
-                let mut findings = Vec::new();
-
-                // UnprotectedEtherWithdrawal: ETH sent to potentially user-controlled recipient.
-                if !Self::has_sender_restriction(state) && is_user_controlled_recipient(callee) {
-                    findings.extend(check_reachable_and_emit(
-                        state,
-                        solver,
-                        SeVulnKind::UnprotectedEtherWithdrawal,
-                        Severity::High,
-                        Confidence::Medium,
-                        "ETH transfer to user-controlled address without access control",
-                        *span,
-                    ));
-                }
-
-                // AccessControlMissing: general ETH-sending call without any sender guard.
-                if !self.has_sender_check && !Self::has_sender_restriction(state) {
-                    findings.push(make_finding(
-                        SeVulnKind::AccessControlMissing,
-                        Severity::High,
-                        Confidence::Low,
-                        "ETH-sending call without msg.sender check",
-                        *span,
-                        state,
-                    ));
-                }
-
-                findings
+            } if has_value_option(options)
+                || self.tracker.chain_contains_field(callee, &["value"]) =>
+            {
+                self.handle_eth_transfer(callee, state, solver, *span)
             }
-
-            // Storage write at symbolic index → possibly arbitrary storage write.
             IrInstr::Store { dest, span, .. } => {
-                if let IrPlace::Index {
-                    index: Some(idx),
-                    class: PlaceClass::Storage,
-                    ..
-                } = dest
-                    && is_user_controlled_value(idx)
-                {
-                    return check_reachable_and_emit(
-                        state,
-                        solver,
-                        SeVulnKind::ArbitraryStorageWrite,
-                        Severity::High,
-                        Confidence::Medium,
-                        "Storage write at user-controlled index may overwrite arbitrary slots",
-                        *span,
-                    );
-                }
-                vec![]
+                Self::handle_store(dest, state, solver, *span)
             }
-
             _ => vec![],
         }
     }
@@ -195,6 +98,125 @@ impl Detector for AccessControlDetector {
     fn reset(&mut self) {
         self.tx_origin_loaded = false;
         self.has_sender_check = false;
+        self.tracker.reset();
+    }
+}
+
+impl AccessControlDetector {
+    fn handle_load(&mut self, dest: &IrVar, src: &IrPlace) -> Vec<SeFinding> {
+        self.tracker.track_load(dest, src);
+        if place_matches(src, "tx", "origin") {
+            self.tx_origin_loaded = true;
+        }
+        if place_matches(src, "msg", "sender") {
+            self.has_sender_check = true;
+        }
+        vec![]
+    }
+
+    fn handle_control_if(
+        &mut self,
+        cond: &IrValue,
+        span: Span,
+        state: &SymbolicState,
+    ) -> Vec<SeFinding> {
+        let cond_str = format!("{cond:?}");
+        if cond_str.contains("msg.sender") || cond_str.contains("msg_sender") {
+            self.has_sender_check = true;
+        }
+        if self.tx_origin_loaded && !Self::has_sender_restriction(state) {
+            self.tx_origin_loaded = false;
+            return vec![make_finding(
+                SeVulnKind::TxOriginAuth,
+                Severity::Medium,
+                Confidence::Medium,
+                "tx.origin used for authentication; use msg.sender instead",
+                span,
+                state,
+                None,
+            )];
+        }
+        self.tx_origin_loaded = false;
+        vec![]
+    }
+
+    fn handle_selfdestruct(
+        &self,
+        state: &SymbolicState,
+        solver: &dyn SmtSolver,
+        span: Span,
+    ) -> Vec<SeFinding> {
+        if !Self::has_sender_restriction(state) {
+            return check_reachable_and_emit(
+                state,
+                solver,
+                SeVulnKind::UnprotectedSelfdestruct,
+                Severity::High,
+                Confidence::High,
+                "selfdestruct reachable without sender restriction",
+                span,
+            );
+        }
+        vec![]
+    }
+
+    fn handle_eth_transfer(
+        &self,
+        callee: &IrValue,
+        state: &SymbolicState,
+        solver: &dyn SmtSolver,
+        span: Span,
+    ) -> Vec<SeFinding> {
+        let mut findings = Vec::new();
+        if !Self::has_sender_restriction(state) && is_user_controlled_recipient(callee) {
+            findings.extend(check_reachable_and_emit(
+                state,
+                solver,
+                SeVulnKind::UnprotectedEtherWithdrawal,
+                Severity::High,
+                Confidence::Medium,
+                "ETH transfer to user-controlled address without access control",
+                span,
+            ));
+        }
+        if !self.has_sender_check && !Self::has_sender_restriction(state) {
+            findings.push(make_finding(
+                SeVulnKind::AccessControlMissing,
+                Severity::High,
+                Confidence::Low,
+                "ETH-sending call without msg.sender check",
+                span,
+                state,
+                None,
+            ));
+        }
+        findings
+    }
+
+    fn handle_store(
+        dest: &IrPlace,
+        state: &SymbolicState,
+        solver: &dyn SmtSolver,
+        span: Span,
+    ) -> Vec<SeFinding> {
+        if let IrPlace::Index {
+            index: Some(idx),
+            class: PlaceClass::Storage,
+            ..
+        } = dest
+            && is_user_controlled_value(idx)
+        {
+            return check_reachable_and_emit(
+                state,
+                solver,
+                SeVulnKind::ArbitraryStorageWrite,
+                Severity::High,
+                Confidence::Medium,
+                "Storage write at user-controlled index may overwrite arbitrary slots",
+                span,
+            );
+        }
+        vec![]
     }
 }
 
@@ -371,6 +393,48 @@ mod tests {
             "after loading msg.sender, AccessControlMissing should not be emitted"
         );
     }
+
+    #[test]
+    fn test_tx_origin_as_member_place_emits_tx_origin_auth() {
+        // Simulates the actual IR for `tx.origin` as a Member place:
+        //   Load Temp(0) <- Member{base:Named("tx"), field:"origin", root:Some("tx")}
+        //   Control{If{cond:Var(Temp(0))}}
+        // Should emit TxOriginAuth.
+        let (state, solver) = make_state_and_solver();
+        let mut det = AccessControlDetector::new();
+
+        det.on_instruction(
+            &state,
+            &IrInstr::Load {
+                dest: IrVar::Temp(0),
+                src: IrPlace::Member {
+                    base: IrValue::Var(IrVar::Named("tx".to_string())),
+                    field: "origin".to_string(),
+                    root: Some("tx".to_string()),
+                    class: PlaceClass::Unknown,
+                },
+                span: span(),
+            },
+            &solver,
+        );
+
+        let findings = det.on_instruction(
+            &state,
+            &IrInstr::Control {
+                kind: ControlKind::If {
+                    cond: IrValue::Var(IrVar::Temp(0)),
+                },
+                span: span(),
+            },
+            &solver,
+        );
+        assert_eq!(
+            findings.len(),
+            1,
+            "tx.origin as Member place followed by If should emit TxOriginAuth"
+        );
+        assert_eq!(findings[0].kind, SeVulnKind::TxOriginAuth);
+    }
 }
 
 fn is_selfdestruct(callee: &IrValue) -> bool {
@@ -412,33 +476,6 @@ fn path_bools(state: &SymbolicState) -> Vec<Bool> {
         .collect()
 }
 
-fn make_finding(
-    kind: SeVulnKind,
-    severity: Severity,
-    confidence: Confidence,
-    message: &str,
-    span: Span,
-    state: &SymbolicState,
-) -> SeFinding {
-    SeFinding {
-        kind,
-        severity,
-        confidence,
-        message: message.to_string(),
-        span,
-        function_id: None,
-        path_constraints: state
-            .path_constraints
-            .descriptions()
-            .iter()
-            .map(|s| s.to_string())
-            .collect(),
-        witness: None,
-        state_id: state.id,
-        path_depth: state.path_depth,
-    }
-}
-
 /// Confirm path reachability via SAT before emitting a finding.
 fn check_reachable_and_emit(
     state: &SymbolicState,
@@ -455,23 +492,7 @@ fn check_reachable_and_emit(
             let witness = solver
                 .get_model()
                 .map(|m| Witness::from_model(&m, &state.call_context));
-            vec![SeFinding {
-                kind,
-                severity,
-                confidence,
-                message: message.to_string(),
-                span,
-                function_id: None,
-                path_constraints: state
-                    .path_constraints
-                    .descriptions()
-                    .iter()
-                    .map(|s| s.to_string())
-                    .collect(),
-                witness,
-                state_id: state.id,
-                path_depth: state.path_depth,
-            }]
+            vec![make_finding(kind, severity, confidence, message, span, state, witness)]
         }
         _ => vec![],
     }

@@ -3,8 +3,7 @@ use std::collections::HashSet;
 use crate::analysis::detectors::Severity;
 use crate::cfg::BlockId;
 use crate::ir::{IrInstr, IrValue, IrVar};
-use crate::norm::Span;
-use crate::symbolic::detectors::Detector;
+use crate::symbolic::detectors::{make_finding, Detector};
 use crate::symbolic::results::finding::{Confidence, SeFinding, SeVulnKind};
 use crate::symbolic::solver::SmtSolver;
 use crate::symbolic::state::SymbolicState;
@@ -62,6 +61,7 @@ impl Detector for CryptographicDetector {
                      signature can be malleated to a different valid form",
                     *span,
                     state,
+                    None,
                 )]
             }
 
@@ -102,6 +102,7 @@ impl Detector for CryptographicDetector {
                              invalid signatures may be silently accepted",
                             *span,
                             state,
+                            None,
                         ));
                     }
                 }
@@ -257,29 +258,3 @@ fn as_var(val: &IrValue) -> Option<&IrVar> {
     }
 }
 
-fn make_finding(
-    kind: SeVulnKind,
-    severity: Severity,
-    confidence: Confidence,
-    message: &str,
-    span: Span,
-    state: &SymbolicState,
-) -> SeFinding {
-    SeFinding {
-        kind,
-        severity,
-        confidence,
-        message: message.to_string(),
-        span,
-        function_id: None,
-        path_constraints: state
-            .path_constraints
-            .descriptions()
-            .iter()
-            .map(|s| s.to_string())
-            .collect(),
-        witness: None,
-        state_id: state.id,
-        path_depth: state.path_depth,
-    }
-}

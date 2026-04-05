@@ -1,8 +1,7 @@
 use crate::analysis::detectors::Severity;
 use crate::cfg::BlockId;
-use crate::ir::{IrInstr, IrPlace, IrVar};
-use crate::norm::Span;
-use crate::symbolic::detectors::Detector;
+use crate::ir::IrInstr;
+use crate::symbolic::detectors::{make_finding, place_matches, Detector};
 use crate::symbolic::results::finding::{Confidence, SeFinding, SeVulnKind};
 use crate::symbolic::solver::SmtSolver;
 use crate::symbolic::state::SymbolicState;
@@ -14,6 +13,12 @@ use crate::symbolic::state::SymbolicState;
 /// - `ArbitraryFunctionJump` — inline assembly may contain arbitrary jumps
 /// - `UnsafeAssembly` — any inline assembly usage
 pub struct StorageDetector;
+
+impl StorageDetector {
+    pub fn new() -> Self {
+        Self
+    }
+}
 
 impl Detector for StorageDetector {
     fn id(&self) -> &'static str {
@@ -29,13 +34,7 @@ impl Detector for StorageDetector {
         match instr {
             // MsgValueInLoop: msg.value read inside a loop body.
             IrInstr::Load { src, span, .. } => {
-                if let IrPlace::Var {
-                    var: IrVar::Named(n),
-                    ..
-                } = src
-                    && (n == "msg.value" || n == "msg_value")
-                    && state.path_depth > 0
-                {
+                if place_matches(src, "msg", "value") && state.path_depth > 0 {
                     return vec![make_finding(
                         SeVulnKind::MsgValueInLoop,
                         Severity::Medium,
@@ -44,6 +43,7 @@ impl Detector for StorageDetector {
                          from the original call, leading to fund loss",
                         *span,
                         state,
+                        None,
                     )];
                 }
                 vec![]
@@ -60,6 +60,7 @@ impl Detector for StorageDetector {
                          manipulated in unexpected ways",
                         *span,
                         state,
+                        None,
                     ),
                     make_finding(
                         SeVulnKind::ArbitraryFunctionJump,
@@ -69,6 +70,7 @@ impl Detector for StorageDetector {
                          static analysis required for full verification",
                         *span,
                         state,
+                        None,
                     ),
                 ]
             }
@@ -190,31 +192,67 @@ mod tests {
         let findings = det.on_instruction(&state, &inline_asm_instr(), &solver);
         assert_eq!(findings.len(), 2, "InlineAsm should produce exactly two findings");
     }
-}
 
-fn make_finding(
-    kind: SeVulnKind,
-    severity: Severity,
-    confidence: Confidence,
-    message: &str,
-    span: Span,
-    state: &SymbolicState,
-) -> SeFinding {
-    SeFinding {
-        kind,
-        severity,
-        confidence,
-        message: message.to_string(),
-        span,
-        function_id: None,
-        path_constraints: state
-            .path_constraints
-            .descriptions()
-            .iter()
-            .map(|s| s.to_string())
-            .collect(),
-        witness: None,
-        state_id: state.id,
-        path_depth: state.path_depth,
+    #[test]
+    fn test_msg_value_as_member_place_in_loop_emits_finding() {
+        // Simulates the actual IR for `msg.value` as a Member place at path_depth > 0:
+        //   Load Temp(0) <- Member{base:Named("msg"), field:"value", root:Some("msg")}
+        // At path_depth=1, should emit MsgValueInLoop.
+        use crate::ir::IrValue;
+
+        let (mut state, solver) = make_state_and_solver();
+        state.path_depth = 1;
+        let mut det = StorageDetector;
+
+        let findings = det.on_instruction(
+            &state,
+            &IrInstr::Load {
+                dest: IrVar::Temp(0),
+                src: IrPlace::Member {
+                    base: IrValue::Var(IrVar::Named("msg".to_string())),
+                    field: "value".to_string(),
+                    root: Some("msg".to_string()),
+                    class: PlaceClass::Unknown,
+                },
+                span: span(),
+            },
+            &solver,
+        );
+        assert_eq!(
+            findings.len(),
+            1,
+            "msg.value as Member place at path_depth=1 should emit MsgValueInLoop"
+        );
+        assert_eq!(findings[0].kind, SeVulnKind::MsgValueInLoop);
+    }
+
+    #[test]
+    fn test_msg_value_as_member_place_at_depth_zero_no_finding() {
+        // Same Member place form but at path_depth=0 should not emit.
+        use crate::ir::IrValue;
+
+        let (mut state, solver) = make_state_and_solver();
+        state.path_depth = 0;
+        let mut det = StorageDetector;
+
+        let findings = det.on_instruction(
+            &state,
+            &IrInstr::Load {
+                dest: IrVar::Temp(0),
+                src: IrPlace::Member {
+                    base: IrValue::Var(IrVar::Named("msg".to_string())),
+                    field: "value".to_string(),
+                    root: Some("msg".to_string()),
+                    class: PlaceClass::Unknown,
+                },
+                span: span(),
+            },
+            &solver,
+        );
+        assert!(
+            findings.is_empty(),
+            "msg.value as Member at depth=0 should not emit MsgValueInLoop"
+        );
     }
 }
+
