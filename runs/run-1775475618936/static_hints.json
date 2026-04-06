@@ -1,0 +1,175 @@
+{
+  "function_whitelist": [
+    0,
+    1
+  ],
+  "function_blacklist": [],
+  "hotspots": [
+    {
+      "function_id": 0,
+      "function_name": "callchecked",
+      "score": 6.199999999999999,
+      "reasons": [
+        "external_calls=1",
+        "low_level_calls=1"
+      ]
+    },
+    {
+      "function_id": 1,
+      "function_name": "callnotchecked",
+      "score": 6.199999999999999,
+      "reasons": [
+        "external_calls=1",
+        "low_level_calls=1"
+      ]
+    }
+  ],
+  "sinks": [
+    {
+      "function_id": 0,
+      "function_name": "callchecked",
+      "sink_kind": "arbitrary-calldata",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/unchecked_low_level_calls/unchecked_return_value.sol",
+      "start": 263,
+      "end": 276
+    },
+    {
+      "function_id": 1,
+      "function_name": "callnotchecked",
+      "sink_kind": "arbitrary-calldata",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/unchecked_low_level_calls/unchecked_return_value.sol",
+      "start": 381,
+      "end": 394
+    },
+    {
+      "function_id": 0,
+      "function_name": "callchecked",
+      "sink_kind": "unused-return-value",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/unchecked_low_level_calls/unchecked_return_value.sol",
+      "start": 255,
+      "end": 277
+    },
+    {
+      "function_id": 1,
+      "function_name": "callnotchecked",
+      "sink_kind": "unused-return-value",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/unchecked_low_level_calls/unchecked_return_value.sol",
+      "start": 381,
+      "end": 394
+    },
+    {
+      "function_id": 0,
+      "function_name": "callchecked",
+      "sink_kind": "dos-with-failed-call",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/unchecked_low_level_calls/unchecked_return_value.sol",
+      "start": 205,
+      "end": 282
+    }
+  ],
+  "callgraph": {
+    "total_sites": 3,
+    "resolved": 0,
+    "ambiguous": 0,
+    "external": 2,
+    "unknown": 0
+  },
+  "taint": {
+    "source_functions": 0,
+    "tainted_functions": 0,
+    "tainted_vars": 0,
+    "tainted_calls": 0
+  },
+  "storage_rw_map": [
+    {
+      "function_id": 0,
+      "function_name": "callchecked",
+      "reads": [],
+      "writes": []
+    },
+    {
+      "function_id": 1,
+      "function_name": "callnotchecked",
+      "reads": [],
+      "writes": []
+    }
+  ],
+  "arg_domains": [
+    {
+      "function_id": 0,
+      "function_name": "callchecked",
+      "param_index": 0,
+      "param_name": "callee",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        10,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 1,
+      "function_name": "callnotchecked",
+      "param_index": 0,
+      "param_name": "callee",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        10,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    }
+  ],
+  "address_roles": [
+    {
+      "role": "owner",
+      "indices": [
+        0
+      ],
+      "evidence": [
+        "default-owner-role"
+      ],
+      "target_functions": []
+    },
+    {
+      "role": "attacker",
+      "indices": [
+        1
+      ],
+      "evidence": [
+        "adversarial-role"
+      ],
+      "target_functions": [
+        0,
+        1
+      ]
+    },
+    {
+      "role": "user",
+      "indices": [
+        2,
+        3,
+        4
+      ],
+      "evidence": [
+        "default-user-pool"
+      ],
+      "target_functions": [
+        0,
+        1
+      ]
+    }
+  ]
+}

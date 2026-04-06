@@ -1,0 +1,364 @@
+{
+  "function_whitelist": [
+    2,
+    3,
+    4
+  ],
+  "function_blacklist": [
+    1
+  ],
+  "hotspots": [
+    {
+      "function_id": 2,
+      "function_name": "play",
+      "score": 14.5,
+      "reasons": [
+        "storage_writes=1",
+        "external_calls=2",
+        "low_level_calls=1",
+        "tainted_calls=1",
+        "uses_source=true"
+      ]
+    },
+    {
+      "function_id": 1,
+      "function_name": "shuffle",
+      "score": 8.6,
+      "reasons": [
+        "storage_writes=1",
+        "external_calls=1",
+        "unresolved_calls=2"
+      ]
+    },
+    {
+      "function_id": 3,
+      "function_name": "kill",
+      "score": 3.7,
+      "reasons": [
+        "tainted_calls=1",
+        "uses_source=true"
+      ]
+    },
+    {
+      "function_id": 0,
+      "function_name": "CryptoRoulette",
+      "score": 3.3,
+      "reasons": [
+        "storage_writes=1",
+        "uses_source=true"
+      ]
+    }
+  ],
+  "sinks": [
+    {
+      "function_id": 3,
+      "function_name": "kill",
+      "sink_kind": "unprotected-selfdestruct",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/other/crypto_roulette.sol",
+      "start": 1654,
+      "end": 1673
+    },
+    {
+      "function_id": 2,
+      "function_name": "play",
+      "sink_kind": "unprotected-ether-withdrawal",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/other/crypto_roulette.sol",
+      "start": 1070,
+      "end": 1543
+    },
+    {
+      "function_id": 1,
+      "function_name": "shuffle",
+      "sink_kind": "integer-overflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/other/crypto_roulette.sol",
+      "start": 999,
+      "end": 1057
+    },
+    {
+      "function_id": 3,
+      "function_name": "kill",
+      "sink_kind": "integer-overflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/other/crypto_roulette.sol",
+      "start": 1619,
+      "end": 1638
+    },
+    {
+      "function_id": 1,
+      "function_name": "shuffle",
+      "sink_kind": "integer-underflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/other/crypto_roulette.sol",
+      "start": 1031,
+      "end": 1045
+    },
+    {
+      "function_id": 1,
+      "function_name": "shuffle",
+      "sink_kind": "dangerous-block-timestamp",
+      "severity": "low",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/other/crypto_roulette.sol",
+      "start": 984,
+      "end": 1057
+    },
+    {
+      "function_id": 1,
+      "function_name": "shuffle",
+      "sink_kind": "dangerous-block-timestamp",
+      "severity": "low",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/other/crypto_roulette.sol",
+      "start": 999,
+      "end": 1048
+    },
+    {
+      "function_id": 1,
+      "function_name": "shuffle",
+      "sink_kind": "dangerous-block-timestamp",
+      "severity": "low",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/other/crypto_roulette.sol",
+      "start": 1005,
+      "end": 1047
+    },
+    {
+      "function_id": 2,
+      "function_name": "play",
+      "sink_kind": "dangerous-block-timestamp",
+      "severity": "low",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/other/crypto_roulette.sol",
+      "start": 1520,
+      "end": 1536
+    },
+    {
+      "function_id": 3,
+      "function_name": "kill",
+      "sink_kind": "dangerous-block-timestamp",
+      "severity": "low",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/other/crypto_roulette.sol",
+      "start": 1582,
+      "end": 1684
+    },
+    {
+      "function_id": 2,
+      "function_name": "play",
+      "sink_kind": "transaction-order-dependency",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/other/crypto_roulette.sol",
+      "start": 1070,
+      "end": 1543
+    },
+    {
+      "function_id": 1,
+      "function_name": "shuffle",
+      "sink_kind": "weak-prng",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/other/crypto_roulette.sol",
+      "start": 999,
+      "end": 1057
+    },
+    {
+      "function_id": 1,
+      "function_name": "shuffle",
+      "sink_kind": "weak-prng",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/other/crypto_roulette.sol",
+      "start": 999,
+      "end": 1053
+    },
+    {
+      "function_id": 1,
+      "function_name": "shuffle",
+      "sink_kind": "weak-prng",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/other/crypto_roulette.sol",
+      "start": 1005,
+      "end": 1047
+    },
+    {
+      "function_id": 1,
+      "function_name": "shuffle",
+      "sink_kind": "weak-prng",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/other/crypto_roulette.sol",
+      "start": 1031,
+      "end": 1045
+    },
+    {
+      "function_id": 2,
+      "function_name": "play",
+      "sink_kind": "hardcoded-gas-transfer",
+      "severity": "low",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/other/crypto_roulette.sol",
+      "start": 1447,
+      "end": 1480
+    },
+    {
+      "function_id": 2,
+      "function_name": "play",
+      "sink_kind": "reentrancy-transfer",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/other/crypto_roulette.sol",
+      "start": 1385,
+      "end": 1491
+    },
+    {
+      "function_id": 2,
+      "function_name": "play",
+      "sink_kind": "reentrancy-eth-transfer",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/other/crypto_roulette.sol",
+      "start": 1385,
+      "end": 1491
+    },
+    {
+      "function_id": 2,
+      "function_name": "play",
+      "sink_kind": "reentrancy-no-eth-transfer",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/other/crypto_roulette.sol",
+      "start": 1352,
+      "end": 1374
+    },
+    {
+      "function_id": 2,
+      "function_name": "play",
+      "sink_kind": "tainted-call",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/other/crypto_roulette.sol",
+      "start": 1125,
+      "end": 1171
+    },
+    {
+      "function_id": 3,
+      "function_name": "kill",
+      "sink_kind": "tainted-call",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/other/crypto_roulette.sol",
+      "start": 1654,
+      "end": 1673
+    }
+  ],
+  "callgraph": {
+    "total_sites": 9,
+    "resolved": 2,
+    "ambiguous": 0,
+    "external": 3,
+    "unknown": 2
+  },
+  "taint": {
+    "source_functions": 3,
+    "tainted_functions": 3,
+    "tainted_vars": 1,
+    "tainted_calls": 2
+  },
+  "storage_rw_map": [
+    {
+      "function_id": 0,
+      "function_name": "CryptoRoulette",
+      "reads": [],
+      "writes": [
+        "ownerAddr"
+      ]
+    },
+    {
+      "function_id": 1,
+      "function_name": "shuffle",
+      "reads": [],
+      "writes": [
+        "secretNumber"
+      ]
+    },
+    {
+      "function_id": 2,
+      "function_name": "play",
+      "reads": [
+        "balance",
+        "betPrice",
+        "gamesPlayed",
+        "secretNumber"
+      ],
+      "writes": [
+        "lastPlayed"
+      ]
+    },
+    {
+      "function_id": 3,
+      "function_name": "kill",
+      "reads": [
+        "lastPlayed",
+        "ownerAddr"
+      ],
+      "writes": []
+    },
+    {
+      "function_id": 4,
+      "function_name": null,
+      "reads": [],
+      "writes": []
+    }
+  ],
+  "arg_domains": [
+    {
+      "function_id": 2,
+      "function_name": "play",
+      "param_index": 0,
+      "param_name": "number",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        9,
+        10,
+        11,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    }
+  ],
+  "address_roles": [
+    {
+      "role": "owner",
+      "indices": [
+        0
+      ],
+      "evidence": [
+        "state_var:ownerAddr"
+      ],
+      "target_functions": []
+    },
+    {
+      "role": "attacker",
+      "indices": [
+        1
+      ],
+      "evidence": [
+        "adversarial-role"
+      ],
+      "target_functions": [
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "role": "user",
+      "indices": [
+        2,
+        3,
+        4
+      ],
+      "evidence": [
+        "default-user-pool"
+      ],
+      "target_functions": [
+        2,
+        3,
+        4
+      ]
+    }
+  ]
+}

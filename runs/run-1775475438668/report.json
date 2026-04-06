@@ -1,0 +1,113 @@
+{
+  "run_id": "run-1775475438668",
+  "runtime_ms": 588,
+  "total_epochs": 12,
+  "coverage_curve": [
+    {
+      "epoch": 1,
+      "covered_edges": 10,
+      "total_edges": 12,
+      "coverage_pct": 83.33333333333334,
+      "delta_edges": 4,
+      "edge_rate": 0.02
+    },
+    {
+      "epoch": 2,
+      "covered_edges": 10,
+      "total_edges": 12,
+      "coverage_pct": 83.33333333333334,
+      "delta_edges": 0,
+      "edge_rate": 0.0
+    },
+    {
+      "epoch": 3,
+      "covered_edges": 10,
+      "total_edges": 12,
+      "coverage_pct": 83.33333333333334,
+      "delta_edges": 0,
+      "edge_rate": 0.0
+    },
+    {
+      "epoch": 4,
+      "covered_edges": 10,
+      "total_edges": 12,
+      "coverage_pct": 83.33333333333334,
+      "delta_edges": 0,
+      "edge_rate": 0.0
+    },
+    {
+      "epoch": 5,
+      "covered_edges": 10,
+      "total_edges": 12,
+      "coverage_pct": 83.33333333333334,
+      "delta_edges": 0,
+      "edge_rate": 0.0
+    },
+    {
+      "epoch": 6,
+      "covered_edges": 10,
+      "total_edges": 12,
+      "coverage_pct": 83.33333333333334,
+      "delta_edges": 0,
+      "edge_rate": 0.0
+    },
+    {
+      "epoch": 7,
+      "covered_edges": 10,
+      "total_edges": 12,
+      "coverage_pct": 83.33333333333334,
+      "delta_edges": 0,
+      "edge_rate": 0.0
+    },
+    {
+      "epoch": 8,
+      "covered_edges": 10,
+      "total_edges": 12,
+      "coverage_pct": 83.33333333333334,
+      "delta_edges": 0,
+      "edge_rate": 0.0
+    },
+    {
+      "epoch": 9,
+      "covered_edges": 10,
+      "total_edges": 12,
+      "coverage_pct": 83.33333333333334,
+      "delta_edges": 0,
+      "edge_rate": 0.0
+    },
+    {
+      "epoch": 10,
+      "covered_edges": 10,
+      "total_edges": 12,
+      "coverage_pct": 83.33333333333334,
+      "delta_edges": 0,
+      "edge_rate": 0.0
+    },
+    {
+      "epoch": 11,
+      "covered_edges": 10,
+      "total_edges": 12,
+      "coverage_pct": 83.33333333333334,
+      "delta_edges": 0,
+      "edge_rate": 0.0
+    },
+    {
+      "epoch": 12,
+      "covered_edges": 10,
+      "total_edges": 12,
+      "coverage_pct": 83.33333333333334,
+      "delta_edges": 0,
+      "edge_rate": 0.0
+    }
+  ],
+  "findings_total": 2049,
+  "findings_unique": 8,
+  "runtime_findings_total": 2048,
+  "runtime_findings_unique": 7,
+  "meta_findings_total": 1,
+  "meta_findings_unique": 1,
+  "se_assists": 3,
+  "seeds_injected_by_se": 0,
+  "se_new_edges_from_injected": 0,
+  "time_to_first_finding_ms": 0
+}

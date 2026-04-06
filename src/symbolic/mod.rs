@@ -22,12 +22,54 @@ use crate::symbolic::solver::z3_backend::Z3Backend;
 use crate::symbolic::state::storage::StorageLayout;
 use crate::util::error::Result;
 
+#[derive(Debug, Clone, Default)]
+pub struct SymbolicOptions {
+    pub target_function_ids: Option<HashSet<u32>>,
+    pub max_path_depth: Option<u32>,
+    pub max_instructions: Option<u32>,
+    pub max_loop_unrolling: Option<u32>,
+    pub max_states: Option<usize>,
+    pub total_timeout_s: Option<u64>,
+}
+
+#[derive(Debug, Clone)]
+pub struct SymbolicAnalysis {
+    pub findings: Vec<SeFinding>,
+    pub coverage: CoverageReport,
+    pub total_states: usize,
+}
+
 /// Entry point for symbolic execution analysis.
 /// Called from main.rs: `symbolic::run(&output, format)?;`
 pub fn run(output: &FrontendOutput, format: OutputFormat) -> Result<()> {
+    let analysis = analyze_with_options(output, &SymbolicOptions::default())?;
+    print_se_report(
+        &analysis.findings,
+        &analysis.coverage,
+        analysis.total_states,
+        format,
+    )
+}
+
+pub fn analyze_with_options(
+    output: &FrontendOutput,
+    options: &SymbolicOptions,
+) -> Result<SymbolicAnalysis> {
     if output.ast.contracts.is_empty() {
         eprintln!("[symbolic] no contracts found in AST");
-        return Ok(());
+        return Ok(SymbolicAnalysis {
+            findings: Vec::new(),
+            coverage: CoverageReport {
+                blocks_visited: 0,
+                blocks_total: 0,
+                block_coverage_pct: 0.0,
+                edges_visited: 0,
+                functions_visited: 0,
+                functions_total: 0,
+                function_coverage_pct: 0.0,
+            },
+            total_states: 0,
+        });
     }
 
     let ir_module = crate::ir::lower_module(&output.ast);
@@ -64,6 +106,18 @@ pub fn run(output: &FrontendOutput, format: OutputFormat) -> Result<()> {
             contract_name: contract.name.clone(),
             storage_layout: Arc::clone(&layout),
             detectors: DetectorRegistry::with_defaults(),
+            target_function_ids: options.target_function_ids.clone(),
+            max_path_depth: options.max_path_depth.unwrap_or(SeConfig::default().max_path_depth),
+            max_instructions: options
+                .max_instructions
+                .unwrap_or(SeConfig::default().max_instructions),
+            max_loop_unrolling: options
+                .max_loop_unrolling
+                .unwrap_or(SeConfig::default().max_loop_unrolling),
+            max_states: options.max_states.unwrap_or(SeConfig::default().max_states),
+            total_timeout_s: options
+                .total_timeout_s
+                .unwrap_or(SeConfig::default().total_timeout_s),
             ..SeConfig::default()
         };
 
@@ -76,7 +130,11 @@ pub fn run(output: &FrontendOutput, format: OutputFormat) -> Result<()> {
         combined_coverage = result.coverage;
     }
 
-    print_se_report(&all_findings, &combined_coverage, total_states, format)
+    Ok(SymbolicAnalysis {
+        findings: all_findings,
+        coverage: combined_coverage,
+        total_states,
+    })
 }
 
 #[cfg(test)]

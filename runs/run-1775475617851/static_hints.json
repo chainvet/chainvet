@@ -1,0 +1,123 @@
+{
+  "function_whitelist": [
+    0
+  ],
+  "function_blacklist": [],
+  "hotspots": [
+    {
+      "function_id": 0,
+      "function_name": "withdrawBalance",
+      "score": 9.5,
+      "reasons": [
+        "storage_writes=1",
+        "external_calls=1",
+        "low_level_calls=1",
+        "uses_source=true"
+      ]
+    }
+  ],
+  "sinks": [
+    {
+      "function_id": 0,
+      "function_name": "withdrawBalance",
+      "sink_kind": "unprotected-ether-withdrawal",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/unchecked_low_level_calls/mishandled.sol",
+      "start": 245,
+      "end": 444
+    },
+    {
+      "function_id": 0,
+      "function_name": "withdrawBalance",
+      "sink_kind": "unused-return-value",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/unchecked_low_level_calls/mishandled.sol",
+      "start": 407,
+      "end": 440
+    },
+    {
+      "function_id": 0,
+      "function_name": "withdrawBalance",
+      "sink_kind": "transaction-order-dependency",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/unchecked_low_level_calls/mishandled.sol",
+      "start": 245,
+      "end": 444
+    },
+    {
+      "function_id": 0,
+      "function_name": "withdrawBalance",
+      "sink_kind": "hardcoded-gas-transfer",
+      "severity": "low",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/unchecked_low_level_calls/mishandled.sol",
+      "start": 407,
+      "end": 440
+    }
+  ],
+  "callgraph": {
+    "total_sites": 1,
+    "resolved": 0,
+    "ambiguous": 0,
+    "external": 1,
+    "unknown": 0
+  },
+  "taint": {
+    "source_functions": 1,
+    "tainted_functions": 1,
+    "tainted_vars": 0,
+    "tainted_calls": 0
+  },
+  "storage_rw_map": [
+    {
+      "function_id": 0,
+      "function_name": "withdrawBalance",
+      "reads": [
+        "userBalances"
+      ],
+      "writes": [
+        "userBalances"
+      ]
+    }
+  ],
+  "arg_domains": [],
+  "address_roles": [
+    {
+      "role": "owner",
+      "indices": [
+        0
+      ],
+      "evidence": [
+        "default-owner-role"
+      ],
+      "target_functions": [
+        0
+      ]
+    },
+    {
+      "role": "attacker",
+      "indices": [
+        1
+      ],
+      "evidence": [
+        "adversarial-role"
+      ],
+      "target_functions": [
+        0
+      ]
+    },
+    {
+      "role": "user",
+      "indices": [
+        2,
+        3,
+        4
+      ],
+      "evidence": [
+        "default-user-pool"
+      ],
+      "target_functions": [
+        0
+      ]
+    }
+  ]
+}

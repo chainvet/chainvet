@@ -49,3 +49,19 @@ fn symbolic_on_reentrancy_fixture_exits_ok() {
         "unexpected panic in vuln_reentrancy.sol run:\n{stderr}",
     );
 }
+
+#[test]
+fn hybrid_on_reentrancy_fixture_exits_ok() {
+    let out = run(&["--hybrid", REENTRANCY]);
+    assert!(
+        out.status.success(),
+        "binary exited non-zero on hybrid vuln_reentrancy.sol\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        !stderr.contains("thread '") && !stderr.contains("panicked"),
+        "unexpected panic in hybrid vuln_reentrancy.sol run:\n{stderr}",
+    );
+}

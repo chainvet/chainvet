@@ -1,0 +1,287 @@
+[
+  {
+    "engine": "fuzzing",
+    "finding_type": "exception-disorder",
+    "severity": "medium",
+    "message": "Exception disorder: external call to '$t2' in function 0 followed by state change without checking return",
+    "location": {
+      "file": null,
+      "start": null,
+      "end": null,
+      "pc": null,
+      "function_id": 0,
+      "function_name": "sendToWinner"
+    },
+    "reproduction": {
+      "id": "repro-epoch1-14",
+      "txs": [
+        {
+          "function_id": 0,
+          "selector": null,
+          "calldata": null,
+          "args": [],
+          "sender": "1",
+          "value": "0",
+          "env": {
+            "block_timestamp": 1700000000,
+            "block_number": 10000000
+          }
+        }
+      ],
+      "state_snapshot_id": null,
+      "score": 3.5
+    },
+    "signature": "fuzzing:runtime:executor:exception-disorder:none:none:none:none:0:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "executor",
+    "metadata": {
+      "confidence": "low"
+    }
+  },
+  {
+    "engine": "fuzzing",
+    "finding_type": "hardcoded-gas-transfer",
+    "severity": "low",
+    "message": "Hardcoded gas: '$t2' in function 0 uses fixed 2300 gas stipend — may fail with contract recipients",
+    "location": {
+      "file": null,
+      "start": null,
+      "end": null,
+      "pc": null,
+      "function_id": 0,
+      "function_name": "sendToWinner"
+    },
+    "reproduction": {
+      "id": "repro-epoch1-14",
+      "txs": [
+        {
+          "function_id": 0,
+          "selector": null,
+          "calldata": null,
+          "args": [],
+          "sender": "1",
+          "value": "0",
+          "env": {
+            "block_timestamp": 1700000000,
+            "block_number": 10000000
+          }
+        }
+      ],
+      "state_snapshot_id": null,
+      "score": 3.5
+    },
+    "signature": "fuzzing:runtime:executor:hardcoded-gas-transfer:none:none:none:none:0:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "executor",
+    "metadata": {
+      "confidence": "medium"
+    }
+  },
+  {
+    "engine": "fuzzing",
+    "finding_type": "hardcoded-gas-transfer",
+    "severity": "low",
+    "message": "Hardcoded gas: '$t2' in function 1 uses fixed 2300 gas stipend — may fail with contract recipients",
+    "location": {
+      "file": null,
+      "start": null,
+      "end": null,
+      "pc": null,
+      "function_id": 1,
+      "function_name": "withdrawLeftOver"
+    },
+    "reproduction": {
+      "id": "repro-epoch2-117",
+      "txs": [
+        {
+          "function_id": 1,
+          "selector": null,
+          "calldata": null,
+          "args": [],
+          "sender": "0",
+          "value": "0",
+          "env": {
+            "block_timestamp": 1750000000,
+            "block_number": 5000000
+          }
+        }
+      ],
+      "state_snapshot_id": null,
+      "score": 3.5
+    },
+    "signature": "fuzzing:runtime:executor:hardcoded-gas-transfer:none:none:none:none:1:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "executor",
+    "metadata": {
+      "confidence": "medium"
+    }
+  },
+  {
+    "engine": "fuzzing",
+    "finding_type": "transaction-order-dependency",
+    "severity": "medium",
+    "message": "Transaction order dependency: function 0 has order-sensitive sensitive+value behavior across 2 distinct senders",
+    "location": {
+      "file": null,
+      "start": null,
+      "end": null,
+      "pc": null,
+      "function_id": 0,
+      "function_name": "sendToWinner"
+    },
+    "reproduction": {
+      "id": "repro-epoch1-168",
+      "txs": [
+        {
+          "function_id": 0,
+          "selector": null,
+          "calldata": null,
+          "args": [],
+          "sender": "2",
+          "value": "0",
+          "env": {
+            "block_timestamp": 1650000000,
+            "block_number": 5000000
+          }
+        },
+        {
+          "function_id": 0,
+          "selector": null,
+          "calldata": null,
+          "args": [],
+          "sender": "3",
+          "value": "0",
+          "env": {
+            "block_timestamp": 1650000000,
+            "block_number": 5000000
+          }
+        }
+      ],
+      "state_snapshot_id": null,
+      "score": 3.5
+    },
+    "signature": "fuzzing:runtime:executor:transaction-order-dependency:none:none:none:none:0:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "executor",
+    "metadata": {
+      "confidence": "medium"
+    }
+  },
+  {
+    "engine": "fuzzing",
+    "finding_type": "unchecked-call",
+    "severity": "medium",
+    "message": "Unchecked external call to '$t2' in function 0 — return value not verified",
+    "location": {
+      "file": null,
+      "start": null,
+      "end": null,
+      "pc": null,
+      "function_id": 0,
+      "function_name": "sendToWinner"
+    },
+    "reproduction": {
+      "id": "repro-epoch1-14",
+      "txs": [
+        {
+          "function_id": 0,
+          "selector": null,
+          "calldata": null,
+          "args": [],
+          "sender": "1",
+          "value": "0",
+          "env": {
+            "block_timestamp": 1700000000,
+            "block_number": 10000000
+          }
+        }
+      ],
+      "state_snapshot_id": null,
+      "score": 3.5
+    },
+    "signature": "fuzzing:runtime:executor:unchecked-call:none:none:none:none:0:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "executor",
+    "metadata": {
+      "confidence": "high"
+    }
+  },
+  {
+    "engine": "fuzzing",
+    "finding_type": "unchecked-call",
+    "severity": "medium",
+    "message": "Unchecked external call to '$t2' in function 1 — return value not verified",
+    "location": {
+      "file": null,
+      "start": null,
+      "end": null,
+      "pc": null,
+      "function_id": 1,
+      "function_name": "withdrawLeftOver"
+    },
+    "reproduction": {
+      "id": "repro-epoch2-117",
+      "txs": [
+        {
+          "function_id": 1,
+          "selector": null,
+          "calldata": null,
+          "args": [],
+          "sender": "0",
+          "value": "0",
+          "env": {
+            "block_timestamp": 1750000000,
+            "block_number": 5000000
+          }
+        }
+      ],
+      "state_snapshot_id": null,
+      "score": 3.5
+    },
+    "signature": "fuzzing:runtime:executor:unchecked-call:none:none:none:none:1:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "executor",
+    "metadata": {
+      "confidence": "high"
+    }
+  },
+  {
+    "engine": "fuzzing",
+    "finding_type": "unprotected-ether-withdrawal",
+    "severity": "high",
+    "message": "Unprotected Ether withdrawal via '$t2' in function 0 — anyone can drain funds",
+    "location": {
+      "file": null,
+      "start": null,
+      "end": null,
+      "pc": null,
+      "function_id": 0,
+      "function_name": "sendToWinner"
+    },
+    "reproduction": {
+      "id": "repro-epoch1-14",
+      "txs": [
+        {
+          "function_id": 0,
+          "selector": null,
+          "calldata": null,
+          "args": [],
+          "sender": "1",
+          "value": "0",
+          "env": {
+            "block_timestamp": 1700000000,
+            "block_number": 10000000
+          }
+        }
+      ],
+      "state_snapshot_id": null,
+      "score": 3.5
+    },
+    "signature": "fuzzing:runtime:executor:unprotected-ether-withdrawal:none:none:none:none:0:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "executor",
+    "metadata": {
+      "confidence": "high"
+    }
+  }
+]

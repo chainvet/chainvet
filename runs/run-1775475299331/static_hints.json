@@ -1,0 +1,389 @@
+{
+  "function_whitelist": [
+    1,
+    2,
+    3,
+    4
+  ],
+  "function_blacklist": [
+    5
+  ],
+  "hotspots": [
+    {
+      "function_id": 1,
+      "function_name": "withdraw",
+      "score": 15.7,
+      "reasons": [
+        "storage_writes=1",
+        "external_calls=2",
+        "low_level_calls=2",
+        "uses_source=true"
+      ]
+    },
+    {
+      "function_id": 2,
+      "function_name": null,
+      "score": 12.1,
+      "reasons": [
+        "external_calls=1",
+        "low_level_calls=1",
+        "tainted_calls=2",
+        "uses_source=true"
+      ]
+    },
+    {
+      "function_id": 0,
+      "function_name": null,
+      "score": 1.8,
+      "reasons": [
+        "storage_writes=1"
+      ]
+    },
+    {
+      "function_id": 3,
+      "function_name": "setStart",
+      "score": 1.8,
+      "reasons": [
+        "storage_writes=1"
+      ]
+    },
+    {
+      "function_id": 4,
+      "function_name": "setFibonacci",
+      "score": 1.8,
+      "reasons": [
+        "storage_writes=1"
+      ]
+    }
+  ],
+  "sinks": [
+    {
+      "function_id": 1,
+      "function_name": "withdraw",
+      "sink_kind": "unprotected-ether-withdrawal",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/FibonacciBalance.sol",
+      "start": 710,
+      "end": 1060
+    },
+    {
+      "function_id": 1,
+      "function_name": "withdraw",
+      "sink_kind": "unsafe-delegatecall",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/FibonacciBalance.sol",
+      "start": 936,
+      "end": 992
+    },
+    {
+      "function_id": 2,
+      "function_name": null,
+      "sink_kind": "unsafe-delegatecall",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/FibonacciBalance.sol",
+      "start": 1198,
+      "end": 1237
+    },
+    {
+      "function_id": 1,
+      "function_name": "withdraw",
+      "sink_kind": "unused-return-value",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/FibonacciBalance.sol",
+      "start": 928,
+      "end": 993
+    },
+    {
+      "function_id": 2,
+      "function_name": null,
+      "sink_kind": "unused-return-value",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/FibonacciBalance.sol",
+      "start": 1190,
+      "end": 1238
+    },
+    {
+      "function_id": 1,
+      "function_name": "withdraw",
+      "sink_kind": "integer-overflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/FibonacciBalance.sol",
+      "start": 1023,
+      "end": 1052
+    },
+    {
+      "function_id": 5,
+      "function_name": "fibonacci",
+      "sink_kind": "integer-overflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/FibonacciBalance.sol",
+      "start": 1784,
+      "end": 1793
+    },
+    {
+      "function_id": 5,
+      "function_name": "fibonacci",
+      "sink_kind": "integer-overflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/FibonacciBalance.sol",
+      "start": 1815,
+      "end": 1850
+    },
+    {
+      "function_id": 5,
+      "function_name": "fibonacci",
+      "sink_kind": "integer-underflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/FibonacciBalance.sol",
+      "start": 1825,
+      "end": 1830
+    },
+    {
+      "function_id": 5,
+      "function_name": "fibonacci",
+      "sink_kind": "integer-underflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/FibonacciBalance.sol",
+      "start": 1844,
+      "end": 1849
+    },
+    {
+      "function_id": 1,
+      "function_name": "withdraw",
+      "sink_kind": "hardcoded-gas-transfer",
+      "severity": "low",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/FibonacciBalance.sol",
+      "start": 1003,
+      "end": 1053
+    },
+    {
+      "function_id": 1,
+      "function_name": "withdraw",
+      "sink_kind": "dos-with-failed-call",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/FibonacciBalance.sol",
+      "start": 710,
+      "end": 1060
+    },
+    {
+      "function_id": 2,
+      "function_name": null,
+      "sink_kind": "dos-with-failed-call",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/FibonacciBalance.sol",
+      "start": 1121,
+      "end": 1245
+    },
+    {
+      "function_id": 2,
+      "function_name": null,
+      "sink_kind": "bytes-variables-risk",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/FibonacciBalance.sol",
+      "start": 1190,
+      "end": 1238
+    },
+    {
+      "function_id": 2,
+      "function_name": null,
+      "sink_kind": "bytes-variables-risk",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/FibonacciBalance.sol",
+      "start": 1198,
+      "end": 1237
+    },
+    {
+      "function_id": 2,
+      "function_name": null,
+      "sink_kind": "bytes-variables-risk",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/FibonacciBalance.sol",
+      "start": 1228,
+      "end": 1236
+    },
+    {
+      "function_id": 0,
+      "function_name": null,
+      "sink_kind": "storage-array-by-value",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/FibonacciBalance.sol",
+      "start": 661,
+      "end": 697
+    },
+    {
+      "function_id": 3,
+      "function_name": "setStart",
+      "sink_kind": "storage-array-by-value",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/FibonacciBalance.sol",
+      "start": 1544,
+      "end": 1558
+    },
+    {
+      "function_id": 2,
+      "function_name": null,
+      "sink_kind": "tainted-call",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/FibonacciBalance.sol",
+      "start": 1190,
+      "end": 1238
+    },
+    {
+      "function_id": 2,
+      "function_name": null,
+      "sink_kind": "tainted-call",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/FibonacciBalance.sol",
+      "start": 1198,
+      "end": 1237
+    }
+  ],
+  "callgraph": {
+    "total_sites": 8,
+    "resolved": 3,
+    "ambiguous": 0,
+    "external": 3,
+    "unknown": 0
+  },
+  "taint": {
+    "source_functions": 2,
+    "tainted_functions": 2,
+    "tainted_vars": 0,
+    "tainted_calls": 2
+  },
+  "storage_rw_map": [
+    {
+      "function_id": 0,
+      "function_name": null,
+      "reads": [],
+      "writes": [
+        "fibonacciLibrary"
+      ]
+    },
+    {
+      "function_id": 1,
+      "function_name": "withdraw",
+      "reads": [
+        "calculatedFibNumber",
+        "fibSig",
+        "fibonacciLibrary",
+        "withdrawalCounter"
+      ],
+      "writes": [
+        "withdrawalCounter"
+      ]
+    },
+    {
+      "function_id": 2,
+      "function_name": null,
+      "reads": [
+        "fibonacciLibrary"
+      ],
+      "writes": []
+    },
+    {
+      "function_id": 3,
+      "function_name": "setStart",
+      "reads": [],
+      "writes": [
+        "start"
+      ]
+    },
+    {
+      "function_id": 4,
+      "function_name": "setFibonacci",
+      "reads": [],
+      "writes": [
+        "calculatedFibNumber"
+      ]
+    },
+    {
+      "function_id": 5,
+      "function_name": "fibonacci",
+      "reads": [
+        "start"
+      ],
+      "writes": []
+    }
+  ],
+  "arg_domains": [
+    {
+      "function_id": 3,
+      "function_name": "setStart",
+      "param_index": 0,
+      "param_name": "_start",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        10,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 4,
+      "function_name": "setFibonacci",
+      "param_index": 0,
+      "param_name": "n",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        10,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    }
+  ],
+  "address_roles": [
+    {
+      "role": "owner",
+      "indices": [
+        0
+      ],
+      "evidence": [
+        "default-owner-role"
+      ],
+      "target_functions": [
+        1
+      ]
+    },
+    {
+      "role": "attacker",
+      "indices": [
+        1
+      ],
+      "evidence": [
+        "adversarial-role"
+      ],
+      "target_functions": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "role": "user",
+      "indices": [
+        2,
+        3,
+        4
+      ],
+      "evidence": [
+        "default-user-pool"
+      ],
+      "target_functions": [
+        1,
+        2,
+        3,
+        4
+      ]
+    }
+  ]
+}

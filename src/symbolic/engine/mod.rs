@@ -135,7 +135,7 @@ pub fn run_engine(
         max_path_depth, max_instructions, max_loop_unrolling,
         max_states, solver_timeout_ms: _, total_timeout_s,
         dynamic_bytes_bound: _, exploration_strategy,
-        mut detectors, storage_layout, contract_name,
+        mut detectors, storage_layout, contract_name, target_function_ids, preferred_sink_span: _,
     } = config;
 
     let run_ctx = RunContext {
@@ -150,6 +150,11 @@ pub fn run_engine(
     };
 
     for cfg_func in cfgs {
+        if let Some(target_ids) = &target_function_ids {
+            if !target_ids.contains(&cfg_func.id) {
+                continue;
+            }
+        }
         if cfg_func.blocks.is_empty() {
             continue;
         }

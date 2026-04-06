@@ -1,0 +1,254 @@
+{
+  "function_whitelist": [
+    1,
+    3
+  ],
+  "function_blacklist": [
+    2
+  ],
+  "hotspots": [
+    {
+      "function_id": 3,
+      "function_name": "getProfit",
+      "score": 7.699999999999999,
+      "reasons": [
+        "external_calls=1",
+        "low_level_calls=1",
+        "uses_source=true"
+      ]
+    },
+    {
+      "function_id": 1,
+      "function_name": "play",
+      "score": 7.5,
+      "reasons": [
+        "storage_writes=1",
+        "unresolved_calls=1",
+        "tainted_calls=1",
+        "uses_source=true"
+      ]
+    },
+    {
+      "function_id": 2,
+      "function_name": "andTheWinnerIs",
+      "score": 5.8,
+      "reasons": [
+        "storage_writes=1",
+        "unresolved_calls=2"
+      ]
+    },
+    {
+      "function_id": 0,
+      "function_name": "OddsAndEvens",
+      "score": 3.3,
+      "reasons": [
+        "storage_writes=1",
+        "uses_source=true"
+      ]
+    }
+  ],
+  "sinks": [
+    {
+      "function_id": 3,
+      "function_name": "getProfit",
+      "sink_kind": "unprotected-ether-withdrawal",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/front_running/odds_and_evens.sol",
+      "start": 924,
+      "end": 1029
+    },
+    {
+      "function_id": 2,
+      "function_name": "andTheWinnerIs",
+      "sink_kind": "unused-return-value",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/front_running/odds_and_evens.sol",
+      "start": 774,
+      "end": 813
+    },
+    {
+      "function_id": 2,
+      "function_name": "andTheWinnerIs",
+      "sink_kind": "unused-return-value",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/front_running/odds_and_evens.sol",
+      "start": 838,
+      "end": 877
+    },
+    {
+      "function_id": 3,
+      "function_name": "getProfit",
+      "sink_kind": "unused-return-value",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/front_running/odds_and_evens.sol",
+      "start": 924,
+      "end": 1029
+    },
+    {
+      "function_id": 2,
+      "function_name": "andTheWinnerIs",
+      "sink_kind": "integer-overflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/front_running/odds_and_evens.sol",
+      "start": 713,
+      "end": 748
+    },
+    {
+      "function_id": 3,
+      "function_name": "getProfit",
+      "sink_kind": "transaction-order-dependency",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/front_running/odds_and_evens.sol",
+      "start": 924,
+      "end": 1029
+    },
+    {
+      "function_id": 2,
+      "function_name": "andTheWinnerIs",
+      "sink_kind": "hardcoded-gas-transfer",
+      "severity": "low",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/front_running/odds_and_evens.sol",
+      "start": 780,
+      "end": 813
+    },
+    {
+      "function_id": 2,
+      "function_name": "andTheWinnerIs",
+      "sink_kind": "hardcoded-gas-transfer",
+      "severity": "low",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/front_running/odds_and_evens.sol",
+      "start": 844,
+      "end": 877
+    },
+    {
+      "function_id": 3,
+      "function_name": "getProfit",
+      "sink_kind": "hardcoded-gas-transfer",
+      "severity": "low",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/front_running/odds_and_evens.sol",
+      "start": 995,
+      "end": 1024
+    },
+    {
+      "function_id": 1,
+      "function_name": "play",
+      "sink_kind": "tainted-call",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/front_running/odds_and_evens.sol",
+      "start": 568,
+      "end": 594
+    }
+  ],
+  "callgraph": {
+    "total_sites": 5,
+    "resolved": 1,
+    "ambiguous": 0,
+    "external": 1,
+    "unknown": 3
+  },
+  "taint": {
+    "source_functions": 3,
+    "tainted_functions": 3,
+    "tainted_vars": 2,
+    "tainted_calls": 1
+  },
+  "storage_rw_map": [
+    {
+      "function_id": 0,
+      "function_name": "OddsAndEvens",
+      "reads": [],
+      "writes": [
+        "owner"
+      ]
+    },
+    {
+      "function_id": 1,
+      "function_name": "play",
+      "reads": [
+        "tot"
+      ],
+      "writes": [
+        "players",
+        "tot"
+      ]
+    },
+    {
+      "function_id": 2,
+      "function_name": "andTheWinnerIs",
+      "reads": [
+        "players"
+      ],
+      "writes": [
+        "tot"
+      ]
+    },
+    {
+      "function_id": 3,
+      "function_name": "getProfit",
+      "reads": [
+        "balance",
+        "owner"
+      ],
+      "writes": []
+    }
+  ],
+  "arg_domains": [
+    {
+      "function_id": 1,
+      "function_name": "play",
+      "param_index": 0,
+      "param_name": "number",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        3,
+        10,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    }
+  ],
+  "address_roles": [
+    {
+      "role": "owner",
+      "indices": [
+        0
+      ],
+      "evidence": [
+        "state_var:owner"
+      ],
+      "target_functions": []
+    },
+    {
+      "role": "attacker",
+      "indices": [
+        1
+      ],
+      "evidence": [
+        "adversarial-role"
+      ],
+      "target_functions": [
+        1,
+        3
+      ]
+    },
+    {
+      "role": "user",
+      "indices": [
+        2,
+        3,
+        4
+      ],
+      "evidence": [
+        "default-user-pool"
+      ],
+      "target_functions": [
+        1,
+        3
+      ]
+    }
+  ]
+}

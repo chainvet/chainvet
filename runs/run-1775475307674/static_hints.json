@@ -1,0 +1,165 @@
+{
+  "function_whitelist": [
+    1
+  ],
+  "function_blacklist": [],
+  "hotspots": [
+    {
+      "function_id": 1,
+      "function_name": "forward",
+      "score": 6.199999999999999,
+      "reasons": [
+        "external_calls=1",
+        "low_level_calls=1"
+      ]
+    },
+    {
+      "function_id": 0,
+      "function_name": null,
+      "score": 3.3,
+      "reasons": [
+        "storage_writes=1",
+        "uses_source=true"
+      ]
+    }
+  ],
+  "sinks": [
+    {
+      "function_id": 1,
+      "function_name": "forward",
+      "sink_kind": "arbitrary-calldata",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/proxy.sol",
+      "start": 359,
+      "end": 385
+    },
+    {
+      "function_id": 1,
+      "function_name": "forward",
+      "sink_kind": "unsafe-delegatecall",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/proxy.sol",
+      "start": 359,
+      "end": 385
+    },
+    {
+      "function_id": 1,
+      "function_name": "forward",
+      "sink_kind": "unused-return-value",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/proxy.sol",
+      "start": 351,
+      "end": 386
+    },
+    {
+      "function_id": 1,
+      "function_name": "forward",
+      "sink_kind": "dos-with-failed-call",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/proxy.sol",
+      "start": 255,
+      "end": 476
+    }
+  ],
+  "callgraph": {
+    "total_sites": 2,
+    "resolved": 0,
+    "ambiguous": 0,
+    "external": 1,
+    "unknown": 0
+  },
+  "taint": {
+    "source_functions": 1,
+    "tainted_functions": 1,
+    "tainted_vars": 1,
+    "tainted_calls": 0
+  },
+  "storage_rw_map": [
+    {
+      "function_id": 0,
+      "function_name": null,
+      "reads": [],
+      "writes": [
+        "owner"
+      ]
+    },
+    {
+      "function_id": 1,
+      "function_name": "forward",
+      "reads": [],
+      "writes": []
+    }
+  ],
+  "arg_domains": [
+    {
+      "function_id": 1,
+      "function_name": "forward",
+      "param_index": 0,
+      "param_name": "callee",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        10,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 1,
+      "function_name": "forward",
+      "param_index": 1,
+      "param_name": "_data",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        10,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    }
+  ],
+  "address_roles": [
+    {
+      "role": "owner",
+      "indices": [
+        0
+      ],
+      "evidence": [
+        "state_var:owner"
+      ],
+      "target_functions": []
+    },
+    {
+      "role": "attacker",
+      "indices": [
+        1
+      ],
+      "evidence": [
+        "adversarial-role"
+      ],
+      "target_functions": [
+        1
+      ]
+    },
+    {
+      "role": "user",
+      "indices": [
+        2,
+        3,
+        4
+      ],
+      "evidence": [
+        "default-user-pool"
+      ],
+      "target_functions": [
+        1
+      ]
+    }
+  ]
+}

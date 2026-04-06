@@ -1,0 +1,224 @@
+{
+  "function_whitelist": [
+    1
+  ],
+  "function_blacklist": [],
+  "hotspots": [
+    {
+      "function_id": 1,
+      "function_name": "play",
+      "score": 25.9,
+      "reasons": [
+        "storage_writes=2",
+        "external_calls=2",
+        "low_level_calls=2",
+        "unresolved_calls=2",
+        "tainted_calls=2",
+        "uses_source=true"
+      ]
+    },
+    {
+      "function_id": 0,
+      "function_name": "EtherLotto",
+      "score": 3.3,
+      "reasons": [
+        "storage_writes=1",
+        "uses_source=true"
+      ]
+    }
+  ],
+  "sinks": [
+    {
+      "function_id": 1,
+      "function_name": "play",
+      "sink_kind": "unprotected-ether-withdrawal",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/time_manipulation/ether_lotto.sol",
+      "start": 937,
+      "end": 1680
+    },
+    {
+      "function_id": 1,
+      "function_name": "play",
+      "sink_kind": "integer-underflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/time_manipulation/ether_lotto.sol",
+      "start": 1592,
+      "end": 1608
+    },
+    {
+      "function_id": 1,
+      "function_name": "play",
+      "sink_kind": "dangerous-block-timestamp",
+      "severity": "low",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/time_manipulation/ether_lotto.sol",
+      "start": 1316,
+      "end": 1343
+    },
+    {
+      "function_id": 1,
+      "function_name": "play",
+      "sink_kind": "dangerous-block-timestamp",
+      "severity": "low",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/time_manipulation/ether_lotto.sol",
+      "start": 1321,
+      "end": 1342
+    },
+    {
+      "function_id": 1,
+      "function_name": "play",
+      "sink_kind": "dangerous-block-timestamp",
+      "severity": "low",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/time_manipulation/ether_lotto.sol",
+      "start": 1303,
+      "end": 1347
+    },
+    {
+      "function_id": 1,
+      "function_name": "play",
+      "sink_kind": "transaction-order-dependency",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/time_manipulation/ether_lotto.sol",
+      "start": 937,
+      "end": 1680
+    },
+    {
+      "function_id": 1,
+      "function_name": "play",
+      "sink_kind": "weak-prng",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/time_manipulation/ether_lotto.sol",
+      "start": 1316,
+      "end": 1347
+    },
+    {
+      "function_id": 1,
+      "function_name": "play",
+      "sink_kind": "weak-prng",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/time_manipulation/ether_lotto.sol",
+      "start": 1321,
+      "end": 1342
+    },
+    {
+      "function_id": 1,
+      "function_name": "play",
+      "sink_kind": "hardcoded-gas-transfer",
+      "severity": "low",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/time_manipulation/ether_lotto.sol",
+      "start": 1493,
+      "end": 1518
+    },
+    {
+      "function_id": 1,
+      "function_name": "play",
+      "sink_kind": "hardcoded-gas-transfer",
+      "severity": "low",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/time_manipulation/ether_lotto.sol",
+      "start": 1572,
+      "end": 1609
+    },
+    {
+      "function_id": 1,
+      "function_name": "play",
+      "sink_kind": "reentrancy-eth-transfer",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/time_manipulation/ether_lotto.sol",
+      "start": 937,
+      "end": 1680
+    },
+    {
+      "function_id": 1,
+      "function_name": "play",
+      "sink_kind": "tainted-call",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/time_manipulation/ether_lotto.sol",
+      "start": 1048,
+      "end": 1082
+    },
+    {
+      "function_id": 1,
+      "function_name": "play",
+      "sink_kind": "tainted-call",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/time_manipulation/ether_lotto.sol",
+      "start": 1572,
+      "end": 1609
+    }
+  ],
+  "callgraph": {
+    "total_sites": 5,
+    "resolved": 0,
+    "ambiguous": 0,
+    "external": 2,
+    "unknown": 2
+  },
+  "taint": {
+    "source_functions": 2,
+    "tainted_functions": 2,
+    "tainted_vars": 2,
+    "tainted_calls": 2
+  },
+  "storage_rw_map": [
+    {
+      "function_id": 0,
+      "function_name": "EtherLotto",
+      "reads": [],
+      "writes": [
+        "bank"
+      ]
+    },
+    {
+      "function_id": 1,
+      "function_name": "play",
+      "reads": [
+        "FEE_AMOUNT",
+        "TICKET_AMOUNT",
+        "bank",
+        "pot"
+      ],
+      "writes": [
+        "pot"
+      ]
+    }
+  ],
+  "arg_domains": [],
+  "address_roles": [
+    {
+      "role": "owner",
+      "indices": [
+        0
+      ],
+      "evidence": [
+        "default-owner-role"
+      ],
+      "target_functions": []
+    },
+    {
+      "role": "attacker",
+      "indices": [
+        1
+      ],
+      "evidence": [
+        "adversarial-role"
+      ],
+      "target_functions": [
+        1
+      ]
+    },
+    {
+      "role": "user",
+      "indices": [
+        2,
+        3,
+        4
+      ],
+      "evidence": [
+        "default-user-pool"
+      ],
+      "target_functions": [
+        1
+      ]
+    }
+  ]
+}

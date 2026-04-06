@@ -4,6 +4,7 @@ mod core;
 
 mod frontend;
 mod fuzzing;
+mod hybrid;
 mod ir;
 mod meta;
 mod norm;
@@ -22,6 +23,7 @@ enum AnalysisMode {
     Static,
     Symbolic,
     Fuzzing,
+    Hybrid,
 }
 
 impl AnalysisMode {
@@ -30,6 +32,7 @@ impl AnalysisMode {
             "--static" => Some(Self::Static),
             "--symbolic" => Some(Self::Symbolic),
             "--fuzzing" => Some(Self::Fuzzing),
+            "--hybrid" => Some(Self::Hybrid),
             _ => None,
         }
     }
@@ -70,6 +73,7 @@ fn run() -> Result<()> {
                     AnalysisMode::Static => "--static",
                     AnalysisMode::Symbolic => "--symbolic",
                     AnalysisMode::Fuzzing => "--fuzzing",
+                    AnalysisMode::Hybrid => "--hybrid",
                 });
             }
             continue;
@@ -167,6 +171,10 @@ fn run() -> Result<()> {
             let output = frontend::load_project(&input)?;
             let config = fuzzing::types::FuzzConfig::default();
             fuzzing::run_fuzzer(&output, &config, format)?;
+        }
+        AnalysisMode::Hybrid => {
+            let output = frontend::load_project(&input)?;
+            hybrid::run(&output, format)?;
         }
     }
 

@@ -1,0 +1,286 @@
+[
+  {
+    "engine": "fuzzing",
+    "finding_type": "exception-disorder",
+    "severity": "medium",
+    "message": "Exception disorder: external call to '$t10' in function 2 followed by state change without checking return",
+    "location": {
+      "file": null,
+      "start": null,
+      "end": null,
+      "pc": null,
+      "function_id": 2,
+      "function_name": "play"
+    },
+    "reproduction": {
+      "id": "repro-epoch11-173",
+      "txs": [
+        {
+          "function_id": 2,
+          "selector": null,
+          "calldata": null,
+          "args": [
+            "10"
+          ],
+          "sender": "1",
+          "value": "1000000000000000000",
+          "env": {
+            "block_timestamp": 1800000000,
+            "block_number": 10000000
+          }
+        }
+      ],
+      "state_snapshot_id": null,
+      "score": 3.5
+    },
+    "signature": "fuzzing:runtime:executor:exception-disorder:none:none:none:none:2:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "executor",
+    "metadata": {
+      "confidence": "low"
+    }
+  },
+  {
+    "engine": "fuzzing",
+    "finding_type": "hardcoded-gas-transfer",
+    "severity": "low",
+    "message": "Hardcoded gas: '$t10' in function 2 uses fixed 2300 gas stipend — may fail with contract recipients",
+    "location": {
+      "file": null,
+      "start": null,
+      "end": null,
+      "pc": null,
+      "function_id": 2,
+      "function_name": "play"
+    },
+    "reproduction": {
+      "id": "repro-epoch11-173",
+      "txs": [
+        {
+          "function_id": 2,
+          "selector": null,
+          "calldata": null,
+          "args": [
+            "10"
+          ],
+          "sender": "1",
+          "value": "1000000000000000000",
+          "env": {
+            "block_timestamp": 1800000000,
+            "block_number": 10000000
+          }
+        }
+      ],
+      "state_snapshot_id": null,
+      "score": 3.5
+    },
+    "signature": "fuzzing:runtime:executor:hardcoded-gas-transfer:none:none:none:none:2:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "executor",
+    "metadata": {
+      "confidence": "medium"
+    }
+  },
+  {
+    "engine": "fuzzing",
+    "finding_type": "reentrancy",
+    "severity": "low",
+    "message": "Heuristic reentrancy signal: external call in function 2 followed by storage write 'lastPlayed' without callback evidence",
+    "location": {
+      "file": null,
+      "start": null,
+      "end": null,
+      "pc": null,
+      "function_id": 2,
+      "function_name": "play"
+    },
+    "reproduction": {
+      "id": "repro-epoch2-12",
+      "txs": [
+        {
+          "function_id": 2,
+          "selector": null,
+          "calldata": null,
+          "args": [
+            "1000"
+          ],
+          "sender": "3",
+          "value": "1000000000000000000",
+          "env": {
+            "block_timestamp": 1750000000,
+            "block_number": 5000000
+          }
+        }
+      ],
+      "state_snapshot_id": null,
+      "score": 3.5
+    },
+    "signature": "fuzzing:runtime:executor:reentrancy:none:none:none:none:2:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "executor",
+    "metadata": {
+      "confidence": "low"
+    }
+  },
+  {
+    "engine": "fuzzing",
+    "finding_type": "transaction-order-dependency",
+    "severity": "medium",
+    "message": "Transaction order dependency: function 2 has order-sensitive sensitive+value behavior across 2 distinct senders",
+    "location": {
+      "file": null,
+      "start": null,
+      "end": null,
+      "pc": null,
+      "function_id": 2,
+      "function_name": "play"
+    },
+    "reproduction": {
+      "id": "repro-epoch2-18",
+      "txs": [
+        {
+          "function_id": 2,
+          "selector": null,
+          "calldata": null,
+          "args": [
+            "340282366920938463463374607431768211454"
+          ],
+          "sender": "3",
+          "value": "961854708657254857",
+          "env": {
+            "block_timestamp": 1750000000,
+            "block_number": 43284469
+          }
+        },
+        {
+          "function_id": 2,
+          "selector": null,
+          "calldata": null,
+          "args": [
+            "1000"
+          ],
+          "sender": "1",
+          "value": "600176132439322846",
+          "env": {
+            "block_timestamp": 1750000000,
+            "block_number": 43284469
+          }
+        }
+      ],
+      "state_snapshot_id": null,
+      "score": 3.5
+    },
+    "signature": "fuzzing:runtime:executor:transaction-order-dependency:none:none:none:none:2:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "executor",
+    "metadata": {
+      "confidence": "medium"
+    }
+  },
+  {
+    "engine": "fuzzing",
+    "finding_type": "unchecked-call",
+    "severity": "medium",
+    "message": "Unchecked external call to '$t6' in function 2 — return value not verified",
+    "location": {
+      "file": null,
+      "start": null,
+      "end": null,
+      "pc": null,
+      "function_id": 2,
+      "function_name": "play"
+    },
+    "reproduction": {
+      "id": "repro-epoch2-12",
+      "txs": [
+        {
+          "function_id": 2,
+          "selector": null,
+          "calldata": null,
+          "args": [
+            "1000"
+          ],
+          "sender": "3",
+          "value": "1000000000000000000",
+          "env": {
+            "block_timestamp": 1750000000,
+            "block_number": 5000000
+          }
+        }
+      ],
+      "state_snapshot_id": null,
+      "score": 3.5
+    },
+    "signature": "fuzzing:runtime:executor:unchecked-call:none:none:none:none:2:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "executor",
+    "metadata": {
+      "confidence": "high"
+    }
+  },
+  {
+    "engine": "meta",
+    "finding_type": "honeypot",
+    "severity": "low",
+    "message": "contract 'CryptoRoulette' exposes a public funding path but its payout flow looks deceptive or trap-like",
+    "location": {
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/other/crypto_roulette.sol",
+      "start": 1070,
+      "end": 1543,
+      "pc": null,
+      "function_id": 2,
+      "function_name": "play"
+    },
+    "reproduction": null,
+    "signature": "meta:meta:honeypot-heuristic:honeypot:/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/other/crypto_roulette.sol:1070:1543:none:2:none",
+    "analysis_layer": "meta",
+    "evidence_kind": "honeypot-heuristic",
+    "metadata": {
+      "confidence": "low",
+      "contract": "CryptoRoulette",
+      "reasons": "owner-or-secret-gate"
+    }
+  },
+  {
+    "engine": "meta",
+    "finding_type": "honeypot",
+    "severity": "low",
+    "message": "contract 'CryptoRoulette' exposes a public funding path but its payout flow looks deceptive or trap-like",
+    "location": {
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/other/crypto_roulette.sol",
+      "start": 1070,
+      "end": 1543,
+      "pc": null,
+      "function_id": 2,
+      "function_name": "play"
+    },
+    "reproduction": null,
+    "signature": "meta:runtime:meta-runtime-backstop:honeypot:/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/other/crypto_roulette.sol:1070:1543:none:2:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "meta-runtime-backstop",
+    "metadata": {
+      "confidence": "low",
+      "contract": "CryptoRoulette",
+      "reasons": "owner-or-secret-gate"
+    }
+  },
+  {
+    "engine": "static",
+    "finding_type": "unprotected-selfdestruct",
+    "severity": "high",
+    "message": "unprotected suicide — no access control modifier on containing function",
+    "location": {
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/other/crypto_roulette.sol",
+      "start": 1654,
+      "end": 1673,
+      "pc": null,
+      "function_id": 3,
+      "function_name": "kill"
+    },
+    "reproduction": null,
+    "signature": "static:runtime:rule:unprotected-selfdestruct:/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/other/crypto_roulette.sol:1654:1673:none:3:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "rule",
+    "metadata": {}
+  }
+]

@@ -1,0 +1,188 @@
+{
+  "function_whitelist": [
+    0,
+    1,
+    2,
+    3
+  ],
+  "function_blacklist": [],
+  "hotspots": [
+    {
+      "function_id": 2,
+      "function_name": "supportsToken",
+      "score": 14.5,
+      "reasons": [
+        "storage_writes=1",
+        "external_calls=1",
+        "unresolved_calls=2",
+        "tainted_calls=2",
+        "uses_source=true"
+      ]
+    },
+    {
+      "function_id": 3,
+      "function_name": "call",
+      "score": 4.0,
+      "reasons": [
+        "unresolved_calls=2"
+      ]
+    },
+    {
+      "function_id": 0,
+      "function_name": "airDrop",
+      "score": 3.3,
+      "reasons": [
+        "storage_writes=1",
+        "uses_source=true"
+      ]
+    },
+    {
+      "function_id": 1,
+      "function_name": "supportsToken",
+      "score": 2.8,
+      "reasons": [
+        "external_calls=1"
+      ]
+    }
+  ],
+  "sinks": [
+    {
+      "function_id": 3,
+      "function_name": "call",
+      "sink_kind": "missing-input-validation",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/reentrancy/modifier_reentrancy.sol",
+      "start": 1332,
+      "end": 1417
+    },
+    {
+      "function_id": 2,
+      "function_name": "supportsToken",
+      "sink_kind": "tainted-call",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/reentrancy/modifier_reentrancy.sol",
+      "start": 1215,
+      "end": 1253
+    },
+    {
+      "function_id": 2,
+      "function_name": "supportsToken",
+      "sink_kind": "tainted-call",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/reentrancy/modifier_reentrancy.sol",
+      "start": 1215,
+      "end": 1243
+    }
+  ],
+  "callgraph": {
+    "total_sites": 8,
+    "resolved": 0,
+    "ambiguous": 0,
+    "external": 2,
+    "unknown": 4
+  },
+  "taint": {
+    "source_functions": 2,
+    "tainted_functions": 2,
+    "tainted_vars": 0,
+    "tainted_calls": 2
+  },
+  "storage_rw_map": [
+    {
+      "function_id": 0,
+      "function_name": "airDrop",
+      "reads": [
+        "tokenBalance"
+      ],
+      "writes": [
+        "tokenBalance"
+      ]
+    },
+    {
+      "function_id": 1,
+      "function_name": "supportsToken",
+      "reads": [],
+      "writes": []
+    },
+    {
+      "function_id": 2,
+      "function_name": "supportsToken",
+      "reads": [
+        "hasBeenCalled"
+      ],
+      "writes": [
+        "hasBeenCalled"
+      ]
+    },
+    {
+      "function_id": 3,
+      "function_name": "call",
+      "reads": [],
+      "writes": []
+    }
+  ],
+  "arg_domains": [
+    {
+      "function_id": 3,
+      "function_name": "call",
+      "param_index": 0,
+      "param_name": "token",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        10,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    }
+  ],
+  "address_roles": [
+    {
+      "role": "owner",
+      "indices": [
+        0
+      ],
+      "evidence": [
+        "default-owner-role"
+      ],
+      "target_functions": []
+    },
+    {
+      "role": "attacker",
+      "indices": [
+        1
+      ],
+      "evidence": [
+        "adversarial-role"
+      ],
+      "target_functions": [
+        0,
+        1,
+        2,
+        3
+      ]
+    },
+    {
+      "role": "user",
+      "indices": [
+        2,
+        3,
+        4
+      ],
+      "evidence": [
+        "default-user-pool"
+      ],
+      "target_functions": [
+        0,
+        1,
+        2,
+        3
+      ]
+    }
+  ]
+}

@@ -1,0 +1,68 @@
+[
+  {
+    "epoch": 2,
+    "goal": {
+      "id": "g-1-13-0-2",
+      "function_id": 13,
+      "function_name": null,
+      "block_id": 2,
+      "edge_from": 0,
+      "edge_to": 2,
+      "sink_kind": "tainted-call",
+      "reason": "uncovered edge after fuzz epoch",
+      "priority": 27.900000000000002,
+      "attempts": 1
+    },
+    "injected_seed_ids": [],
+    "solver": {
+      "elapsed_ms": 25,
+      "states_explored": 3,
+      "max_depth_reached": 1,
+      "satisfiable_paths": 8
+    }
+  },
+  {
+    "epoch": 3,
+    "goal": {
+      "id": "g-1-13-2-3",
+      "function_id": 13,
+      "function_name": null,
+      "block_id": 3,
+      "edge_from": 2,
+      "edge_to": 3,
+      "sink_kind": "tainted-call",
+      "reason": "uncovered edge after fuzz epoch",
+      "priority": 27.900000000000002,
+      "attempts": 1
+    },
+    "injected_seed_ids": [],
+    "solver": {
+      "elapsed_ms": 25,
+      "states_explored": 4,
+      "max_depth_reached": 2,
+      "satisfiable_paths": 8
+    }
+  },
+  {
+    "epoch": 4,
+    "goal": {
+      "id": "g-1-13-3-4",
+      "function_id": 13,
+      "function_name": null,
+      "block_id": 4,
+      "edge_from": 3,
+      "edge_to": 4,
+      "sink_kind": "tainted-call",
+      "reason": "uncovered edge after fuzz epoch",
+      "priority": 27.900000000000002,
+      "attempts": 1
+    },
+    "injected_seed_ids": [],
+    "solver": {
+      "elapsed_ms": 42,
+      "states_explored": 5,
+      "max_depth_reached": 3,
+      "satisfiable_paths": 8
+    }
+  }
+]

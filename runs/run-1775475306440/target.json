@@ -1,0 +1,16 @@
+{
+  "id": "parity_wallet_bug_1",
+  "input_path": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_1.sol",
+  "source_paths": [
+    "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_1.sol"
+  ],
+  "chain_id": null,
+  "address": null,
+  "abi": null,
+  "bytecode": null,
+  "compiler": {
+    "frontend_mode": "partial",
+    "compiler_name": "tree-sitter",
+    "compiler_version": "0.4.9"
+  }
+}

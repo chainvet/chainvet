@@ -4,6 +4,7 @@ use crate::core::artifacts::Finding;
 use crate::frontend::{self, CompilerInfo};
 use crate::ir::{IrInstr, IrModule, IrPlace, IrValue, IrVar, PlaceClass};
 use crate::norm::{FunctionKind, Mutability, NormalizedAst, Visibility};
+use serde::Serialize;
 
 // ---------------------------------------------------------------------------
 // ABI-like extraction from NormalizedAst
@@ -202,6 +203,10 @@ pub struct FuzzConfig {
     pub seed: Option<u64>,
     /// Optional wall-clock time limit in milliseconds.
     pub max_duration_ms: Option<u64>,
+    /// Optional externally supplied initial seeds, used by hybrid mode.
+    pub seed_corpus: Vec<Individual>,
+    /// True when fuzzing runs as part of hybrid orchestration.
+    pub hybrid_mode: bool,
 }
 
 impl Default for FuzzConfig {
@@ -214,8 +219,16 @@ impl Default for FuzzConfig {
             address_pool_size: 5,
             seed: None,
             max_duration_ms: None,
+            seed_corpus: Vec::new(),
+            hybrid_mode: false,
         }
     }
+}
+
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct FuzzHybridStats {
+    pub seeded_inputs_provided: usize,
+    pub seeded_inputs_executed: usize,
 }
 
 // ---------------------------------------------------------------------------
@@ -670,6 +683,7 @@ pub struct FuzzReport {
     pub corpus_size: usize,
     pub corpus_zero_reason: Option<String>,
     pub elapsed_ms: u128,
+    pub hybrid_stats: Option<FuzzHybridStats>,
 }
 
 #[cfg(test)]

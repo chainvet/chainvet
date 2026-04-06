@@ -1,0 +1,140 @@
+{
+  "function_whitelist": [
+    0,
+    1,
+    2
+  ],
+  "function_blacklist": [],
+  "hotspots": [
+    {
+      "function_id": 2,
+      "function_name": "withdraw",
+      "score": 6.199999999999999,
+      "reasons": [
+        "external_calls=1",
+        "low_level_calls=1"
+      ]
+    },
+    {
+      "function_id": 0,
+      "function_name": "IamMissing",
+      "score": 3.3,
+      "reasons": [
+        "storage_writes=1",
+        "uses_source=true"
+      ]
+    }
+  ],
+  "sinks": [
+    {
+      "function_id": 0,
+      "function_name": "IamMissing",
+      "sink_kind": "uninit-permission-check",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/incorrect_constructor_name1.sol",
+      "start": 498,
+      "end": 574
+    },
+    {
+      "function_id": 2,
+      "function_name": "withdraw",
+      "sink_kind": "transaction-order-dependency",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/incorrect_constructor_name1.sol",
+      "start": 608,
+      "end": 709
+    },
+    {
+      "function_id": 2,
+      "function_name": "withdraw",
+      "sink_kind": "hardcoded-gas-transfer",
+      "severity": "low",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/incorrect_constructor_name1.sol",
+      "start": 674,
+      "end": 702
+    }
+  ],
+  "callgraph": {
+    "total_sites": 1,
+    "resolved": 0,
+    "ambiguous": 0,
+    "external": 1,
+    "unknown": 0
+  },
+  "taint": {
+    "source_functions": 1,
+    "tainted_functions": 1,
+    "tainted_vars": 1,
+    "tainted_calls": 0
+  },
+  "storage_rw_map": [
+    {
+      "function_id": 0,
+      "function_name": "IamMissing",
+      "reads": [],
+      "writes": [
+        "owner"
+      ]
+    },
+    {
+      "function_id": 1,
+      "function_name": null,
+      "reads": [],
+      "writes": []
+    },
+    {
+      "function_id": 2,
+      "function_name": "withdraw",
+      "reads": [
+        "balance",
+        "owner"
+      ],
+      "writes": []
+    }
+  ],
+  "arg_domains": [],
+  "address_roles": [
+    {
+      "role": "owner",
+      "indices": [
+        0
+      ],
+      "evidence": [
+        "state_var:owner"
+      ],
+      "target_functions": [
+        2
+      ]
+    },
+    {
+      "role": "attacker",
+      "indices": [
+        1
+      ],
+      "evidence": [
+        "adversarial-role"
+      ],
+      "target_functions": [
+        0,
+        1,
+        2
+      ]
+    },
+    {
+      "role": "user",
+      "indices": [
+        2,
+        3,
+        4
+      ],
+      "evidence": [
+        "default-user-pool"
+      ],
+      "target_functions": [
+        0,
+        1,
+        2
+      ]
+    }
+  ]
+}
