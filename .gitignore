@@ -4,3 +4,6 @@ Cargo.lock
 /smartbugs-curated
 benchmark_se_results.json
 benchmark_se.py
+benchmark_hybrid.py
+benchmark_hybrid_results.json
+runs/
