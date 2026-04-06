@@ -7,3 +7,6 @@ benchmark_se.py
 benchmark_hybrid.py
 benchmark_hybrid_results.json
 runs/
+.codex
+.claude
+.cache
