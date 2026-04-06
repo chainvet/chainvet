@@ -4,13 +4,48 @@ pub mod memory;
 pub mod storage;
 pub mod variables;
 
+use std::collections::{HashMap, HashSet};
+
 use crate::cfg::BlockId;
+use crate::ir::IrVar;
+use crate::norm::Span;
 
 use self::call_context::CallContext;
 use self::constraints::PathConstraints;
 use self::memory::SymbolicMemory;
 use self::storage::SymbolicStorage;
 use self::variables::VariableEnv;
+
+/// Tracks where a variable's value originally came from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ValueOrigin {
+    /// block.timestamp / now
+    Timestamp,
+    /// block.number
+    BlockNumber,
+    /// address(this).balance
+    ThisBalance,
+    /// tx.origin
+    TxOrigin,
+    /// Return from .call()
+    LowLevelCallRef,
+    /// Return from .send()
+    SendRef,
+    /// Return from .delegatecall()
+    DelegatecallRef,
+    /// Return from .call{value:...}()
+    #[allow(dead_code)] // Used when call options include `value`
+    ValueCallRef,
+    /// Return from .transfer()
+    TransferRef,
+}
+
+/// A low-level call whose return value has not yet been checked.
+#[derive(Debug, Clone)]
+pub struct PendingCallInfo {
+    pub callee: String,
+    pub span: Span,
+}
 
 /// Unique identifier for a symbolic state in the exploration tree.
 pub type StateId = u64;
@@ -65,6 +100,10 @@ pub struct SymbolicState {
     pub path_depth: u32,
     /// Total IR instructions executed on this path.
     pub instruction_count: u32,
+    /// Taint tracking: which value origins each variable carries.
+    pub origins: HashMap<IrVar, HashSet<ValueOrigin>>,
+    /// Low-level calls whose return values have not been checked yet.
+    pub pending_calls: HashMap<IrVar, PendingCallInfo>,
 }
 
 impl SymbolicState {
@@ -85,7 +124,74 @@ impl SymbolicState {
             current_block: entry_block,
             path_depth: 0,
             instruction_count: 0,
+            origins: HashMap::new(),
+            pending_calls: HashMap::new(),
         }
+    }
+
+    /// Check if a variable carries a specific origin.
+    pub fn has_origin(&self, var: &IrVar, origin: ValueOrigin) -> bool {
+        self.origins
+            .get(var)
+            .is_some_and(|set| set.contains(&origin))
+    }
+
+    /// Get all origins for a variable.
+    #[allow(dead_code)] // Public API for detectors to query full origin set
+    pub fn get_origins(&self, var: &IrVar) -> Option<&HashSet<ValueOrigin>> {
+        self.origins.get(var)
+    }
+
+    /// Tag a variable with an origin.
+    pub fn set_origin(&mut self, var: IrVar, origin: ValueOrigin) {
+        self.origins.entry(var).or_default().insert(origin);
+    }
+
+    /// Copy all origins from one variable to another.
+    pub fn copy_origins(&mut self, from: &IrVar, to: &IrVar) {
+        if let Some(origins) = self.origins.get(from).cloned() {
+            self.origins.entry(to.clone()).or_default().extend(origins);
+        }
+    }
+
+    /// Union origins from multiple source variables into a destination.
+    pub fn union_origins(&mut self, sources: &[&IrVar], dest: &IrVar) {
+        let mut combined: HashSet<ValueOrigin> = HashSet::new();
+        for src in sources {
+            if let Some(origins) = self.origins.get(*src) {
+                combined.extend(origins);
+            }
+        }
+        if !combined.is_empty() {
+            self.origins.entry(dest.clone()).or_default().extend(combined);
+        }
+    }
+
+    /// Register a low-level call return variable as pending (unchecked).
+    pub fn register_pending_call(&mut self, var: IrVar, info: PendingCallInfo) {
+        self.pending_calls.insert(var, info);
+    }
+
+    /// Clear a pending call by variable (the return was checked).
+    pub fn clear_pending_by_var(&mut self, var: &IrVar) {
+        // Remove by matching span — if the same call's return is aliased
+        // to multiple variables, checking one clears all aliases.
+        if let Some(info) = self.pending_calls.get(var) {
+            let span = info.span;
+            self.pending_calls.retain(|_, v| v.span != span);
+        }
+    }
+
+    /// Propagate pending-call status from one variable to another.
+    pub fn propagate_pending(&mut self, from: &IrVar, to: &IrVar) {
+        if let Some(info) = self.pending_calls.get(from).cloned() {
+            self.pending_calls.insert(to.clone(), info);
+        }
+    }
+
+    /// Drain all remaining pending calls (for flushing at function exit).
+    pub fn drain_pending(&mut self) -> Vec<(IrVar, PendingCallInfo)> {
+        std::mem::take(&mut self.pending_calls).into_iter().collect()
     }
 
     /// Clone this state for a branch fork.

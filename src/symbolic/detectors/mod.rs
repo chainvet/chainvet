@@ -27,7 +27,7 @@ use crate::norm::Span;
 use crate::symbolic::results::finding::{Confidence, SeFinding, SeVulnKind};
 use crate::symbolic::results::witness::Witness;
 use crate::symbolic::solver::SmtSolver;
-use crate::symbolic::state::SymbolicState;
+use crate::symbolic::state::{SymbolicState, ValueOrigin};
 
 /// Symbolic execution vulnerability detector.
 ///
@@ -293,6 +293,16 @@ pub(crate) fn make_finding(
         witness,
         state_id: state.id,
         path_depth: state.path_depth,
+    }
+}
+
+/// Check if an `IrValue` carries a specific origin in the current state.
+///
+/// Returns false for literals and unknowns (they have no variable to track).
+pub(crate) fn value_has_origin(state: &SymbolicState, val: &IrValue, origin: ValueOrigin) -> bool {
+    match val {
+        IrValue::Var(v) => state.has_origin(v, origin),
+        _ => false,
     }
 }
 

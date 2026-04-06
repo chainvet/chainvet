@@ -1,4 +1,8 @@
-use std::collections::VecDeque;
+use std::cmp::Ordering;
+use std::collections::{BinaryHeap, HashMap, VecDeque};
+
+use crate::cfg::CfgFunction;
+use crate::ir::{ControlKind, IrInstr, IrVar, IrValue, PlaceClass};
 
 use super::scheduler::WorklistEntry;
 
@@ -101,19 +105,183 @@ impl ExplorationStrategy for BfsStrategy {
     }
 }
 
+/// Vulnerability-directed exploration: max-heap by block sink score.
+///
+/// Pre-computes a static "danger score" per CFG block based on the
+/// instructions it contains (storage writes, external calls, selfdestruct).
+/// Higher-scoring blocks are explored first, focusing the budget on
+/// vulnerability-relevant paths.
+pub struct VulnerabilityDirectedStrategy {
+    heap: BinaryHeap<ScoredEntry>,
+    sink_scores: HashMap<u32, i32>,
+    insertion_counter: u64,
+}
+
+struct ScoredEntry {
+    priority: i32,
+    insertion_order: u64,
+    entry: WorklistEntry,
+}
+
+impl Eq for ScoredEntry {}
+
+impl PartialEq for ScoredEntry {
+    fn eq(&self, other: &Self) -> bool {
+        self.priority == other.priority && self.insertion_order == other.insertion_order
+    }
+}
+
+impl Ord for ScoredEntry {
+    fn cmp(&self, other: &Self) -> Ordering {
+        // Higher priority first; among ties, earlier insertion wins (lower counter).
+        self.priority
+            .cmp(&other.priority)
+            .then_with(|| other.insertion_order.cmp(&self.insertion_order))
+    }
+}
+
+impl PartialOrd for ScoredEntry {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl VulnerabilityDirectedStrategy {
+    pub fn new(cfgs: &[CfgFunction]) -> Self {
+        Self {
+            heap: BinaryHeap::new(),
+            sink_scores: build_sink_scores(cfgs),
+            insertion_counter: 0,
+        }
+    }
+
+    fn score_for(&self, func_id: u32, block_id: u32) -> i32 {
+        let key = sink_score_key(func_id, block_id);
+        *self.sink_scores.get(&key).unwrap_or(&0)
+    }
+}
+
+impl ExplorationStrategy for VulnerabilityDirectedStrategy {
+    fn push(&mut self, entry: WorklistEntry) {
+        let priority = self.score_for(entry.cfg_func_id, entry.state.current_block);
+        let insertion_order = self.insertion_counter;
+        self.insertion_counter += 1;
+        self.heap.push(ScoredEntry {
+            priority,
+            insertion_order,
+            entry,
+        });
+    }
+
+    fn pop(&mut self) -> Option<WorklistEntry> {
+        self.heap.pop().map(|se| se.entry)
+    }
+
+    fn is_empty(&self) -> bool {
+        self.heap.is_empty()
+    }
+
+    fn len(&self) -> usize {
+        self.heap.len()
+    }
+}
+
+/// Compute a sink score key from function and block IDs.
+fn sink_score_key(func_id: u32, block_id: u32) -> u32 {
+    (func_id << 16) ^ block_id
+}
+
+/// Pre-compute static sink scores for all CFG blocks.
+///
+/// Blocks containing dangerous instructions (storage writes, external calls,
+/// selfdestruct) receive higher scores.
+pub fn build_sink_scores(cfgs: &[CfgFunction]) -> HashMap<u32, i32> {
+    let mut scores = HashMap::new();
+    for cfg_fn in cfgs {
+        for block in &cfg_fn.blocks {
+            let mut score = 0i32;
+            for instr in &block.instrs {
+                match instr {
+                    IrInstr::Store { dest, .. } if place_is_storage(dest) => {
+                        score += 4;
+                    }
+                    IrInstr::Call { callee, .. } => {
+                        let name = callee_name_lower(callee);
+                        if is_low_level_name(&name) {
+                            score += 5;
+                        }
+                        if name.contains("delegatecall") {
+                            score += 3;
+                        }
+                        if name == "selfdestruct" || name == "suicide" {
+                            score += 4;
+                        }
+                        if name.contains("ecrecover") {
+                            score += 2;
+                        }
+                    }
+                    IrInstr::Control {
+                        kind: ControlKind::If { .. } | ControlKind::Loop { .. },
+                        ..
+                    } => {
+                        score += 1;
+                    }
+                    _ => {}
+                }
+            }
+            if score > 0 {
+                scores.insert(sink_score_key(cfg_fn.id, block.id), score);
+            }
+        }
+    }
+    scores
+}
+
+fn place_is_storage(place: &crate::ir::IrPlace) -> bool {
+    match place {
+        crate::ir::IrPlace::Var { class, .. }
+        | crate::ir::IrPlace::Member { class, .. }
+        | crate::ir::IrPlace::Index { class, .. } => *class == PlaceClass::Storage,
+    }
+}
+
+fn callee_name_lower(callee: &IrValue) -> String {
+    match callee {
+        IrValue::Var(IrVar::Named(s)) => s.to_ascii_lowercase(),
+        IrValue::Literal(lit) => lit.value.to_ascii_lowercase(),
+        _ => String::new(),
+    }
+}
+
+fn is_low_level_name(name: &str) -> bool {
+    matches!(name, "call" | "send" | "transfer" | "delegatecall" | "staticcall")
+        || name.ends_with(".call")
+        || name.ends_with(".send")
+        || name.ends_with(".transfer")
+        || name.ends_with(".delegatecall")
+        || name.ends_with(".staticcall")
+}
+
 /// Which exploration order to use.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExplorationStrategyKind {
+    #[allow(dead_code)]
     Dfs,
-    #[allow(dead_code)] // Phase 6: BFS used by coverage-guided hybrid mode
+    #[allow(dead_code)]
     Bfs,
+    VulnerabilityDirected,
 }
 
 /// Construct the chosen strategy as a boxed trait object.
-pub fn make_strategy(kind: ExplorationStrategyKind) -> Box<dyn ExplorationStrategy> {
+///
+/// `cfgs` is required for `VulnerabilityDirected` (pre-computes sink scores).
+pub fn make_strategy(kind: ExplorationStrategyKind, cfgs: &[CfgFunction]) -> Box<dyn ExplorationStrategy> {
     match kind {
         ExplorationStrategyKind::Dfs => Box::new(DfsStrategy::new()),
         ExplorationStrategyKind::Bfs => Box::new(BfsStrategy::new()),
+        ExplorationStrategyKind::VulnerabilityDirected => {
+            Box::new(VulnerabilityDirectedStrategy::new(cfgs))
+        }
     }
 }
 
@@ -224,7 +392,7 @@ mod tests {
     #[test]
     fn test_make_strategy_dfs() {
         // make_strategy(Dfs) must produce LIFO behavior.
-        let mut strategy = make_strategy(ExplorationStrategyKind::Dfs);
+        let mut strategy = make_strategy(ExplorationStrategyKind::Dfs, &[]);
         strategy.push(make_entry(1));
         strategy.push(make_entry(2));
 
@@ -236,7 +404,7 @@ mod tests {
     #[test]
     fn test_make_strategy_bfs() {
         // make_strategy(Bfs) must produce FIFO behavior.
-        let mut strategy = make_strategy(ExplorationStrategyKind::Bfs);
+        let mut strategy = make_strategy(ExplorationStrategyKind::Bfs, &[]);
         strategy.push(make_entry(1));
         strategy.push(make_entry(2));
 

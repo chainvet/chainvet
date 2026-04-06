@@ -18,8 +18,8 @@ use crate::symbolic::state::storage::StorageLayout;
 use crate::symbolic::state::{StateIdGen, SymbolicState};
 use crate::symbolic::types::hash::KeccakContext;
 
-use executor::{BlockOutcome, ExecutorError, execute_block, pre_populate_call_context};
-use explorer::{ExplorationStrategy, ExplorationStrategyKind, make_strategy};
+use executor::{BlockOutcome, ExecutorError, execute_block, flush_pending_calls, pre_populate_call_context};
+use explorer::{ExplorationStrategy, make_strategy};
 use scheduler::{SeConfig, WorklistEntry};
 
 /// Output produced by the engine for one analysis run.
@@ -105,7 +105,7 @@ pub fn run_engine(
             keccak_ctx: &mut keccak_ctx,
             states_explored: &mut states_explored,
         };
-        explore_function(cfg_func, &mut detectors, &mut id_gen, &mut acc, &run_ctx, exploration_strategy);
+        explore_function(cfg_func, cfgs, &mut detectors, &mut id_gen, &mut acc, &run_ctx, exploration_strategy);
     }
 
     EngineResult { findings, coverage: coverage.report(), states_explored }
@@ -117,11 +117,12 @@ pub fn run_engine(
 /// seeds the worklist, then drives the exploration loop.
 fn explore_function(
     cfg_func: &CfgFunction,
+    all_cfgs: &[CfgFunction],
     detectors: &mut DetectorRegistry,
     id_gen: &mut StateIdGen,
     acc: &mut RunAccumulators<'_>,
     run_ctx: &RunContext<'_>,
-    exploration_strategy: ExplorationStrategyKind,
+    exploration_strategy: explorer::ExplorationStrategyKind,
 ) {
     acc.coverage.record_function(cfg_func.id);
     let entry_block = cfg_func.blocks[0].id;
@@ -131,7 +132,7 @@ fn explore_function(
         initial_state.path_constraints.add(c, desc);
     }
     pre_populate_call_context(&mut initial_state);
-    let mut strategy = make_strategy(exploration_strategy);
+    let mut strategy = make_strategy(exploration_strategy, all_cfgs);
     strategy.push(WorklistEntry {
         state: initial_state,
         cfg_func_id: cfg_func.id,
@@ -181,6 +182,12 @@ fn run_worklist(
                 continue;
             }
         };
+
+        // Flush unchecked low-level calls at terminal blocks.
+        if matches!(outcome, BlockOutcome::Return { .. } | BlockOutcome::Revert { .. } | BlockOutcome::Stop) {
+            let fallback_span = crate::norm::Span { file: 0, start: 0, end: 0 };
+            flush_pending_calls(&mut entry.state, acc.findings, fallback_span);
+        }
 
         let mut sink = ForkSink {
             from_block: block.id,

@@ -3,10 +3,10 @@ use std::collections::HashSet;
 use crate::analysis::detectors::Severity;
 use crate::cfg::BlockId;
 use crate::ir::{ControlKind, IrInstr, IrPlace, IrVar, IrValue};
-use crate::symbolic::detectors::{make_finding, place_matches, Detector};
+use crate::symbolic::detectors::{make_finding, place_matches, value_has_origin, Detector};
 use crate::symbolic::results::finding::{Confidence, SeFinding, SeVulnKind};
 use crate::symbolic::solver::SmtSolver;
-use crate::symbolic::state::SymbolicState;
+use crate::symbolic::state::{SymbolicState, ValueOrigin};
 
 /// Detects block-environment manipulation vulnerabilities.
 ///
@@ -106,7 +106,9 @@ impl Detector for BlockManipulationDetector {
             } => {
                 let mut findings = Vec::new();
 
-                if Self::value_in_set(cond, &self.timestamp_vars) {
+                if Self::value_in_set(cond, &self.timestamp_vars)
+                    || value_has_origin(state, cond, ValueOrigin::Timestamp)
+                {
                     findings.push(make_finding(
                         SeVulnKind::TimestampDependency,
                         Severity::Low,
@@ -118,7 +120,9 @@ impl Detector for BlockManipulationDetector {
                     ));
                 }
 
-                if Self::value_in_set(cond, &self.prng_vars) {
+                if Self::value_in_set(cond, &self.prng_vars)
+                    || value_has_origin(state, cond, ValueOrigin::BlockNumber)
+                {
                     findings.push(make_finding(
                         SeVulnKind::WeakPRNG,
                         Severity::High,

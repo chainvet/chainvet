@@ -7,11 +7,11 @@ use crate::ir::{
     ControlKind, IrCallOption, IrInstr, IrPlace, IrValue, IrVar, PlaceClass,
 };
 use crate::norm::Span;
-use crate::symbolic::detectors::{make_finding, place_matches, CalleeTracker, Detector};
+use crate::symbolic::detectors::{make_finding, place_matches, value_has_origin, CalleeTracker, Detector};
 use crate::symbolic::results::finding::{Confidence, SeFinding, SeVulnKind};
 use crate::symbolic::results::witness::Witness;
 use crate::symbolic::solver::SmtSolver;
-use crate::symbolic::state::SymbolicState;
+use crate::symbolic::state::{SymbolicState, ValueOrigin};
 
 /// Detects access control vulnerabilities.
 ///
@@ -124,7 +124,8 @@ impl AccessControlDetector {
         if cond_str.contains("msg.sender") || cond_str.contains("msg_sender") {
             self.has_sender_check = true;
         }
-        if self.tx_origin_loaded && !Self::has_sender_restriction(state) {
+        let origin_tainted = value_has_origin(state, cond, ValueOrigin::TxOrigin);
+        if (self.tx_origin_loaded || origin_tainted) && !Self::has_sender_restriction(state) {
             self.tx_origin_loaded = false;
             return vec![make_finding(
                 SeVulnKind::TxOriginAuth,

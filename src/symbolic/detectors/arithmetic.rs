@@ -162,7 +162,7 @@ impl ArithmeticDetector {
         let rhs_512 = rhs_bv.zero_ext(256);
         let product_512 = lhs_512.bvmul(&rhs_512);
         let high = product_512.extract(511, 256);
-        let overflow_cond = high.bvugt(&BV::from_u64(0, 256));
+        let overflow_cond = high.bvugt(BV::from_u64(0, 256));
         check_sat_and_emit(
             state,
             solver,

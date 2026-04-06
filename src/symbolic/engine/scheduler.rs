@@ -82,7 +82,7 @@ impl Default for SeConfig {
             solver_timeout_ms: 5_000,
             total_timeout_s: 300,
             dynamic_bytes_bound: 256,
-            exploration_strategy: ExplorationStrategyKind::Dfs,
+            exploration_strategy: ExplorationStrategyKind::VulnerabilityDirected,
             detectors: DetectorRegistry::new(),
             storage_layout: Arc::new(StorageLayout::empty()),
             contract_name: String::new(),

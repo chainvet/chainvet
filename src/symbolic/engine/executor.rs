@@ -10,7 +10,7 @@ use crate::symbolic::results::finding::{Confidence, SeFinding, SeVulnKind};
 use crate::symbolic::results::witness::Witness;
 use crate::symbolic::solver::SmtSolver;
 use crate::symbolic::state::storage::StorageLayout;
-use crate::symbolic::state::SymbolicState;
+use crate::symbolic::state::{PendingCallInfo, SymbolicState, ValueOrigin};
 use crate::symbolic::types::hash::KeccakContext;
 use crate::symbolic::types::{bitvec, fresh_bv, literal_to_symbolic, zero_bv, SymbolicValue};
 
@@ -108,13 +108,22 @@ pub fn execute_block(
                         .as_ref()
                         .map(|v| eval_value(state, v, keccak_ctx))
                         .unwrap_or_else(|| zero_bv(256));
-                    state.variables.set(IrVar::Named(name.clone()), val);
+                    let dest = IrVar::Named(name.clone());
+                    state.variables.set(dest.clone(), val);
+                    if let Some(src_var) = init.as_ref().and_then(value_var) {
+                        state.copy_origins(src_var, &dest);
+                        state.propagate_pending(src_var, &dest);
+                    }
                 }
             }
 
             IrInstr::Assign { dest, src, .. } => {
                 let val = eval_value(state, src, keccak_ctx);
                 state.variables.set(dest.clone(), val);
+                if let Some(src_var) = value_var(src) {
+                    state.copy_origins(src_var, dest);
+                    state.propagate_pending(src_var, dest);
+                }
             }
 
             IrInstr::Binary { dest, op, lhs, rhs, .. } => {
@@ -126,6 +135,13 @@ pub fn execute_block(
                 let result = bitvec::apply_binary_op(op, &lbv, &rbv, width)
                     .unwrap_or_else(|_| zero_bv(width));
                 state.variables.set(dest.clone(), result);
+                // Propagate origins from both operands.
+                let srcs: Vec<&IrVar> = [lhs, rhs].iter().filter_map(|v| value_var(v)).collect();
+                state.union_origins(&srcs, dest);
+                // Propagate pending-call status (e.g., `success && x`).
+                for src in &srcs {
+                    state.propagate_pending(src, dest);
+                }
             }
 
             IrInstr::Unary { dest, op, expr, prefix, .. } => {
@@ -135,6 +151,9 @@ pub fn execute_block(
                 let result = bitvec::apply_unary_op(op, &bv, width, *prefix)
                     .unwrap_or_else(|_| zero_bv(width));
                 state.variables.set(dest.clone(), result);
+                if let Some(src_var) = value_var(expr) {
+                    state.copy_origins(src_var, dest);
+                }
             }
 
             IrInstr::Select { dest, cond, then_val, else_val, .. } => {
@@ -151,11 +170,18 @@ pub fn execute_block(
                 state
                     .variables
                     .set(dest.clone(), SymbolicValue::BitVec { width, val: result_bv });
+                // Union origins from both branches.
+                let srcs: Vec<&IrVar> = [then_val, else_val].iter().filter_map(|v| value_var(v)).collect();
+                state.union_origins(&srcs, dest);
             }
 
             IrInstr::Load { dest, src, .. } => {
                 let val = resolve_place_read(state, src, layout, contract_name, keccak_ctx);
                 state.variables.set(dest.clone(), val);
+                // Seed origin for well-known environment loads.
+                if let Some(origin) = place_origin(src) {
+                    state.set_origin(dest.clone(), origin);
+                }
             }
 
             IrInstr::Store { dest, src, .. } => {
@@ -231,6 +257,10 @@ fn handle_control(
 ) -> BlockOutcome {
     match kind {
         ControlKind::If { cond } => {
+            // If the condition is a pending call return, mark it as checked.
+            if let Some(v) = value_var(cond) {
+                state.clear_pending_by_var(v);
+            }
             let cond_sv = eval_value(state, cond, keccak_ctx);
             // Fallback: fresh unconstrained Bool keeps both branches reachable.
             let cond_bool =
@@ -343,10 +373,22 @@ fn handle_call(
             }
         }
         _ => {
+            let cname = callee_name_str(callee).unwrap_or_default();
+            let low_level = is_low_level_call_name(&cname);
             // Unknown/external call: havoc all destination variables.
             for (i, d) in dest.iter().enumerate() {
                 let name = format!("call_ret_{}_{}", var_name(d), i);
                 state.variables.set(d.clone(), fresh_bv(&name, 256));
+                // First dest of a low-level call is the boolean return — track it.
+                if low_level && i == 0 {
+                    state.register_pending_call(
+                        d.clone(),
+                        PendingCallInfo { callee: cname.clone(), span },
+                    );
+                    if let Some(origin) = call_origin(&cname) {
+                        state.set_origin(d.clone(), origin);
+                    }
+                }
             }
         }
     }
@@ -360,6 +402,10 @@ fn handle_require(
     span: Span,
 ) {
     if let Some(cond_val) = args.first() {
+        // If the condition is a pending call return, mark it as checked.
+        if let Some(v) = value_var(cond_val) {
+            state.clear_pending_by_var(v);
+        }
         let sv = eval_value(state, cond_val, keccak_ctx);
         if let Ok(b) = sv.to_bool() {
             state.path_constraints.add(b, format!("require at {:?}", span));
@@ -377,6 +423,10 @@ fn handle_assert(
     span: Span,
 ) {
     if let Some(cond_val) = args.first() {
+        // If the condition is a pending call return, mark it as checked.
+        if let Some(v) = value_var(cond_val) {
+            state.clear_pending_by_var(v);
+        }
         let sv = eval_value(state, cond_val, keccak_ctx);
         if let Ok(cond_bool) = sv.to_bool() {
             check_assert_violation(state, &cond_bool, solver, findings, span);
@@ -781,6 +831,105 @@ fn extract_witness(solver: &dyn SmtSolver, state: &SymbolicState) -> Option<Witn
     result
 }
 
+/// Extract the `IrVar` from an `IrValue`, if it is a variable reference.
+fn value_var(val: &IrValue) -> Option<&IrVar> {
+    match val {
+        IrValue::Var(v) => Some(v),
+        _ => None,
+    }
+}
+
+/// Determine the `ValueOrigin` for an environment-variable `IrPlace`.
+fn place_origin(place: &IrPlace) -> Option<ValueOrigin> {
+    match place {
+        IrPlace::Var { var: IrVar::Named(n), .. } => match n.as_str() {
+            "block.timestamp" | "now" => Some(ValueOrigin::Timestamp),
+            "block.number" => Some(ValueOrigin::BlockNumber),
+            "tx.origin" => Some(ValueOrigin::TxOrigin),
+            "address(this).balance" | "this.balance" => Some(ValueOrigin::ThisBalance),
+            _ => None,
+        },
+        IrPlace::Member { root: Some(r), field, .. } => match (r.as_str(), field.as_str()) {
+            ("block", "timestamp") => Some(ValueOrigin::Timestamp),
+            ("block", "number") => Some(ValueOrigin::BlockNumber),
+            ("tx", "origin") => Some(ValueOrigin::TxOrigin),
+            ("this", "balance") => Some(ValueOrigin::ThisBalance),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+/// Map a low-level call name to the appropriate `ValueOrigin`.
+fn call_origin(name: &str) -> Option<ValueOrigin> {
+    let name_lower = name.to_ascii_lowercase();
+    if name_lower == "delegatecall" || name_lower.ends_with(".delegatecall") {
+        Some(ValueOrigin::DelegatecallRef)
+    } else if name_lower == "send" || name_lower.ends_with(".send") {
+        Some(ValueOrigin::SendRef)
+    } else if name_lower == "transfer" || name_lower.ends_with(".transfer") {
+        Some(ValueOrigin::TransferRef)
+    } else if name_lower == "call"
+        || name_lower.ends_with(".call")
+        || name_lower == "staticcall"
+        || name_lower.ends_with(".staticcall")
+    {
+        Some(ValueOrigin::LowLevelCallRef)
+    } else {
+        None
+    }
+}
+
+/// Returns true if `name` refers to a low-level external call.
+pub fn is_low_level_call_name(name: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    matches!(
+        lower.as_str(),
+        "call" | "send" | "transfer" | "delegatecall" | "staticcall"
+    ) || lower.ends_with(".call")
+        || lower.ends_with(".send")
+        || lower.ends_with(".transfer")
+        || lower.ends_with(".delegatecall")
+        || lower.ends_with(".staticcall")
+}
+
+/// Flush any remaining pending (unchecked) calls from the state, producing findings.
+///
+/// Called at terminal blocks (Return, Revert, Stop) before on_block_exit.
+pub fn flush_pending_calls(
+    state: &mut SymbolicState,
+    findings: &mut Vec<SeFinding>,
+    _fallback_span: Span,
+) {
+    let pending = state.drain_pending();
+    // Dedup by span — same source-level call should only be reported once.
+    let mut seen_spans = std::collections::HashSet::new();
+    for (_var, info) in pending {
+        if seen_spans.insert(info.span) {
+            findings.push(SeFinding {
+                kind: SeVulnKind::UncheckedCall,
+                severity: Severity::Medium,
+                confidence: Confidence::High,
+                message: format!(
+                    "low-level call '{}' return value is not checked",
+                    info.callee
+                ),
+                span: info.span,
+                function_id: None,
+                path_constraints: state
+                    .path_constraints
+                    .descriptions()
+                    .iter()
+                    .map(|s| s.to_string())
+                    .collect(),
+                witness: None,
+                state_id: state.id,
+                path_depth: state.path_depth,
+            });
+        }
+    }
+}
+
 /// Pre-populate variable env with well-known blockchain context names.
 ///
 /// IR references `msg.sender`, `block.timestamp`, etc. as named variables.
@@ -806,6 +955,13 @@ pub fn pre_populate_call_context(state: &mut SymbolicState) {
     bind!("block.number", state.call_context.block_number, 256);
     bind!("address(this).balance", state.call_context.this_balance, 256);
     bind!("this.balance", state.call_context.this_balance, 256);
+
+    // Seed origins for environment variables.
+    state.set_origin(IrVar::Named("tx.origin".into()), ValueOrigin::TxOrigin);
+    state.set_origin(IrVar::Named("block.timestamp".into()), ValueOrigin::Timestamp);
+    state.set_origin(IrVar::Named("block.number".into()), ValueOrigin::BlockNumber);
+    state.set_origin(IrVar::Named("address(this).balance".into()), ValueOrigin::ThisBalance);
+    state.set_origin(IrVar::Named("this.balance".into()), ValueOrigin::ThisBalance);
 }
 
 #[cfg(test)]
