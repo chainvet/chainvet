@@ -109,10 +109,17 @@ impl Detector for BlockManipulationDetector {
                 if Self::value_in_set(cond, &self.timestamp_vars)
                     || value_has_origin(state, cond, ValueOrigin::Timestamp)
                 {
+                    // Higher confidence when the path also reads order-sensitive storage
+                    // (e.g., using timestamp to gate a storage-dependent decision).
+                    let confidence = if state.saw_order_sensitive_storage_read {
+                        Confidence::Medium
+                    } else {
+                        Confidence::Low
+                    };
                     findings.push(make_finding(
                         SeVulnKind::TimestampDependency,
                         Severity::Low,
-                        Confidence::Low,
+                        confidence,
                         "Branch condition depends on block.timestamp; miners can manipulate this value",
                         *span,
                         state,

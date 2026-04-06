@@ -163,7 +163,32 @@ impl VulnerabilityDirectedStrategy {
 
 impl ExplorationStrategy for VulnerabilityDirectedStrategy {
     fn push(&mut self, entry: WorklistEntry) {
-        let priority = self.score_for(entry.cfg_func_id, entry.state.current_block);
+        let mut priority = self.score_for(entry.cfg_func_id, entry.state.current_block);
+
+        // Dynamic bonuses based on runtime state properties.
+        // Boost states that are "closer" to vulnerability patterns.
+        if !entry.state.sender_checked {
+            // Unguarded paths are more likely to contain access control vulns.
+            priority += 2;
+        }
+        if entry.state.inside_loop {
+            // Loop bodies are DoS-relevant and can multiply reentrancy impact.
+            priority += 1;
+        }
+        if !entry.state.storage_reads.is_empty() {
+            // Paths that read storage are more interesting for state-dependent vulns.
+            priority += 1;
+        }
+        if entry.state.callback_frame.is_some() {
+            // Callback simulation paths deserve higher priority — they're
+            // specifically exploring reentrancy scenarios.
+            priority += 3;
+        }
+        if !entry.state.pending_calls.is_empty() {
+            // Unchecked call returns still pending — interesting for detection.
+            priority += 2;
+        }
+
         let insertion_order = self.insertion_counter;
         self.insertion_counter += 1;
         self.heap.push(ScoredEntry {

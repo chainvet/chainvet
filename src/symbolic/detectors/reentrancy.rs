@@ -126,21 +126,31 @@ impl Detector for ReentrancyDetector {
                 if let Some(info) = self.find_ancestor_call(state)
                     && state.instruction_count > info.call_instruction_count
                 {
-                    let severity = if info.sends_eth {
+                    // Sender-guarded reentrancy is lower risk (attacker must own the
+                    // authorized address), but still a CEI violation.
+                    let guarded = state.sender_checked;
+                    let severity = if guarded {
+                        Severity::Medium
+                    } else if info.sends_eth {
                         Severity::High
                     } else {
                         Severity::Medium
                     };
-                    let confidence = if info.sends_eth {
+                    let confidence = if info.sends_eth && !guarded {
                         Confidence::High
                     } else {
                         Confidence::Medium
+                    };
+                    let msg = if guarded {
+                        "Reentrancy: state written after external call (sender-guarded, lower risk)"
+                    } else {
+                        "Reentrancy: state written after external call violates CEI pattern"
                     };
                     return vec![make_finding(
                         SeVulnKind::Reentrancy,
                         severity,
                         confidence,
-                        "Reentrancy: state written after external call violates CEI pattern",
+                        msg,
                         *span,
                         state,
                         None,

@@ -96,10 +96,17 @@ impl Detector for DosDetector {
                 kind: ControlKind::Loop { .. },
                 span,
             } => {
+                // Boost confidence when engine has confirmed we're inside a loop
+                // that reads from storage (unbounded iteration over storage array).
+                let confidence = if state.inside_loop && !state.storage_reads.is_empty() {
+                    Confidence::Medium
+                } else {
+                    Confidence::Low
+                };
                 vec![make_finding(
                     SeVulnKind::DosBlockGasLimit,
                     Severity::Medium,
-                    Confidence::Low,
+                    confidence,
                     "Loop may iterate over an unbounded storage array, hitting block gas limit",
                     *span,
                     state,

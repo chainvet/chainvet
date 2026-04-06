@@ -32,7 +32,7 @@ impl Confidence {
 /// Vulnerability kinds that SE detectors check.
 ///
 /// One variant per distinct vulnerability pattern from the taxonomy.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
 pub enum SeVulnKind {
     // Arithmetic
     IntegerOverflow,

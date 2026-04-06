@@ -2,6 +2,9 @@ pub mod executor;
 pub mod explorer;
 pub mod scheduler;
 
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::hash::{Hash, Hasher};
 use std::time::Instant;
 
 use z3::ast::Bool;
@@ -29,11 +32,58 @@ pub struct EngineResult {
     pub states_explored: usize,
 }
 
+/// Cache for solver feasibility probes.
+///
+/// Uses Z3 structural hashing of Bool AST nodes to fingerprint constraint sets.
+/// Avoids redundant SAT queries when the same constraint combination is probed
+/// multiple times (common with loop unrolling and diamond-shaped CFGs).
+struct SolverCache {
+    cache: RefCell<HashMap<u64, bool>>,
+}
+
+impl SolverCache {
+    fn new() -> Self {
+        Self {
+            cache: RefCell::new(HashMap::new()),
+        }
+    }
+
+    /// Compute a fingerprint for a set of Bool assumptions.
+    fn fingerprint(assumptions: &[Bool]) -> u64 {
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        assumptions.len().hash(&mut hasher);
+        for a in assumptions {
+            a.hash(&mut hasher);
+        }
+        hasher.finish()
+    }
+
+    /// Probe with caching: returns cached result or queries the solver.
+    fn probe(&self, solver: &dyn SmtSolver, base: &[Bool], extra: &Bool) -> bool {
+        let mut assumptions = base.to_vec();
+        assumptions.push(extra.clone());
+        let key = Self::fingerprint(&assumptions);
+
+        if let Some(&result) = self.cache.borrow().get(&key) {
+            return result;
+        }
+
+        let result = solver.check_sat_assuming(&assumptions) == SatResult::Sat;
+        self.cache.borrow_mut().insert(key, result);
+        result
+    }
+}
+
 /// Shared immutable parameters threaded through the exploration loop.
 struct RunContext<'a> {
     solver: &'a dyn SmtSolver,
     layout: &'a StorageLayout,
     contract_name: &'a str,
+    #[allow(dead_code)] // Used by callback simulation (Item 1), arithmetic (Item 3), authority profiling (Item 5)
+    ast: &'a NormalizedAst,
+    #[allow(dead_code)] // Used by callback simulation (Item 1) for cross-function CFG lookup
+    all_cfgs: &'a [CfgFunction],
+    solver_cache: SolverCache,
     max_path_depth: u32,
     max_instructions: u32,
     max_loop_unrolling: u32,
@@ -68,10 +118,12 @@ struct ForkSink<'a> {
 /// queries the solver for feasibility before exploring each fork.
 pub fn run_engine(
     cfgs: &[CfgFunction],
-    _ast: &NormalizedAst,
+    ast: &NormalizedAst,
     config: SeConfig,
     solver: &dyn SmtSolver,
 ) -> EngineResult {
+    use std::collections::HashSet;
+
     let total_blocks: usize = cfgs.iter().map(|f| f.blocks.len()).sum();
     let mut coverage = CoverageTracker::new(total_blocks, cfgs.len());
     let mut findings: Vec<SeFinding> = Vec::new();
@@ -90,6 +142,9 @@ pub fn run_engine(
         solver,
         layout: &storage_layout,
         contract_name: &contract_name,
+        ast,
+        all_cfgs: cfgs,
+        solver_cache: SolverCache::new(),
         max_path_depth, max_instructions, max_loop_unrolling,
         max_states, total_timeout_s, start_time: Instant::now(),
     };
@@ -107,6 +162,17 @@ pub fn run_engine(
         };
         explore_function(cfg_func, cfgs, &mut detectors, &mut id_gen, &mut acc, &run_ctx, exploration_strategy);
     }
+
+    // Global dedup: keep first (highest-confidence) finding per (function, kind, span).
+    let default_span = crate::norm::Span::default();
+    let mut seen: HashSet<(u32, crate::symbolic::results::finding::SeVulnKind, crate::norm::Span)> = HashSet::new();
+    findings.retain(|f| {
+        // Don't dedup findings with fallback/zero spans — they'd all collide.
+        if f.span == default_span {
+            return true;
+        }
+        seen.insert((f.function_id.unwrap_or(0), f.kind, f.span))
+    });
 
     EngineResult { findings, coverage: coverage.report(), states_explored }
 }
@@ -139,13 +205,21 @@ fn explore_function(
         predecessor_block: None,
         loop_counts: std::collections::HashMap::new(),
     });
-    run_worklist(&mut *strategy, cfg_func, detectors, acc, run_ctx);
+    let findings_start = acc.findings.len();
+    run_worklist(&mut *strategy, cfg_func, all_cfgs, detectors, acc, run_ctx);
+    // Stamp function_id on all findings emitted during this function's exploration.
+    for f in acc.findings[findings_start..].iter_mut() {
+        if f.function_id.is_none() {
+            f.function_id = Some(cfg_func.id);
+        }
+    }
 }
 
 /// Drive the worklist for one function until it is empty or a limit is hit.
 fn run_worklist(
     strategy: &mut dyn ExplorationStrategy,
     cfg_func: &CfgFunction,
+    all_cfgs: &[CfgFunction],
     detectors: &mut DetectorRegistry,
     acc: &mut RunAccumulators<'_>,
     run_ctx: &RunContext<'_>,
@@ -161,15 +235,21 @@ fn run_worklist(
         if entry.state.instruction_count >= run_ctx.max_instructions { continue; }
 
         *acc.states_explored += 1;
-        acc.coverage.record_block(cfg_func.id, entry.state.current_block);
 
-        let block = match cfg_func.blocks.iter().find(|b| b.id == entry.state.current_block) {
+        // Look up the CFG for this entry's function (supports cross-function callbacks).
+        let current_cfg = all_cfgs
+            .iter()
+            .find(|c| c.id == entry.cfg_func_id)
+            .unwrap_or(cfg_func);
+        acc.coverage.record_block(current_cfg.id, entry.state.current_block);
+
+        let block = match current_cfg.blocks.iter().find(|b| b.id == entry.state.current_block) {
             Some(b) => b,
             None => continue,
         };
 
         let outcome = match execute_block(
-            &mut entry.state, block, cfg_func, detectors,
+            &mut entry.state, block, current_cfg, detectors,
             run_ctx.solver, acc.keccak_ctx, run_ctx.layout, run_ctx.contract_name, acc.findings,
         ) {
             Ok(o) => o,
@@ -187,6 +267,29 @@ fn run_worklist(
         if matches!(outcome, BlockOutcome::Return { .. } | BlockOutcome::Revert { .. } | BlockOutcome::Stop) {
             let fallback_span = crate::norm::Span { file: 0, start: 0, end: 0 };
             flush_pending_calls(&mut entry.state, acc.findings, fallback_span);
+        }
+
+        // Callback simulation: if an external call was seen and we're not already
+        // in a callback, fork a state that re-enters the function from the top
+        // (simulating a re-entrant call into the fallback).
+        if let Some(call_span) = entry.state.last_external_call_span.take() {
+            let cb_depth = entry.state.callback_frame.as_ref().map_or(0, |f| f.depth);
+            if cb_depth < 1 {
+                let mut cb_state = entry.state.clone();
+                cb_state.callback_frame = Some(crate::symbolic::state::CallbackFrame {
+                    pre_call_storage: entry.state.storage.clone(),
+                    call_span,
+                    depth: cb_depth + 1,
+                });
+                cb_state.current_block = current_cfg.blocks[0].id;
+                cb_state.path_depth += 1;
+                strategy.push(WorklistEntry {
+                    state: cb_state,
+                    cfg_func_id: current_cfg.id,
+                    predecessor_block: None,
+                    loop_counts: std::collections::HashMap::new(),
+                });
+            }
         }
 
         let mut sink = ForkSink {
@@ -213,12 +316,12 @@ fn dispatch_outcome(
             sink.strategy.push(next);
         }
         BlockOutcome::Branch { cond, true_block, false_block } => {
-            handle_branch(&entry, cond, true_block, false_block, run_ctx.solver, sink);
+            handle_branch(&entry, cond, true_block, false_block, run_ctx, sink);
         }
         BlockOutcome::LoopHeader { cond, body_block, exit_block } => {
             handle_loop_header(
                 entry, cond, body_block, exit_block,
-                run_ctx.solver, sink, run_ctx.max_loop_unrolling,
+                run_ctx, sink,
             );
         }
         BlockOutcome::Return { .. } | BlockOutcome::Revert { .. } | BlockOutcome::Stop => {}
@@ -231,11 +334,11 @@ fn handle_branch(
     cond: Bool,
     true_block: BlockId,
     false_block: BlockId,
-    solver: &dyn SmtSolver,
+    run_ctx: &RunContext<'_>,
     sink: &mut ForkSink<'_>,
 ) {
     let base = collect_base_constraints(&entry.state);
-    if probe_branch(solver, &base, &cond) {
+    if run_ctx.solver_cache.probe(run_ctx.solver, &base, &cond) {
         sink.coverage.record_edge(sink.from_block, true_block);
         let mut fork = entry.fork_to(true_block);
         fork.state.path_constraints.add(
@@ -245,7 +348,7 @@ fn handle_branch(
         fork.state.path_depth += 1;
         sink.strategy.push(fork);
     }
-    if probe_branch(solver, &base, &cond.not()) {
+    if run_ctx.solver_cache.probe(run_ctx.solver, &base, &cond.not()) {
         sink.coverage.record_edge(sink.from_block, false_block);
         let mut fork = entry.fork_to(false_block);
         fork.state.path_constraints.add(
@@ -263,16 +366,15 @@ fn handle_loop_header(
     cond: Option<Bool>,
     body_block: BlockId,
     exit_block: Option<BlockId>,
-    solver: &dyn SmtSolver,
+    run_ctx: &RunContext<'_>,
     sink: &mut ForkSink<'_>,
-    max_loop_unrolling: u32,
 ) {
     let loop_count = entry.loop_counts.get(&body_block).copied().unwrap_or(0);
     let base = collect_base_constraints(&entry.state);
-    if loop_count >= max_loop_unrolling {
-        push_loop_exit_fork(entry, &cond, exit_block, solver, &base, sink);
+    if loop_count >= run_ctx.max_loop_unrolling {
+        push_loop_exit_fork(entry, &cond, exit_block, run_ctx, &base, sink);
     } else {
-        push_loop_forks(entry, cond, body_block, exit_block, solver, &base, sink);
+        push_loop_forks(entry, cond, body_block, exit_block, run_ctx, &base, sink);
     }
 }
 
@@ -281,14 +383,14 @@ fn push_loop_exit_fork(
     entry: WorklistEntry,
     cond: &Option<Bool>,
     exit_block: Option<BlockId>,
-    solver: &dyn SmtSolver,
+    run_ctx: &RunContext<'_>,
     base: &[Bool],
     sink: &mut ForkSink<'_>,
 ) {
     if let Some(exit) = exit_block {
         let exit_cond = cond.as_ref().map(|c| c.not());
         let feasible = match &exit_cond {
-            Some(ec) => probe_branch(solver, base, ec),
+            Some(ec) => run_ctx.solver_cache.probe(run_ctx.solver, base, ec),
             None => true,
         };
         if feasible {
@@ -309,12 +411,12 @@ fn push_loop_forks(
     cond: Option<Bool>,
     body_block: BlockId,
     exit_block: Option<BlockId>,
-    solver: &dyn SmtSolver,
+    run_ctx: &RunContext<'_>,
     base: &[Bool],
     sink: &mut ForkSink<'_>,
 ) {
     let body_feasible = match &cond {
-        Some(c) => probe_branch(solver, base, c),
+        Some(c) => run_ctx.solver_cache.probe(run_ctx.solver, base, c),
         None => true,
     };
     if body_feasible {
@@ -325,11 +427,12 @@ fn push_loop_forks(
         }
         *fork.loop_counts.entry(body_block).or_insert(0) += 1;
         fork.state.path_depth += 1;
+        fork.state.inside_loop = true;
         sink.strategy.push(fork);
     }
     if let Some(exit) = exit_block {
         let exit_feasible = match &cond {
-            Some(c) => probe_branch(solver, base, &c.not()),
+            Some(c) => run_ctx.solver_cache.probe(run_ctx.solver, base, &c.not()),
             None => false,
         };
         if exit_feasible {
@@ -339,6 +442,7 @@ fn push_loop_forks(
                 fork.state.path_constraints.add(c.not(), format!("loop exit → block {exit}"));
             }
             fork.state.path_depth += 1;
+            fork.state.inside_loop = false;
             sink.strategy.push(fork);
         }
     }
@@ -347,15 +451,6 @@ fn push_loop_forks(
 /// Collect current path constraints as a flat `Vec<Bool>` for SAT assumptions.
 fn collect_base_constraints(state: &SymbolicState) -> Vec<Bool> {
     state.path_constraints.constraints().iter().map(|(c, _)| c.clone()).collect()
-}
-
-/// Probe whether `extra` is satisfiable given the base path constraints.
-///
-/// Uses `check_sat_assuming` to avoid permanently asserting the probe condition.
-fn probe_branch(solver: &dyn SmtSolver, base: &[Bool], extra: &Bool) -> bool {
-    let mut assumptions = base.to_vec();
-    assumptions.push(extra.clone());
-    solver.check_sat_assuming(&assumptions) == SatResult::Sat
 }
 
 #[cfg(test)]

@@ -126,12 +126,18 @@ pub fn execute_block(
                 }
             }
 
-            IrInstr::Binary { dest, op, lhs, rhs, .. } => {
+            IrInstr::Binary { dest, op, lhs, rhs, span } => {
                 let lv = eval_value(state, lhs, keccak_ctx);
                 let rv = eval_value(state, rhs, keccak_ctx);
                 let width = lv.width().max(rv.width()).max(256);
                 let lbv = lv.to_bv(width).unwrap_or_else(|_| BV::from_u64(0, width));
                 let rbv = rv.to_bv(width).unwrap_or_else(|_| BV::from_u64(0, width));
+
+                // Solver-confirmed arithmetic overflow/underflow detection.
+                // Deliberate deviation from detector pattern: overflow checks need
+                // the intermediate BV operands that detectors can't access.
+                check_arithmetic_overflow(state, op, &lbv, &rbv, solver, findings, *span);
+
                 let result = bitvec::apply_binary_op(op, &lbv, &rbv, width)
                     .unwrap_or_else(|_| zero_bv(width));
                 state.variables.set(dest.clone(), result);
@@ -181,6 +187,14 @@ pub fn execute_block(
                 // Seed origin for well-known environment loads.
                 if let Some(origin) = place_origin(src) {
                     state.set_origin(dest.clone(), origin);
+                }
+                // Track storage reads for callback stale-read evidence and TOD detection.
+                if is_storage_place(src) {
+                    let slot_key = place_slot_key(src);
+                    state.storage_reads.insert(slot_key);
+                    if is_order_sensitive_place(src) {
+                        state.saw_order_sensitive_storage_read = true;
+                    }
                 }
             }
 
@@ -260,6 +274,11 @@ fn handle_control(
             // If the condition is a pending call return, mark it as checked.
             if let Some(v) = value_var(cond) {
                 state.clear_pending_by_var(v);
+                // Track sender authorization checks in branch conditions.
+                let name = var_name(v).to_ascii_lowercase();
+                if name.contains("sender") || name.contains("owner") || name.contains("onlyowner") {
+                    state.sender_checked = true;
+                }
             }
             let cond_sv = eval_value(state, cond, keccak_ctx);
             // Fallback: fresh unconstrained Bool keeps both branches reachable.
@@ -375,6 +394,10 @@ fn handle_call(
         _ => {
             let cname = callee_name_str(callee).unwrap_or_default();
             let low_level = is_low_level_call_name(&cname);
+            // Signal external call for callback simulation in the engine loop.
+            if low_level && state.callback_frame.is_none() {
+                state.last_external_call_span = Some(span);
+            }
             // Unknown/external call: havoc all destination variables.
             for (i, d) in dest.iter().enumerate() {
                 let name = format!("call_ret_{}_{}", var_name(d), i);
@@ -406,9 +429,20 @@ fn handle_require(
         if let Some(v) = value_var(cond_val) {
             state.clear_pending_by_var(v);
         }
+        // Track sender authorization checks.
+        if let Some(v) = value_var(cond_val) {
+            let name = var_name(v).to_ascii_lowercase();
+            if name.contains("sender") || name.contains("owner") || name.contains("onlyowner") {
+                state.sender_checked = true;
+            }
+        }
         let sv = eval_value(state, cond_val, keccak_ctx);
         if let Ok(b) = sv.to_bool() {
-            state.path_constraints.add(b, format!("require at {:?}", span));
+            let desc = format!("require at {:?}", span);
+            if desc.to_ascii_lowercase().contains("sender") || desc.to_ascii_lowercase().contains("owner") {
+                state.sender_checked = true;
+            }
+            state.path_constraints.add(b, desc);
         }
     }
 }
@@ -472,6 +506,76 @@ fn check_assert_violation(
             state_id: state.id,
             path_depth: state.path_depth,
         });
+    }
+}
+
+/// Solver-confirmed arithmetic overflow/underflow detection.
+///
+/// For addition: checks if `lhs + rhs` wraps (result < lhs).
+/// For subtraction: checks if `rhs > lhs` (unsigned underflow).
+/// For multiplication: checks if `lhs * rhs` wraps by dividing back.
+///
+/// Uses `check_sat_assuming` to avoid polluting the solver state.
+fn check_arithmetic_overflow(
+    state: &SymbolicState,
+    op: &str,
+    lbv: &BV,
+    rbv: &BV,
+    solver: &dyn SmtSolver,
+    findings: &mut Vec<SeFinding>,
+    span: Span,
+) {
+    let overflow_cond = match op {
+        "+" => {
+            // Unsigned wrap: (lhs + rhs) < lhs
+            let sum = lbv.bvadd(rbv);
+            Some((sum.bvult(lbv), SeVulnKind::IntegerOverflow, "addition overflow"))
+        }
+        "-" => {
+            // Unsigned underflow: rhs > lhs
+            Some((rbv.bvugt(lbv), SeVulnKind::IntegerUnderflow, "subtraction underflow"))
+        }
+        "*" => {
+            // Wrap detection: lhs != 0 && (lhs * rhs) / lhs != rhs
+            let zero = BV::from_u64(0, lbv.get_size());
+            let lhs_nonzero = lbv.eq(&zero).not();
+            let product = lbv.bvmul(rbv);
+            let div_back = product.bvudiv(lbv);
+            let wraps = div_back.eq(rbv).not();
+            Some((Bool::and(&[&lhs_nonzero, &wraps]), SeVulnKind::IntegerOverflow, "multiplication overflow"))
+        }
+        _ => None,
+    };
+
+    if let Some((cond, kind, msg)) = overflow_cond {
+        let mut assumptions: Vec<Bool> = state
+            .path_constraints
+            .constraints()
+            .iter()
+            .map(|(c, _)| c.clone())
+            .collect();
+        assumptions.push(cond);
+
+        if solver.check_sat_assuming(&assumptions) == SatResult::Sat {
+            let witness = extract_witness(solver, state);
+            findings.push(SeFinding {
+                kind,
+                severity: Severity::High,
+                confidence: Confidence::High,
+                message: format!("Solver-confirmed {msg}: operands can produce a wrapped result"),
+                span,
+                function_id: None,
+                path_constraints: state
+                    .path_constraints
+                    .descriptions()
+                    .iter()
+                    .map(|s| s.to_string())
+                    .collect(),
+                witness,
+                state_id: state.id,
+                path_depth: state.path_depth,
+            });
+        }
     }
 }
 
@@ -891,6 +995,35 @@ pub fn is_low_level_call_name(name: &str) -> bool {
         || lower.ends_with(".transfer")
         || lower.ends_with(".delegatecall")
         || lower.ends_with(".staticcall")
+}
+
+/// Returns true if the place refers to storage.
+fn is_storage_place(place: &IrPlace) -> bool {
+    match place {
+        IrPlace::Var { class, .. } => *class == PlaceClass::Storage,
+        IrPlace::Member { class, .. } => *class == PlaceClass::Storage,
+        IrPlace::Index { class, .. } => *class == PlaceClass::Storage,
+    }
+}
+
+/// Build a string key for a storage place (for tracking reads/writes).
+fn place_slot_key(place: &IrPlace) -> String {
+    match place {
+        IrPlace::Var { var, .. } => var_name(var),
+        IrPlace::Member { field, root, .. } => {
+            if let Some(r) = root { format!("{r}.{field}") } else { field.clone() }
+        }
+        IrPlace::Index { root, .. } => root.as_deref().unwrap_or("idx").to_string(),
+    }
+}
+
+/// Returns true if the storage place name suggests an order-sensitive value
+/// (price, balance, allowance, rate, etc.) used for TOD/front-running detection.
+fn is_order_sensitive_place(place: &IrPlace) -> bool {
+    let key = place_slot_key(place).to_ascii_lowercase();
+    key.contains("balance") || key.contains("price") || key.contains("allowance")
+        || key.contains("rate") || key.contains("amount") || key.contains("reward")
+        || key.contains("supply") || key.contains("total")
 }
 
 /// Flush any remaining pending (unchecked) calls from the state, producing findings.

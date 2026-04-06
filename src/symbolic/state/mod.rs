@@ -47,6 +47,22 @@ pub struct PendingCallInfo {
     pub span: Span,
 }
 
+/// Snapshot taken before entering a callback (fallback function).
+///
+/// When the engine forks into a callee's fallback, the pre-call state is
+/// stored here so that after the callback completes, storage mutations
+/// made during the callback can be compared against the pre-call snapshot
+/// to detect re-entrant overwrites.
+#[derive(Clone)]
+pub struct CallbackFrame {
+    /// Storage state before the external call was made.
+    pub pre_call_storage: SymbolicStorage,
+    /// The span of the external call that triggered the callback.
+    pub call_span: Span,
+    /// Nesting depth — prevents unbounded callback chains.
+    pub depth: u32,
+}
+
 /// Unique identifier for a symbolic state in the exploration tree.
 pub type StateId = u64;
 
@@ -104,6 +120,20 @@ pub struct SymbolicState {
     pub origins: HashMap<IrVar, HashSet<ValueOrigin>>,
     /// Low-level calls whose return values have not been checked yet.
     pub pending_calls: HashMap<IrVar, PendingCallInfo>,
+    /// Whether msg.sender or owner appeared in a branch condition or require on this path.
+    pub sender_checked: bool,
+    /// Whether the current execution point is inside a loop body.
+    pub inside_loop: bool,
+    /// Storage slot keys read on this path (for stale-read evidence in callback simulation).
+    pub storage_reads: HashSet<String>,
+    /// Set when a load from an order-sensitive storage place (price, balance, allowance) occurs.
+    pub saw_order_sensitive_storage_read: bool,
+    /// Present when this state is executing inside a callback (fallback function).
+    pub callback_frame: Option<CallbackFrame>,
+    /// Set by the executor when an external call is encountered in the current block.
+    /// The engine reads and clears this after each block to decide whether to fork
+    /// a callback simulation path.
+    pub last_external_call_span: Option<Span>,
 }
 
 impl SymbolicState {
@@ -126,6 +156,12 @@ impl SymbolicState {
             instruction_count: 0,
             origins: HashMap::new(),
             pending_calls: HashMap::new(),
+            sender_checked: false,
+            inside_loop: false,
+            storage_reads: HashSet::new(),
+            saw_order_sensitive_storage_read: false,
+            callback_frame: None,
+            last_external_call_span: None,
         }
     }
 

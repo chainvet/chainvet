@@ -40,6 +40,10 @@ impl AccessControlDetector {
     }
 
     fn has_sender_restriction(state: &SymbolicState) -> bool {
+        // Use the engine-tracked flag first (set by require/if on sender-related vars).
+        if state.sender_checked {
+            return true;
+        }
         state.path_constraints.descriptions().iter().any(|d| {
             d.contains("msg.sender")
                 || d.contains("msg_sender")
