@@ -1,0 +1,60 @@
+[
+  {
+    "engine": "fuzzing",
+    "finding_type": "unprotected-selfdestruct",
+    "severity": "high",
+    "message": "Unprotected selfdestruct in function 0 — anyone can destroy the contract",
+    "location": {
+      "file": null,
+      "start": null,
+      "end": null,
+      "pc": null,
+      "function_id": 0,
+      "function_name": "sudicideAnyone"
+    },
+    "reproduction": {
+      "id": "repro-epoch1-0",
+      "txs": [
+        {
+          "function_id": 0,
+          "selector": null,
+          "calldata": null,
+          "args": [],
+          "sender": "2",
+          "value": "0",
+          "env": {
+            "block_timestamp": 1700000000,
+            "block_number": 20000000
+          }
+        }
+      ],
+      "state_snapshot_id": null,
+      "score": 3.5
+    },
+    "signature": "fuzzing:runtime:executor:unprotected-selfdestruct:none:none:none:none:0:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "executor",
+    "metadata": {
+      "confidence": "high"
+    }
+  },
+  {
+    "engine": "static",
+    "finding_type": "unprotected-selfdestruct",
+    "severity": "high",
+    "message": "unprotected selfdestruct — no access control modifier on containing function",
+    "location": {
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/simple_suicide.sol",
+      "start": 333,
+      "end": 357,
+      "pc": null,
+      "function_id": 0,
+      "function_name": "sudicideAnyone"
+    },
+    "reproduction": null,
+    "signature": "static:runtime:rule:unprotected-selfdestruct:/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/simple_suicide.sol:333:357:none:0:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "rule",
+    "metadata": {}
+  }
+]

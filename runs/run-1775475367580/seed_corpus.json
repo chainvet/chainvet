@@ -1,0 +1,211 @@
+[
+  {
+    "id": "bootstrap-fn-0",
+    "txs": [
+      {
+        "function_id": 0,
+        "selector": null,
+        "calldata": null,
+        "args": [],
+        "sender": "0",
+        "value": "0",
+        "env": {
+          "block_timestamp": 1700000000,
+          "block_number": 1000000
+        }
+      }
+    ],
+    "state_snapshot_id": null,
+    "score": 1.0
+  },
+  {
+    "id": "bootstrap-fn-1",
+    "txs": [
+      {
+        "function_id": 1,
+        "selector": null,
+        "calldata": null,
+        "args": [],
+        "sender": "0",
+        "value": "0",
+        "env": {
+          "block_timestamp": 1700000000,
+          "block_number": 1000000
+        }
+      }
+    ],
+    "state_snapshot_id": null,
+    "score": 1.0
+  },
+  {
+    "id": "bootstrap-fn-2",
+    "txs": [
+      {
+        "function_id": 2,
+        "selector": null,
+        "calldata": null,
+        "args": [],
+        "sender": "0",
+        "value": "0",
+        "env": {
+          "block_timestamp": 1700000000,
+          "block_number": 1000000
+        }
+      }
+    ],
+    "state_snapshot_id": null,
+    "score": 1.0
+  },
+  {
+    "id": "bootstrap-fn-3",
+    "txs": [
+      {
+        "function_id": 3,
+        "selector": null,
+        "calldata": null,
+        "args": [],
+        "sender": "0",
+        "value": "0",
+        "env": {
+          "block_timestamp": 1700000000,
+          "block_number": 1000000
+        }
+      }
+    ],
+    "state_snapshot_id": null,
+    "score": 1.0
+  },
+  {
+    "id": "se-solve-g-1-0-0-1-1",
+    "txs": [
+      {
+        "function_id": 0,
+        "selector": null,
+        "calldata": null,
+        "args": [],
+        "sender": "0",
+        "value": "2",
+        "env": {
+          "block_timestamp": 0,
+          "block_number": 0
+        }
+      }
+    ],
+    "state_snapshot_id": null,
+    "score": 6.6
+  },
+  {
+    "id": "se-solve-g-1-0-0-1-2",
+    "txs": [
+      {
+        "function_id": 0,
+        "selector": null,
+        "calldata": null,
+        "args": [],
+        "sender": "3",
+        "value": "0",
+        "env": {
+          "block_timestamp": 0,
+          "block_number": 0
+        }
+      }
+    ],
+    "state_snapshot_id": null,
+    "score": 6.6
+  },
+  {
+    "id": "se-solve-g-1-0-0-1-3",
+    "txs": [
+      {
+        "function_id": 0,
+        "selector": null,
+        "calldata": null,
+        "args": [],
+        "sender": "4",
+        "value": "5",
+        "env": {
+          "block_timestamp": 0,
+          "block_number": 0
+        }
+      }
+    ],
+    "state_snapshot_id": null,
+    "score": 6.6
+  },
+  {
+    "id": "se-solve-g-1-0-0-1-4",
+    "txs": [
+      {
+        "function_id": 0,
+        "selector": null,
+        "calldata": null,
+        "args": [],
+        "sender": "0",
+        "value": "6",
+        "env": {
+          "block_timestamp": 0,
+          "block_number": 0
+        }
+      }
+    ],
+    "state_snapshot_id": null,
+    "score": 6.6
+  },
+  {
+    "id": "se-solve-g-1-0-0-1-5",
+    "txs": [
+      {
+        "function_id": 0,
+        "selector": null,
+        "calldata": null,
+        "args": [],
+        "sender": "7",
+        "value": "8",
+        "env": {
+          "block_timestamp": 0,
+          "block_number": 0
+        }
+      }
+    ],
+    "state_snapshot_id": null,
+    "score": 6.6
+  },
+  {
+    "id": "se-solve-g-1-0-0-1-6",
+    "txs": [
+      {
+        "function_id": 0,
+        "selector": null,
+        "calldata": null,
+        "args": [],
+        "sender": "9",
+        "value": "10",
+        "env": {
+          "block_timestamp": 0,
+          "block_number": 0
+        }
+      }
+    ],
+    "state_snapshot_id": null,
+    "score": 6.6
+  },
+  {
+    "id": "se-solve-g-1-0-0-1-7",
+    "txs": [
+      {
+        "function_id": 0,
+        "selector": null,
+        "calldata": null,
+        "args": [],
+        "sender": "11",
+        "value": "12",
+        "env": {
+          "block_timestamp": 0,
+          "block_number": 0
+        }
+      }
+    ],
+    "state_snapshot_id": null,
+    "score": 6.6
+  }
+]

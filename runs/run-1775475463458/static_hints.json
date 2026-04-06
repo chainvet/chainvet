@@ -1,0 +1,357 @@
+{
+  "function_whitelist": [
+    1,
+    2,
+    3
+  ],
+  "function_blacklist": [],
+  "hotspots": [
+    {
+      "function_id": 2,
+      "function_name": "resetInvestment",
+      "score": 17.8,
+      "reasons": [
+        "storage_writes=3",
+        "external_calls=2",
+        "low_level_calls=2"
+      ]
+    },
+    {
+      "function_id": 1,
+      "function_name": "invest",
+      "score": 6.9,
+      "reasons": [
+        "storage_writes=3",
+        "uses_source=true"
+      ]
+    },
+    {
+      "function_id": 3,
+      "function_name": "attack",
+      "score": 6.8,
+      "reasons": [
+        "external_calls=1",
+        "unresolved_calls=2"
+      ]
+    },
+    {
+      "function_id": 0,
+      "function_name": "Governmental",
+      "score": 3.3,
+      "reasons": [
+        "storage_writes=1",
+        "uses_source=true"
+      ]
+    }
+  ],
+  "sinks": [
+    {
+      "function_id": 3,
+      "function_name": "attack",
+      "sink_kind": "missing-input-validation",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/time_manipulation/governmental_survey.sol",
+      "start": 964,
+      "end": 1170
+    },
+    {
+      "function_id": 2,
+      "function_name": "resetInvestment",
+      "sink_kind": "unprotected-ether-withdrawal",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/time_manipulation/governmental_survey.sol",
+      "start": 680,
+      "end": 937
+    },
+    {
+      "function_id": 2,
+      "function_name": "resetInvestment",
+      "sink_kind": "unused-return-value",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/time_manipulation/governmental_survey.sol",
+      "start": 789,
+      "end": 815
+    },
+    {
+      "function_id": 2,
+      "function_name": "resetInvestment",
+      "sink_kind": "unused-return-value",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/time_manipulation/governmental_survey.sol",
+      "start": 821,
+      "end": 853
+    },
+    {
+      "function_id": 2,
+      "function_name": "resetInvestment",
+      "sink_kind": "integer-overflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/time_manipulation/governmental_survey.sol",
+      "start": 735,
+      "end": 769
+    },
+    {
+      "function_id": 3,
+      "function_name": "attack",
+      "sink_kind": "integer-overflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/time_manipulation/governmental_survey.sol",
+      "start": 1088,
+      "end": 1095
+    },
+    {
+      "function_id": 2,
+      "function_name": "resetInvestment",
+      "sink_kind": "integer-underflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/time_manipulation/governmental_survey.sol",
+      "start": 832,
+      "end": 852
+    },
+    {
+      "function_id": 3,
+      "function_name": "attack",
+      "sink_kind": "integer-underflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/time_manipulation/governmental_survey.sol",
+      "start": 1066,
+      "end": 1078
+    },
+    {
+      "function_id": 1,
+      "function_name": "invest",
+      "sink_kind": "dangerous-block-timestamp",
+      "severity": "low",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/time_manipulation/governmental_survey.sol",
+      "start": 630,
+      "end": 671
+    },
+    {
+      "function_id": 2,
+      "function_name": "resetInvestment",
+      "sink_kind": "dangerous-block-timestamp",
+      "severity": "low",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/time_manipulation/governmental_survey.sol",
+      "start": 713,
+      "end": 782
+    },
+    {
+      "function_id": 2,
+      "function_name": "resetInvestment",
+      "sink_kind": "transaction-order-dependency",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/time_manipulation/governmental_survey.sol",
+      "start": 680,
+      "end": 937
+    },
+    {
+      "function_id": 2,
+      "function_name": "resetInvestment",
+      "sink_kind": "hardcoded-gas-transfer",
+      "severity": "low",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/time_manipulation/governmental_survey.sol",
+      "start": 789,
+      "end": 815
+    },
+    {
+      "function_id": 2,
+      "function_name": "resetInvestment",
+      "sink_kind": "hardcoded-gas-transfer",
+      "severity": "low",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/time_manipulation/governmental_survey.sol",
+      "start": 821,
+      "end": 853
+    },
+    {
+      "function_id": 2,
+      "function_name": "resetInvestment",
+      "sink_kind": "reentrancy-transfer",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/time_manipulation/governmental_survey.sol",
+      "start": 789,
+      "end": 815
+    },
+    {
+      "function_id": 2,
+      "function_name": "resetInvestment",
+      "sink_kind": "reentrancy-transfer",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/time_manipulation/governmental_survey.sol",
+      "start": 821,
+      "end": 853
+    },
+    {
+      "function_id": 2,
+      "function_name": "resetInvestment",
+      "sink_kind": "reentrancy-same-effect",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/time_manipulation/governmental_survey.sol",
+      "start": 789,
+      "end": 815
+    },
+    {
+      "function_id": 2,
+      "function_name": "resetInvestment",
+      "sink_kind": "reentrancy-same-effect",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/time_manipulation/governmental_survey.sol",
+      "start": 821,
+      "end": 853
+    },
+    {
+      "function_id": 2,
+      "function_name": "resetInvestment",
+      "sink_kind": "reentrancy-eth-transfer",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/time_manipulation/governmental_survey.sol",
+      "start": 789,
+      "end": 815
+    }
+  ],
+  "callgraph": {
+    "total_sites": 6,
+    "resolved": 1,
+    "ambiguous": 0,
+    "external": 3,
+    "unknown": 2
+  },
+  "taint": {
+    "source_functions": 2,
+    "tainted_functions": 3,
+    "tainted_vars": 3,
+    "tainted_calls": 0
+  },
+  "storage_rw_map": [
+    {
+      "function_id": 0,
+      "function_name": "Governmental",
+      "reads": [],
+      "writes": [
+        "owner"
+      ]
+    },
+    {
+      "function_id": 1,
+      "function_name": "invest",
+      "reads": [
+        "jackpot"
+      ],
+      "writes": [
+        "jackpot",
+        "lastInvestmentTimestamp",
+        "lastInvestor"
+      ]
+    },
+    {
+      "function_id": 2,
+      "function_name": "resetInvestment",
+      "reads": [
+        "ONE_MINUTE",
+        "balance",
+        "jackpot",
+        "lastInvestmentTimestamp",
+        "lastInvestor",
+        "owner"
+      ],
+      "writes": [
+        "jackpot",
+        "lastInvestmentTimestamp",
+        "lastInvestor"
+      ]
+    },
+    {
+      "function_id": 3,
+      "function_name": "attack",
+      "reads": [
+        "attack"
+      ],
+      "writes": []
+    }
+  ],
+  "arg_domains": [
+    {
+      "function_id": 3,
+      "function_name": "attack",
+      "param_index": 0,
+      "param_name": "target",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        10,
+        100,
+        1000,
+        1022,
+        1023,
+        1024,
+        1999,
+        2000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 3,
+      "function_name": "attack",
+      "param_index": 1,
+      "param_name": "count",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        10,
+        100,
+        1000,
+        1022,
+        1023,
+        1024,
+        1999,
+        2000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    }
+  ],
+  "address_roles": [
+    {
+      "role": "owner",
+      "indices": [
+        0
+      ],
+      "evidence": [
+        "state_var:owner"
+      ],
+      "target_functions": []
+    },
+    {
+      "role": "attacker",
+      "indices": [
+        1
+      ],
+      "evidence": [
+        "adversarial-role"
+      ],
+      "target_functions": [
+        1,
+        2,
+        3
+      ]
+    },
+    {
+      "role": "user",
+      "indices": [
+        2,
+        3,
+        4
+      ],
+      "evidence": [
+        "default-user-pool"
+      ],
+      "target_functions": [
+        1,
+        2,
+        3
+      ]
+    }
+  ]
+}

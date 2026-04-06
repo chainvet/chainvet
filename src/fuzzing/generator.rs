@@ -338,6 +338,20 @@ pub fn generate_initial_population_with_dict(
         .collect();
     let target_population_size = config.population_size.max(callable_functions.len());
     let mut population = Vec::with_capacity(target_population_size);
+    let abi_function_ids = abi.functions.iter().map(|func| func.id).collect::<std::collections::HashSet<_>>();
+
+    for seed in &config.seed_corpus {
+        if seed.transactions.is_empty() {
+            continue;
+        }
+        if seed
+            .transactions
+            .iter()
+            .all(|tx| abi_function_ids.contains(&tx.function_id))
+        {
+            population.push(seed.clone());
+        }
+    }
 
     // Deterministic bootstrap to avoid empty/low-coverage starts on legacy benchmarks.
     // Guarantee at least one initial seed per callable function before using the
@@ -508,6 +522,7 @@ mod tests {
             address_pool_size: 3,
             seed: Some(42),
             max_duration_ms: None,
+            ..Default::default()
         };
         let pop = generate_initial_population(&abi, &deps, &config);
         assert!(!pop.is_empty());
@@ -639,5 +654,36 @@ mod tests {
         assert!(seed.transactions.len() >= 2);
         assert_eq!(seed.transactions[0].function_id, 0);
         assert_eq!(seed.transactions[1].function_id, 1);
+    }
+
+    #[test]
+    fn provided_seed_corpus_is_included_in_initial_population() {
+        let abi = sample_abi();
+        let deps = DependencyMap::default();
+        let seeded = Individual {
+            transactions: vec![Transaction {
+                function_id: 1,
+                args: vec![FuzzValue::Uint(99)],
+                sender: 2,
+                value: 0,
+            }],
+            environment: Environment::default(),
+            energy: 2.0,
+        };
+        let config = FuzzConfig {
+            population_size: 2,
+            seed_corpus: vec![seeded.clone()],
+            ..Default::default()
+        };
+
+        let population = generate_initial_population(&abi, &deps, &config);
+        assert!(
+            population.iter().any(|individual| {
+                individual.transactions.len() == 1
+                    && individual.transactions[0].function_id == 1
+                    && individual.transactions[0].sender == 2
+            }),
+            "expected externally provided seed corpus entry to be preserved"
+        );
     }
 }

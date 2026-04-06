@@ -1,0 +1,84 @@
+[
+  {
+    "engine": "fuzzing",
+    "finding_type": "hardcoded-gas-transfer",
+    "severity": "low",
+    "message": "Hardcoded gas: '$t3' in function 2 uses fixed 2300 gas stipend — may fail with contract recipients",
+    "location": {
+      "file": null,
+      "start": null,
+      "end": null,
+      "pc": null,
+      "function_id": 2,
+      "function_name": "withdrawAll"
+    },
+    "reproduction": {
+      "id": "repro-epoch1-0",
+      "txs": [
+        {
+          "function_id": 2,
+          "selector": null,
+          "calldata": null,
+          "args": [
+            "1000"
+          ],
+          "sender": "2",
+          "value": "0",
+          "env": {
+            "block_timestamp": 1700000000,
+            "block_number": 5000000
+          }
+        }
+      ],
+      "state_snapshot_id": null,
+      "score": 3.5
+    },
+    "signature": "fuzzing:runtime:executor:hardcoded-gas-transfer:none:none:none:none:2:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "executor",
+    "metadata": {
+      "confidence": "medium"
+    }
+  },
+  {
+    "engine": "fuzzing",
+    "finding_type": "tx-origin",
+    "severity": "medium",
+    "message": "tx.origin used in function 2 — vulnerable to phishing attacks, use msg.sender instead",
+    "location": {
+      "file": null,
+      "start": null,
+      "end": null,
+      "pc": null,
+      "function_id": 2,
+      "function_name": "withdrawAll"
+    },
+    "reproduction": {
+      "id": "repro-epoch1-0",
+      "txs": [
+        {
+          "function_id": 2,
+          "selector": null,
+          "calldata": null,
+          "args": [
+            "1000"
+          ],
+          "sender": "2",
+          "value": "0",
+          "env": {
+            "block_timestamp": 1700000000,
+            "block_number": 5000000
+          }
+        }
+      ],
+      "state_snapshot_id": null,
+      "score": 3.5
+    },
+    "signature": "fuzzing:runtime:executor:tx-origin:none:none:none:none:2:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "executor",
+    "metadata": {
+      "confidence": "high"
+    }
+  }
+]

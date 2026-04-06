@@ -1,0 +1,545 @@
+[
+  {
+    "engine": "fuzzing",
+    "finding_type": "cryptographic-issue",
+    "severity": "medium",
+    "message": "ecrecover in function 4 without observed zero-address check across 2 distinct senders",
+    "location": {
+      "file": null,
+      "start": null,
+      "end": null,
+      "pc": null,
+      "function_id": 4,
+      "function_name": "wager"
+    },
+    "reproduction": {
+      "id": "repro-epoch2-161",
+      "txs": [
+        {
+          "function_id": 3,
+          "selector": null,
+          "calldata": null,
+          "args": [
+            "340282366920938463463374607431768211455"
+          ],
+          "sender": "1",
+          "value": "0",
+          "env": {
+            "block_timestamp": 1650000000,
+            "block_number": 10000000
+          }
+        },
+        {
+          "function_id": 4,
+          "selector": null,
+          "calldata": null,
+          "args": [
+            "100",
+            "4",
+            "2147483647",
+            "340282366920938463463374607431768211455",
+            "2147483647",
+            "340282366920938463463374607431768211455"
+          ],
+          "sender": "3",
+          "value": "1000000000000000000",
+          "env": {
+            "block_timestamp": 1650000000,
+            "block_number": 10000000
+          }
+        },
+        {
+          "function_id": 4,
+          "selector": null,
+          "calldata": null,
+          "args": [
+            "340282366920938463463374607431768211455",
+            "0",
+            "7109",
+            "340282366920938463463374607431768211454",
+            "340282366920938463463374607431768211454",
+            "10"
+          ],
+          "sender": "1",
+          "value": "777713680309800248",
+          "env": {
+            "block_timestamp": 1650000000,
+            "block_number": 10000000
+          }
+        }
+      ],
+      "state_snapshot_id": null,
+      "score": 3.5
+    },
+    "signature": "fuzzing:runtime:executor:cryptographic-issue:none:none:none:none:4:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "executor",
+    "metadata": {
+      "confidence": "low"
+    }
+  },
+  {
+    "engine": "fuzzing",
+    "finding_type": "hardcoded-gas-transfer",
+    "severity": "low",
+    "message": "Hardcoded gas: '$t1' in function 21 uses fixed 2300 gas stipend — may fail with contract recipients",
+    "location": {
+      "file": null,
+      "start": null,
+      "end": null,
+      "pc": null,
+      "function_id": 21,
+      "function_name": "transferAnyERC20Token"
+    },
+    "reproduction": {
+      "id": "repro-epoch11-160",
+      "txs": [
+        {
+          "function_id": 21,
+          "selector": null,
+          "calldata": null,
+          "args": [
+            "4",
+            "340282366920938463463374607431768211454",
+            "1000"
+          ],
+          "sender": "1",
+          "value": "0",
+          "env": {
+            "block_timestamp": 1750000000,
+            "block_number": 20000000
+          }
+        }
+      ],
+      "state_snapshot_id": null,
+      "score": 3.5
+    },
+    "signature": "fuzzing:runtime:executor:hardcoded-gas-transfer:none:none:none:none:21:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "executor",
+    "metadata": {
+      "confidence": "medium"
+    }
+  },
+  {
+    "engine": "fuzzing",
+    "finding_type": "hardcoded-gas-transfer",
+    "severity": "low",
+    "message": "Hardcoded gas: '$t0' in function 5 uses fixed 2300 gas stipend — may fail with contract recipients",
+    "location": {
+      "file": null,
+      "start": null,
+      "end": null,
+      "pc": null,
+      "function_id": 5,
+      "function_name": "play"
+    },
+    "reproduction": {
+      "id": "repro-epoch1-21",
+      "txs": [
+        {
+          "function_id": 5,
+          "selector": null,
+          "calldata": null,
+          "args": [
+            "999"
+          ],
+          "sender": "1",
+          "value": "0",
+          "env": {
+            "block_timestamp": 1750000000,
+            "block_number": 10000000
+          }
+        }
+      ],
+      "state_snapshot_id": null,
+      "score": 3.5
+    },
+    "signature": "fuzzing:runtime:executor:hardcoded-gas-transfer:none:none:none:none:5:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "executor",
+    "metadata": {
+      "confidence": "medium"
+    }
+  },
+  {
+    "engine": "fuzzing",
+    "finding_type": "signature-malleability",
+    "severity": "medium",
+    "message": "Signature malleability risk: function 4 uses ecrecover without observed zero-address guard across 2 distinct senders",
+    "location": {
+      "file": null,
+      "start": null,
+      "end": null,
+      "pc": null,
+      "function_id": 4,
+      "function_name": "wager"
+    },
+    "reproduction": {
+      "id": "repro-epoch2-161",
+      "txs": [
+        {
+          "function_id": 3,
+          "selector": null,
+          "calldata": null,
+          "args": [
+            "340282366920938463463374607431768211455"
+          ],
+          "sender": "1",
+          "value": "0",
+          "env": {
+            "block_timestamp": 1650000000,
+            "block_number": 10000000
+          }
+        },
+        {
+          "function_id": 4,
+          "selector": null,
+          "calldata": null,
+          "args": [
+            "100",
+            "4",
+            "2147483647",
+            "340282366920938463463374607431768211455",
+            "2147483647",
+            "340282366920938463463374607431768211455"
+          ],
+          "sender": "3",
+          "value": "1000000000000000000",
+          "env": {
+            "block_timestamp": 1650000000,
+            "block_number": 10000000
+          }
+        },
+        {
+          "function_id": 4,
+          "selector": null,
+          "calldata": null,
+          "args": [
+            "340282366920938463463374607431768211455",
+            "0",
+            "7109",
+            "340282366920938463463374607431768211454",
+            "340282366920938463463374607431768211454",
+            "10"
+          ],
+          "sender": "1",
+          "value": "777713680309800248",
+          "env": {
+            "block_timestamp": 1650000000,
+            "block_number": 10000000
+          }
+        }
+      ],
+      "state_snapshot_id": null,
+      "score": 3.5
+    },
+    "signature": "fuzzing:runtime:executor:signature-malleability:none:none:none:none:4:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "executor",
+    "metadata": {
+      "confidence": "low"
+    }
+  },
+  {
+    "engine": "fuzzing",
+    "finding_type": "unprotected-ether-withdrawal",
+    "severity": "high",
+    "message": "Unprotected Ether withdrawal via '$t0' in function 5 — anyone can drain funds",
+    "location": {
+      "file": null,
+      "start": null,
+      "end": null,
+      "pc": null,
+      "function_id": 5,
+      "function_name": "play"
+    },
+    "reproduction": {
+      "id": "repro-epoch1-21",
+      "txs": [
+        {
+          "function_id": 5,
+          "selector": null,
+          "calldata": null,
+          "args": [
+            "999"
+          ],
+          "sender": "1",
+          "value": "0",
+          "env": {
+            "block_timestamp": 1750000000,
+            "block_number": 10000000
+          }
+        }
+      ],
+      "state_snapshot_id": null,
+      "score": 3.5
+    },
+    "signature": "fuzzing:runtime:executor:unprotected-ether-withdrawal:none:none:none:none:5:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "executor",
+    "metadata": {
+      "confidence": "high"
+    }
+  },
+  {
+    "engine": "fuzzing",
+    "finding_type": "unprotected-selfdestruct",
+    "severity": "low",
+    "message": "selfdestruct in function 14 (has sender check)",
+    "location": {
+      "file": null,
+      "start": null,
+      "end": null,
+      "pc": null,
+      "function_id": 14,
+      "function_name": "kill"
+    },
+    "reproduction": {
+      "id": "repro-epoch1-43",
+      "txs": [
+        {
+          "function_id": 5,
+          "selector": null,
+          "calldata": null,
+          "args": [
+            "1000"
+          ],
+          "sender": "1",
+          "value": "0",
+          "env": {
+            "block_timestamp": 1650000000,
+            "block_number": 5000000
+          }
+        },
+        {
+          "function_id": 14,
+          "selector": null,
+          "calldata": null,
+          "args": [],
+          "sender": "1",
+          "value": "0",
+          "env": {
+            "block_timestamp": 1650000000,
+            "block_number": 5000000
+          }
+        }
+      ],
+      "state_snapshot_id": null,
+      "score": 3.5
+    },
+    "signature": "fuzzing:runtime:executor:unprotected-selfdestruct:none:none:none:none:14:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "executor",
+    "metadata": {
+      "confidence": "high"
+    }
+  },
+  {
+    "engine": "fuzzing",
+    "finding_type": "weak-prng",
+    "severity": "medium",
+    "message": "Weak PRNG: block.number/blockhash used in function 4 — predictable randomness source",
+    "location": {
+      "file": null,
+      "start": null,
+      "end": null,
+      "pc": null,
+      "function_id": 4,
+      "function_name": "wager"
+    },
+    "reproduction": {
+      "id": "repro-epoch1-169",
+      "txs": [
+        {
+          "function_id": 4,
+          "selector": null,
+          "calldata": null,
+          "args": [
+            "10",
+            "340282366920938463463374607431768211455",
+            "340282366920938463463374607431768211447",
+            "340282366920938463463374607431768211454",
+            "2",
+            "6004"
+          ],
+          "sender": "1",
+          "value": "1000000000000000000",
+          "env": {
+            "block_timestamp": 1750000000,
+            "block_number": 49305698
+          }
+        }
+      ],
+      "state_snapshot_id": null,
+      "score": 3.5
+    },
+    "signature": "fuzzing:runtime:executor:weak-prng:none:none:none:none:4:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "executor",
+    "metadata": {
+      "confidence": "medium"
+    }
+  },
+  {
+    "engine": "fuzzing",
+    "finding_type": "weak-prng",
+    "severity": "medium",
+    "message": "Weak PRNG: block.number/blockhash used in function 5 — predictable randomness source",
+    "location": {
+      "file": null,
+      "start": null,
+      "end": null,
+      "pc": null,
+      "function_id": 5,
+      "function_name": "play"
+    },
+    "reproduction": {
+      "id": "repro-epoch1-21",
+      "txs": [
+        {
+          "function_id": 5,
+          "selector": null,
+          "calldata": null,
+          "args": [
+            "999"
+          ],
+          "sender": "1",
+          "value": "0",
+          "env": {
+            "block_timestamp": 1750000000,
+            "block_number": 10000000
+          }
+        }
+      ],
+      "state_snapshot_id": null,
+      "score": 3.5
+    },
+    "signature": "fuzzing:runtime:executor:weak-prng:none:none:none:none:5:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "executor",
+    "metadata": {
+      "confidence": "medium"
+    }
+  },
+  {
+    "engine": "fuzzing",
+    "finding_type": "weak-prng",
+    "severity": "medium",
+    "message": "Weak PRNG: block.number/blockhash used in function 8 — predictable randomness source",
+    "location": {
+      "file": null,
+      "start": null,
+      "end": null,
+      "pc": null,
+      "function_id": 8,
+      "function_name": "refund"
+    },
+    "reproduction": {
+      "id": "repro-epoch10-90",
+      "txs": [
+        {
+          "function_id": 5,
+          "selector": null,
+          "calldata": null,
+          "args": [
+            "100"
+          ],
+          "sender": "1",
+          "value": "0",
+          "env": {
+            "block_timestamp": 1750000000,
+            "block_number": 5000000
+          }
+        },
+        {
+          "function_id": 8,
+          "selector": null,
+          "calldata": null,
+          "args": [
+            "0"
+          ],
+          "sender": "1",
+          "value": "0",
+          "env": {
+            "block_timestamp": 1750000000,
+            "block_number": 5000000
+          }
+        }
+      ],
+      "state_snapshot_id": null,
+      "score": 3.5
+    },
+    "signature": "fuzzing:runtime:executor:weak-prng:none:none:none:none:8:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "executor",
+    "metadata": {
+      "confidence": "medium"
+    }
+  },
+  {
+    "engine": "meta",
+    "finding_type": "honeypot",
+    "severity": "low",
+    "message": "contract 'FiftyFlip' exposes a public funding path but its payout flow looks deceptive or trap-like",
+    "location": {
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/unchecked_low_level_calls/0xe09b1ab8111c2729a76f16de96bc86a7af837928.sol",
+      "start": 3677,
+      "end": 5183,
+      "pc": null,
+      "function_id": 4,
+      "function_name": "wager"
+    },
+    "reproduction": null,
+    "signature": "meta:meta:honeypot-heuristic:honeypot:/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/unchecked_low_level_calls/0xe09b1ab8111c2729a76f16de96bc86a7af837928.sol:3677:5183:none:4:none",
+    "analysis_layer": "meta",
+    "evidence_kind": "honeypot-heuristic",
+    "metadata": {
+      "confidence": "low",
+      "contract": "FiftyFlip",
+      "reasons": "owner-or-secret-gate,public-funding-path"
+    }
+  },
+  {
+    "engine": "meta",
+    "finding_type": "honeypot",
+    "severity": "low",
+    "message": "contract 'FiftyFlip' exposes a public funding path but its payout flow looks deceptive or trap-like",
+    "location": {
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/unchecked_low_level_calls/0xe09b1ab8111c2729a76f16de96bc86a7af837928.sol",
+      "start": 3677,
+      "end": 5183,
+      "pc": null,
+      "function_id": 4,
+      "function_name": "wager"
+    },
+    "reproduction": null,
+    "signature": "meta:runtime:meta-runtime-backstop:honeypot:/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/unchecked_low_level_calls/0xe09b1ab8111c2729a76f16de96bc86a7af837928.sol:3677:5183:none:4:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "meta-runtime-backstop",
+    "metadata": {
+      "confidence": "low",
+      "contract": "FiftyFlip",
+      "reasons": "owner-or-secret-gate,public-funding-path"
+    }
+  },
+  {
+    "engine": "static",
+    "finding_type": "dos-block-gas-limit",
+    "severity": "medium",
+    "message": "DS-03: loop in `clearStorage` depends on dynamic bounds (`.length`/gas), which can make the function exceed the block gas limit",
+    "location": {
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/unchecked_low_level_calls/0xe09b1ab8111c2729a76f16de96bc86a7af837928.sol",
+      "start": 11165,
+      "end": 11382,
+      "pc": null,
+      "function_id": 19,
+      "function_name": "clearStorage"
+    },
+    "reproduction": null,
+    "signature": "static:runtime:rule:dos-block-gas-limit:/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/unchecked_low_level_calls/0xe09b1ab8111c2729a76f16de96bc86a7af837928.sol:11165:11382:none:19:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "rule",
+    "metadata": {}
+  }
+]

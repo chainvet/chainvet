@@ -1,0 +1,334 @@
+{
+  "function_whitelist": [
+    0,
+    1,
+    2,
+    3
+  ],
+  "function_blacklist": [],
+  "hotspots": [
+    {
+      "function_id": 3,
+      "function_name": "migrateTo",
+      "score": 9.899999999999999,
+      "reasons": [
+        "external_calls=1",
+        "low_level_calls=1",
+        "tainted_calls=1",
+        "uses_source=true"
+      ]
+    },
+    {
+      "function_id": 2,
+      "function_name": "withdraw",
+      "score": 9.5,
+      "reasons": [
+        "storage_writes=1",
+        "external_calls=1",
+        "low_level_calls=1",
+        "uses_source=true"
+      ]
+    },
+    {
+      "function_id": 1,
+      "function_name": "deposit",
+      "score": 5.5,
+      "reasons": [
+        "storage_writes=1",
+        "tainted_calls=1",
+        "uses_source=true"
+      ]
+    },
+    {
+      "function_id": 0,
+      "function_name": "initWallet",
+      "score": 3.3,
+      "reasons": [
+        "storage_writes=1",
+        "uses_source=true"
+      ]
+    }
+  ],
+  "sinks": [
+    {
+      "function_id": 0,
+      "function_name": "initWallet",
+      "sink_kind": "uninit-permission-check",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/wallet_03_wrong_constructor.sol",
+      "start": 465,
+      "end": 533
+    },
+    {
+      "function_id": 3,
+      "function_name": "migrateTo",
+      "sink_kind": "missing-input-validation",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/wallet_03_wrong_constructor.sol",
+      "start": 973,
+      "end": 1096
+    },
+    {
+      "function_id": 3,
+      "function_name": "migrateTo",
+      "sink_kind": "arbitrary-ether-send",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/wallet_03_wrong_constructor.sol",
+      "start": 1063,
+      "end": 1088
+    },
+    {
+      "function_id": 2,
+      "function_name": "withdraw",
+      "sink_kind": "unprotected-ether-withdrawal",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/wallet_03_wrong_constructor.sol",
+      "start": 707,
+      "end": 885
+    },
+    {
+      "function_id": 3,
+      "function_name": "migrateTo",
+      "sink_kind": "unprotected-ether-withdrawal",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/wallet_03_wrong_constructor.sol",
+      "start": 973,
+      "end": 1096
+    },
+    {
+      "function_id": 1,
+      "function_name": "deposit",
+      "sink_kind": "integer-overflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/wallet_03_wrong_constructor.sol",
+      "start": 592,
+      "end": 624
+    },
+    {
+      "function_id": 2,
+      "function_name": "withdraw",
+      "sink_kind": "transaction-order-dependency",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/wallet_03_wrong_constructor.sol",
+      "start": 707,
+      "end": 885
+    },
+    {
+      "function_id": 3,
+      "function_name": "migrateTo",
+      "sink_kind": "transaction-order-dependency",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/wallet_03_wrong_constructor.sol",
+      "start": 973,
+      "end": 1096
+    },
+    {
+      "function_id": 2,
+      "function_name": "withdraw",
+      "sink_kind": "hardcoded-gas-transfer",
+      "severity": "low",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/wallet_03_wrong_constructor.sol",
+      "start": 809,
+      "end": 836
+    },
+    {
+      "function_id": 3,
+      "function_name": "migrateTo",
+      "sink_kind": "hardcoded-gas-transfer",
+      "severity": "low",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/wallet_03_wrong_constructor.sol",
+      "start": 1063,
+      "end": 1088
+    },
+    {
+      "function_id": 2,
+      "function_name": "withdraw",
+      "sink_kind": "reentrancy-transfer",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/wallet_03_wrong_constructor.sol",
+      "start": 809,
+      "end": 836
+    },
+    {
+      "function_id": 2,
+      "function_name": "withdraw",
+      "sink_kind": "reentrancy-same-effect",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/wallet_03_wrong_constructor.sol",
+      "start": 809,
+      "end": 836
+    },
+    {
+      "function_id": 2,
+      "function_name": "withdraw",
+      "sink_kind": "reentrancy-eth-transfer",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/wallet_03_wrong_constructor.sol",
+      "start": 809,
+      "end": 836
+    },
+    {
+      "function_id": 2,
+      "function_name": "withdraw",
+      "sink_kind": "storage-array-by-value",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/wallet_03_wrong_constructor.sol",
+      "start": 847,
+      "end": 877
+    },
+    {
+      "function_id": 1,
+      "function_name": "deposit",
+      "sink_kind": "tainted-call",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/wallet_03_wrong_constructor.sol",
+      "start": 585,
+      "end": 648
+    },
+    {
+      "function_id": 3,
+      "function_name": "migrateTo",
+      "sink_kind": "tainted-call",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/wallet_03_wrong_constructor.sol",
+      "start": 1022,
+      "end": 1052
+    }
+  ],
+  "callgraph": {
+    "total_sites": 5,
+    "resolved": 0,
+    "ambiguous": 0,
+    "external": 2,
+    "unknown": 0
+  },
+  "taint": {
+    "source_functions": 4,
+    "tainted_functions": 4,
+    "tainted_vars": 2,
+    "tainted_calls": 2
+  },
+  "storage_rw_map": [
+    {
+      "function_id": 0,
+      "function_name": "initWallet",
+      "reads": [],
+      "writes": [
+        "creator"
+      ]
+    },
+    {
+      "function_id": 1,
+      "function_name": "deposit",
+      "reads": [
+        "balances"
+      ],
+      "writes": [
+        "balances"
+      ]
+    },
+    {
+      "function_id": 2,
+      "function_name": "withdraw",
+      "reads": [
+        "balances"
+      ],
+      "writes": [
+        "balances"
+      ]
+    },
+    {
+      "function_id": 3,
+      "function_name": "migrateTo",
+      "reads": [
+        "balance",
+        "creator"
+      ],
+      "writes": []
+    }
+  ],
+  "arg_domains": [
+    {
+      "function_id": 2,
+      "function_name": "withdraw",
+      "param_index": 0,
+      "param_name": "amount",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        10,
+        100,
+        1000,
+        1000000,
+        1000000000000000000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 3,
+      "function_name": "migrateTo",
+      "param_index": 0,
+      "param_name": "to",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        10,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    }
+  ],
+  "address_roles": [
+    {
+      "role": "owner",
+      "indices": [
+        0
+      ],
+      "evidence": [
+        "default-owner-role"
+      ],
+      "target_functions": [
+        2
+      ]
+    },
+    {
+      "role": "attacker",
+      "indices": [
+        1
+      ],
+      "evidence": [
+        "adversarial-role"
+      ],
+      "target_functions": [
+        0,
+        1,
+        2,
+        3
+      ]
+    },
+    {
+      "role": "user",
+      "indices": [
+        2,
+        3,
+        4
+      ],
+      "evidence": [
+        "default-user-pool"
+      ],
+      "target_functions": [
+        0,
+        1,
+        2,
+        3
+      ]
+    }
+  ]
+}

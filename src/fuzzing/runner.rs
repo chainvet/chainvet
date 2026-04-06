@@ -13,7 +13,7 @@ use crate::fuzzing::oracle;
 use crate::fuzzing::scheduler::{self, CoverageMap};
 use crate::fuzzing::types::{
     ContractAbi, Corpus, DependencyMap, Dictionary, FuzzConfig, FuzzFinding, FuzzFindingKind,
-    FuzzReport, FuzzSeverity, build_dependency_map, extract_abis,
+    FuzzHybridStats, FuzzReport, FuzzSeverity, build_dependency_map, extract_abis,
 };
 use crate::norm::{FunctionKind, Mutability, NormalizedAst, Span};
 use crate::surfaced;
@@ -57,12 +57,17 @@ pub fn run(output: &FrontendOutput, config: &FuzzConfig) -> FuzzReport {
             corpus_size: 0,
             corpus_zero_reason: Some("no contracts or functions available for fuzzing".to_string()),
             elapsed_ms: start.elapsed().as_millis(),
+            hybrid_stats: config.hybrid_mode.then(|| FuzzHybridStats {
+                seeded_inputs_provided: config.seed_corpus.len(),
+                seeded_inputs_executed: 0,
+            }),
         };
     }
 
     let mut all_findings: Vec<FuzzFinding> = Vec::new();
     let mut global_coverage = CoverageMap::new();
     let mut corpus = Corpus::default();
+    let mut seeded_inputs_executed = 0usize;
 
     // Run per-contract
     for abi in &abis {
@@ -70,7 +75,7 @@ pub fn run(output: &FrontendOutput, config: &FuzzConfig) -> FuzzReport {
             .get(&abi.contract_name)
             .copied()
             .unwrap_or(false);
-        fuzz_contract(
+        seeded_inputs_executed += fuzz_contract(
             output,
             abi,
             &deps,
@@ -118,6 +123,10 @@ pub fn run(output: &FrontendOutput, config: &FuzzConfig) -> FuzzReport {
         corpus_size: corpus.entries.len(),
         corpus_zero_reason: zero_corpus_reason(&abis, &corpus),
         elapsed_ms: start.elapsed().as_millis(),
+        hybrid_stats: config.hybrid_mode.then(|| FuzzHybridStats {
+            seeded_inputs_provided: config.seed_corpus.len(),
+            seeded_inputs_executed,
+        }),
     }
 }
 
@@ -830,7 +839,8 @@ fn fuzz_contract(
     corpus: &mut Corpus,
     dictionary: &Dictionary,
     start_time: &Instant,
-) {
+) -> usize {
+    let seeded_inputs_executed = count_seeded_inputs_for_abi(abi, config);
     // Phase 2: Generate initial population (using dictionary for smarter values)
     let population =
         generator::generate_initial_population_with_dict(abi, deps, config, Some(dictionary));
@@ -942,6 +952,27 @@ fn fuzz_contract(
             scheduler::minimize_corpus(corpus);
         }
     }
+
+    seeded_inputs_executed
+}
+
+fn count_seeded_inputs_for_abi(abi: &ContractAbi, config: &FuzzConfig) -> usize {
+    let abi_function_ids = abi
+        .functions
+        .iter()
+        .map(|function| function.id)
+        .collect::<std::collections::HashSet<_>>();
+    config
+        .seed_corpus
+        .iter()
+        .filter(|seed| {
+            !seed.transactions.is_empty()
+                && seed
+                    .transactions
+                    .iter()
+                    .all(|tx| abi_function_ids.contains(&tx.function_id))
+        })
+        .count()
 }
 
 /// Print a text report of fuzz results, grouped by taxonomy category.
@@ -963,6 +994,12 @@ pub fn print_report(report: &FuzzReport) {
         "coverage: {}/{} blocks ({:.1}%)",
         report.covered_blocks, report.total_blocks, report.coverage_pct
     );
+    if let Some(stats) = &report.hybrid_stats {
+        println!(
+            "hybrid_seeds: provided={}, executed={}",
+            stats.seeded_inputs_provided, stats.seeded_inputs_executed
+        );
+    }
     if let Some(reason) = &report.corpus_zero_reason {
         println!("corpus_zero_reason: {reason}");
     }
@@ -1075,6 +1112,7 @@ struct JsonFuzzReport {
     corpus_size: usize,
     corpus_zero_reason: Option<String>,
     elapsed_ms: u128,
+    hybrid_stats: Option<JsonFuzzHybridStats>,
     finding_count_raw: usize,
     suppressed_findings: usize,
     finding_counts: Vec<surfaced::SurfacedCount>,
@@ -1085,6 +1123,12 @@ struct JsonFuzzReport {
     meta_finding_counts: Vec<surfaced::SurfacedCount>,
     meta_findings: Vec<surfaced::SurfacedFinding>,
     meta_findings_raw: Vec<crate::core::artifacts::Finding>,
+}
+
+#[derive(Debug, Serialize)]
+struct JsonFuzzHybridStats {
+    seeded_inputs_provided: usize,
+    seeded_inputs_executed: usize,
 }
 
 pub fn print_report_json(report: &FuzzReport) -> Result<()> {
@@ -1111,6 +1155,10 @@ fn json_report(report: &FuzzReport) -> JsonFuzzReport {
         corpus_size: report.corpus_size,
         corpus_zero_reason: report.corpus_zero_reason.clone(),
         elapsed_ms: report.elapsed_ms,
+        hybrid_stats: report.hybrid_stats.as_ref().map(|stats| JsonFuzzHybridStats {
+            seeded_inputs_provided: stats.seeded_inputs_provided,
+            seeded_inputs_executed: stats.seeded_inputs_executed,
+        }),
         finding_count_raw: report.findings.len(),
         suppressed_findings: surfaced.suppressed_runtime_findings,
         finding_counts: surfaced.runtime_finding_counts,

@@ -1,0 +1,136 @@
+{
+  "function_whitelist": [
+    1
+  ],
+  "function_blacklist": [],
+  "hotspots": [
+    {
+      "function_id": 0,
+      "function_name": "Unprotected",
+      "score": 3.3,
+      "reasons": [
+        "storage_writes=1",
+        "uses_source=true"
+      ]
+    },
+    {
+      "function_id": 1,
+      "function_name": "changeOwner",
+      "score": 1.8,
+      "reasons": [
+        "storage_writes=1"
+      ]
+    }
+  ],
+  "sinks": [
+    {
+      "function_id": 1,
+      "function_name": "changeOwner",
+      "sink_kind": "missing-input-validation",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/unprotected0.sol",
+      "start": 500,
+      "end": 596
+    },
+    {
+      "function_id": 1,
+      "function_name": "changeOwner",
+      "sink_kind": "storage-array-by-value",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/unprotected0.sol",
+      "start": 571,
+      "end": 588
+    }
+  ],
+  "callgraph": {
+    "total_sites": 0,
+    "resolved": 0,
+    "ambiguous": 0,
+    "external": 0,
+    "unknown": 0
+  },
+  "taint": {
+    "source_functions": 1,
+    "tainted_functions": 1,
+    "tainted_vars": 1,
+    "tainted_calls": 0
+  },
+  "storage_rw_map": [
+    {
+      "function_id": 0,
+      "function_name": "Unprotected",
+      "reads": [],
+      "writes": [
+        "owner"
+      ]
+    },
+    {
+      "function_id": 1,
+      "function_name": "changeOwner",
+      "reads": [],
+      "writes": [
+        "owner"
+      ]
+    }
+  ],
+  "arg_domains": [
+    {
+      "function_id": 1,
+      "function_name": "changeOwner",
+      "param_index": 0,
+      "param_name": "_newOwner",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        10,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    }
+  ],
+  "address_roles": [
+    {
+      "role": "owner",
+      "indices": [
+        0
+      ],
+      "evidence": [
+        "state_var:owner"
+      ],
+      "target_functions": [
+        1
+      ]
+    },
+    {
+      "role": "attacker",
+      "indices": [
+        1
+      ],
+      "evidence": [
+        "adversarial-role"
+      ],
+      "target_functions": [
+        1
+      ]
+    },
+    {
+      "role": "user",
+      "indices": [
+        2,
+        3,
+        4
+      ],
+      "evidence": [
+        "default-user-pool"
+      ],
+      "target_functions": [
+        1
+      ]
+    }
+  ]
+}

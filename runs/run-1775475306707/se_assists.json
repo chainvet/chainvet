@@ -1,0 +1,95 @@
+[
+  {
+    "epoch": 1,
+    "goal": {
+      "id": "g-1-25-0-1",
+      "function_id": 25,
+      "function_name": "execute",
+      "block_id": 1,
+      "edge_from": 0,
+      "edge_to": 1,
+      "sink_kind": "tainted-call",
+      "reason": "uncovered edge after fuzz epoch",
+      "priority": 35.5,
+      "attempts": 1
+    },
+    "injected_seed_ids": [
+      "se-solve-g-1-25-0-1-0",
+      "se-solve-g-1-25-0-1-1",
+      "se-solve-g-1-25-0-1-2",
+      "se-solve-g-1-25-0-1-3",
+      "se-solve-g-1-25-0-1-4",
+      "se-solve-g-1-25-0-1-5",
+      "se-solve-g-1-25-0-1-6",
+      "se-solve-g-1-25-0-1-7"
+    ],
+    "solver": {
+      "elapsed_ms": 19,
+      "states_explored": 2,
+      "max_depth_reached": 1,
+      "satisfiable_paths": 8
+    }
+  },
+  {
+    "epoch": 2,
+    "goal": {
+      "id": "g-1-25-0-10",
+      "function_id": 25,
+      "function_name": "execute",
+      "block_id": 10,
+      "edge_from": 0,
+      "edge_to": 10,
+      "sink_kind": "tainted-call",
+      "reason": "uncovered edge after fuzz epoch",
+      "priority": 35.5,
+      "attempts": 1
+    },
+    "injected_seed_ids": [
+      "se-solve-g-1-25-0-10-0",
+      "se-solve-g-1-25-0-10-1",
+      "se-solve-g-1-25-0-10-2",
+      "se-solve-g-1-25-0-10-3",
+      "se-solve-g-1-25-0-10-4",
+      "se-solve-g-1-25-0-10-5",
+      "se-solve-g-1-25-0-10-6",
+      "se-solve-g-1-25-0-10-7"
+    ],
+    "solver": {
+      "elapsed_ms": 24,
+      "states_explored": 3,
+      "max_depth_reached": 2,
+      "satisfiable_paths": 8
+    }
+  },
+  {
+    "epoch": 3,
+    "goal": {
+      "id": "g-2-25-0-1",
+      "function_id": 25,
+      "function_name": "execute",
+      "block_id": 1,
+      "edge_from": 0,
+      "edge_to": 1,
+      "sink_kind": "tainted-call",
+      "reason": "uncovered edge after fuzz epoch",
+      "priority": 35.5,
+      "attempts": 1
+    },
+    "injected_seed_ids": [
+      "se-solve-g-2-25-0-1-0",
+      "se-solve-g-2-25-0-1-1",
+      "se-solve-g-2-25-0-1-2",
+      "se-solve-g-2-25-0-1-3",
+      "se-solve-g-2-25-0-1-4",
+      "se-solve-g-2-25-0-1-5",
+      "se-solve-g-2-25-0-1-6",
+      "se-solve-g-2-25-0-1-7"
+    ],
+    "solver": {
+      "elapsed_ms": 16,
+      "states_explored": 2,
+      "max_depth_reached": 1,
+      "satisfiable_paths": 8
+    }
+  }
+]

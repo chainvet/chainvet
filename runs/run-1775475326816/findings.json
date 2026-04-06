@@ -1,0 +1,180 @@
+[
+  {
+    "engine": "fuzzing",
+    "finding_type": "hardcoded-gas-transfer",
+    "severity": "low",
+    "message": "Hardcoded gas: '$t7' in function 3 uses fixed 2300 gas stipend — may fail with contract recipients",
+    "location": {
+      "file": null,
+      "start": null,
+      "end": null,
+      "pc": null,
+      "function_id": 3,
+      "function_name": "sell"
+    },
+    "reproduction": {
+      "id": "repro-epoch1-93",
+      "txs": [
+        {
+          "function_id": 3,
+          "selector": null,
+          "calldata": null,
+          "args": [
+            "2"
+          ],
+          "sender": "1",
+          "value": "0",
+          "env": {
+            "block_timestamp": 536181741,
+            "block_number": 32832213
+          }
+        }
+      ],
+      "state_snapshot_id": null,
+      "score": 3.5
+    },
+    "signature": "fuzzing:runtime:executor:hardcoded-gas-transfer:none:none:none:none:3:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "executor",
+    "metadata": {
+      "confidence": "medium"
+    }
+  },
+  {
+    "engine": "fuzzing",
+    "finding_type": "integer-overflow",
+    "severity": "high",
+    "message": "Potential integer overflow in function 2: 340282366920938463463374607431768211455 + 340282366920938463463374607431768211454 = 340282366920938463463374607431768211453 (wrapping detected)",
+    "location": {
+      "file": null,
+      "start": null,
+      "end": null,
+      "pc": null,
+      "function_id": 2,
+      "function_name": "buy"
+    },
+    "reproduction": {
+      "id": "repro-epoch1-5",
+      "txs": [
+        {
+          "function_id": 3,
+          "selector": null,
+          "calldata": null,
+          "args": [
+            "1"
+          ],
+          "sender": "1",
+          "value": "0",
+          "env": {
+            "block_timestamp": 1700000100,
+            "block_number": 1000010
+          }
+        },
+        {
+          "function_id": 2,
+          "selector": null,
+          "calldata": null,
+          "args": [
+            "340282366920938463463374607431768211454"
+          ],
+          "sender": "1",
+          "value": "136006317134810282",
+          "env": {
+            "block_timestamp": 1700000100,
+            "block_number": 1000010
+          }
+        }
+      ],
+      "state_snapshot_id": null,
+      "score": 3.5
+    },
+    "signature": "fuzzing:runtime:executor:integer-overflow:none:none:none:none:2:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "executor",
+    "metadata": {
+      "confidence": "medium"
+    }
+  },
+  {
+    "engine": "fuzzing",
+    "finding_type": "integer-overflow",
+    "severity": "high",
+    "message": "Potential integer overflow in function 3: 0 - 2 = 340282366920938463463374607431768211454 (wrapping detected)",
+    "location": {
+      "file": null,
+      "start": null,
+      "end": null,
+      "pc": null,
+      "function_id": 3,
+      "function_name": "sell"
+    },
+    "reproduction": {
+      "id": "repro-epoch1-93",
+      "txs": [
+        {
+          "function_id": 3,
+          "selector": null,
+          "calldata": null,
+          "args": [
+            "2"
+          ],
+          "sender": "1",
+          "value": "0",
+          "env": {
+            "block_timestamp": 536181741,
+            "block_number": 32832213
+          }
+        }
+      ],
+      "state_snapshot_id": null,
+      "score": 3.5
+    },
+    "signature": "fuzzing:runtime:executor:integer-overflow:none:none:none:none:3:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "executor",
+    "metadata": {
+      "confidence": "medium"
+    }
+  },
+  {
+    "engine": "fuzzing",
+    "finding_type": "integer-underflow",
+    "severity": "high",
+    "message": "Potential integer underflow in function 3: 0 - 2 = 340282366920938463463374607431768211454 (wrapping detected)",
+    "location": {
+      "file": null,
+      "start": null,
+      "end": null,
+      "pc": null,
+      "function_id": 3,
+      "function_name": "sell"
+    },
+    "reproduction": {
+      "id": "repro-epoch1-93",
+      "txs": [
+        {
+          "function_id": 3,
+          "selector": null,
+          "calldata": null,
+          "args": [
+            "2"
+          ],
+          "sender": "1",
+          "value": "0",
+          "env": {
+            "block_timestamp": 536181741,
+            "block_number": 32832213
+          }
+        }
+      ],
+      "state_snapshot_id": null,
+      "score": 3.5
+    },
+    "signature": "fuzzing:runtime:executor:integer-underflow:none:none:none:none:3:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "executor",
+    "metadata": {
+      "confidence": "medium"
+    }
+  }
+]

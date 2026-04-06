@@ -1,0 +1,313 @@
+[
+  {
+    "engine": "fuzzing",
+    "finding_type": "exception-disorder",
+    "severity": "medium",
+    "message": "Exception disorder: external call to '$t7' in function 2 followed by state change without checking return",
+    "location": {
+      "file": null,
+      "start": null,
+      "end": null,
+      "pc": null,
+      "function_id": 2,
+      "function_name": "resetInvestment"
+    },
+    "reproduction": {
+      "id": "repro-epoch1-23",
+      "txs": [
+        {
+          "function_id": 2,
+          "selector": null,
+          "calldata": null,
+          "args": [],
+          "sender": "1",
+          "value": "0",
+          "env": {
+            "block_timestamp": 835725299,
+            "block_number": 10000000
+          }
+        }
+      ],
+      "state_snapshot_id": null,
+      "score": 3.5
+    },
+    "signature": "fuzzing:runtime:executor:exception-disorder:none:none:none:none:2:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "executor",
+    "metadata": {
+      "confidence": "low"
+    }
+  },
+  {
+    "engine": "fuzzing",
+    "finding_type": "hardcoded-gas-transfer",
+    "severity": "low",
+    "message": "Hardcoded gas: '$t5' in function 2 uses fixed 2300 gas stipend — may fail with contract recipients",
+    "location": {
+      "file": null,
+      "start": null,
+      "end": null,
+      "pc": null,
+      "function_id": 2,
+      "function_name": "resetInvestment"
+    },
+    "reproduction": {
+      "id": "repro-epoch1-23",
+      "txs": [
+        {
+          "function_id": 2,
+          "selector": null,
+          "calldata": null,
+          "args": [],
+          "sender": "1",
+          "value": "0",
+          "env": {
+            "block_timestamp": 835725299,
+            "block_number": 10000000
+          }
+        }
+      ],
+      "state_snapshot_id": null,
+      "score": 3.5
+    },
+    "signature": "fuzzing:runtime:executor:hardcoded-gas-transfer:none:none:none:none:2:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "executor",
+    "metadata": {
+      "confidence": "medium"
+    }
+  },
+  {
+    "engine": "fuzzing",
+    "finding_type": "integer-overflow",
+    "severity": "high",
+    "message": "Potential integer overflow in function 2: 0 - 1 = 340282366920938463463374607431768211455 (wrapping detected)",
+    "location": {
+      "file": null,
+      "start": null,
+      "end": null,
+      "pc": null,
+      "function_id": 2,
+      "function_name": "resetInvestment"
+    },
+    "reproduction": {
+      "id": "repro-epoch1-23",
+      "txs": [
+        {
+          "function_id": 2,
+          "selector": null,
+          "calldata": null,
+          "args": [],
+          "sender": "1",
+          "value": "0",
+          "env": {
+            "block_timestamp": 835725299,
+            "block_number": 10000000
+          }
+        }
+      ],
+      "state_snapshot_id": null,
+      "score": 3.5
+    },
+    "signature": "fuzzing:runtime:executor:integer-overflow:none:none:none:none:2:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "executor",
+    "metadata": {
+      "confidence": "medium"
+    }
+  },
+  {
+    "engine": "fuzzing",
+    "finding_type": "integer-underflow",
+    "severity": "high",
+    "message": "Potential integer underflow in function 2: 0 - 1 = 340282366920938463463374607431768211455 (wrapping detected)",
+    "location": {
+      "file": null,
+      "start": null,
+      "end": null,
+      "pc": null,
+      "function_id": 2,
+      "function_name": "resetInvestment"
+    },
+    "reproduction": {
+      "id": "repro-epoch1-23",
+      "txs": [
+        {
+          "function_id": 2,
+          "selector": null,
+          "calldata": null,
+          "args": [],
+          "sender": "1",
+          "value": "0",
+          "env": {
+            "block_timestamp": 835725299,
+            "block_number": 10000000
+          }
+        }
+      ],
+      "state_snapshot_id": null,
+      "score": 3.5
+    },
+    "signature": "fuzzing:runtime:executor:integer-underflow:none:none:none:none:2:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "executor",
+    "metadata": {
+      "confidence": "medium"
+    }
+  },
+  {
+    "engine": "fuzzing",
+    "finding_type": "timestamp-dependency",
+    "severity": "medium",
+    "message": "Timestamp dependency: block.timestamp used in conditional branch in function 2",
+    "location": {
+      "file": null,
+      "start": null,
+      "end": null,
+      "pc": null,
+      "function_id": 2,
+      "function_name": "resetInvestment"
+    },
+    "reproduction": {
+      "id": "repro-epoch1-23",
+      "txs": [
+        {
+          "function_id": 2,
+          "selector": null,
+          "calldata": null,
+          "args": [],
+          "sender": "1",
+          "value": "0",
+          "env": {
+            "block_timestamp": 835725299,
+            "block_number": 10000000
+          }
+        }
+      ],
+      "state_snapshot_id": null,
+      "score": 3.5
+    },
+    "signature": "fuzzing:runtime:executor:timestamp-dependency:none:none:none:none:2:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "executor",
+    "metadata": {
+      "confidence": "medium"
+    }
+  },
+  {
+    "engine": "fuzzing",
+    "finding_type": "unchecked-call",
+    "severity": "medium",
+    "message": "Unchecked external call to '$t5' in function 2 — return value not verified",
+    "location": {
+      "file": null,
+      "start": null,
+      "end": null,
+      "pc": null,
+      "function_id": 2,
+      "function_name": "resetInvestment"
+    },
+    "reproduction": {
+      "id": "repro-epoch1-23",
+      "txs": [
+        {
+          "function_id": 2,
+          "selector": null,
+          "calldata": null,
+          "args": [],
+          "sender": "1",
+          "value": "0",
+          "env": {
+            "block_timestamp": 835725299,
+            "block_number": 10000000
+          }
+        }
+      ],
+      "state_snapshot_id": null,
+      "score": 3.5
+    },
+    "signature": "fuzzing:runtime:executor:unchecked-call:none:none:none:none:2:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "executor",
+    "metadata": {
+      "confidence": "high"
+    }
+  },
+  {
+    "engine": "fuzzing",
+    "finding_type": "unprotected-ether-withdrawal",
+    "severity": "high",
+    "message": "Unprotected Ether withdrawal via '$t5' in function 2 — anyone can drain funds",
+    "location": {
+      "file": null,
+      "start": null,
+      "end": null,
+      "pc": null,
+      "function_id": 2,
+      "function_name": "resetInvestment"
+    },
+    "reproduction": {
+      "id": "repro-epoch1-23",
+      "txs": [
+        {
+          "function_id": 2,
+          "selector": null,
+          "calldata": null,
+          "args": [],
+          "sender": "1",
+          "value": "0",
+          "env": {
+            "block_timestamp": 835725299,
+            "block_number": 10000000
+          }
+        }
+      ],
+      "state_snapshot_id": null,
+      "score": 3.5
+    },
+    "signature": "fuzzing:runtime:executor:unprotected-ether-withdrawal:none:none:none:none:2:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "executor",
+    "metadata": {
+      "confidence": "high"
+    }
+  },
+  {
+    "engine": "static",
+    "finding_type": "reentrancy",
+    "severity": "medium",
+    "message": "RE-02: reentrancy in `resetInvestment`: state variable updated after `.transfer()` / `.send()` call; update state **before** transferring to follow checks-effects-interactions",
+    "location": {
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/time_manipulation/governmental_survey.sol",
+      "start": 789,
+      "end": 815,
+      "pc": null,
+      "function_id": 2,
+      "function_name": "resetInvestment"
+    },
+    "reproduction": null,
+    "signature": "static:runtime:rule-backstop:reentrancy:/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/time_manipulation/governmental_survey.sol:789:815:none:2:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "rule-backstop",
+    "metadata": {}
+  },
+  {
+    "engine": "static",
+    "finding_type": "reentrancy",
+    "severity": "medium",
+    "message": "RE-02: reentrancy in `resetInvestment`: state variable updated after `.transfer()` / `.send()` call; update state **before** transferring to follow checks-effects-interactions",
+    "location": {
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/time_manipulation/governmental_survey.sol",
+      "start": 821,
+      "end": 853,
+      "pc": null,
+      "function_id": 2,
+      "function_name": "resetInvestment"
+    },
+    "reproduction": null,
+    "signature": "static:runtime:rule-backstop:reentrancy:/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/time_manipulation/governmental_survey.sol:821:853:none:2:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "rule-backstop",
+    "metadata": {}
+  }
+]

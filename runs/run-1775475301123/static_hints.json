@@ -1,0 +1,253 @@
+{
+  "function_whitelist": [
+    1,
+    2,
+    3,
+    4,
+    5
+  ],
+  "function_blacklist": [],
+  "hotspots": [
+    {
+      "function_id": 0,
+      "function_name": null,
+      "score": 7.1,
+      "reasons": [
+        "storage_writes=2",
+        "unresolved_calls=1",
+        "uses_source=true"
+      ]
+    },
+    {
+      "function_id": 5,
+      "function_name": "Destroy",
+      "score": 5.9,
+      "reasons": [
+        "tainted_calls=2",
+        "uses_source=true"
+      ]
+    },
+    {
+      "function_id": 2,
+      "function_name": "PushBonusCode",
+      "score": 2.8,
+      "reasons": [
+        "external_calls=1"
+      ]
+    },
+    {
+      "function_id": 4,
+      "function_name": "UpdateBonusCodeAt",
+      "score": 1.8,
+      "reasons": [
+        "storage_writes=1"
+      ]
+    }
+  ],
+  "sinks": [
+    {
+      "function_id": 5,
+      "function_name": "Destroy",
+      "sink_kind": "unprotected-selfdestruct",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/arbitrary_location_write_simple.sol",
+      "start": 1041,
+      "end": 1065
+    },
+    {
+      "function_id": 4,
+      "function_name": "UpdateBonusCodeAt",
+      "sink_kind": "storage-array-by-value",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/arbitrary_location_write_simple.sol",
+      "start": 881,
+      "end": 900
+    },
+    {
+      "function_id": 5,
+      "function_name": "Destroy",
+      "sink_kind": "tainted-call",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/arbitrary_location_write_simple.sol",
+      "start": 1002,
+      "end": 1030
+    },
+    {
+      "function_id": 5,
+      "function_name": "Destroy",
+      "sink_kind": "tainted-call",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/arbitrary_location_write_simple.sol",
+      "start": 1041,
+      "end": 1065
+    }
+  ],
+  "callgraph": {
+    "total_sites": 6,
+    "resolved": 0,
+    "ambiguous": 0,
+    "external": 1,
+    "unknown": 1
+  },
+  "taint": {
+    "source_functions": 2,
+    "tainted_functions": 2,
+    "tainted_vars": 1,
+    "tainted_calls": 2
+  },
+  "storage_rw_map": [
+    {
+      "function_id": 0,
+      "function_name": null,
+      "reads": [],
+      "writes": [
+        "bonusCodes",
+        "owner"
+      ]
+    },
+    {
+      "function_id": 1,
+      "function_name": null,
+      "reads": [],
+      "writes": []
+    },
+    {
+      "function_id": 2,
+      "function_name": "PushBonusCode",
+      "reads": [
+        "bonusCodes"
+      ],
+      "writes": []
+    },
+    {
+      "function_id": 3,
+      "function_name": "PopBonusCode",
+      "reads": [
+        "bonusCodes"
+      ],
+      "writes": [
+        "bonusCodes"
+      ]
+    },
+    {
+      "function_id": 4,
+      "function_name": "UpdateBonusCodeAt",
+      "reads": [
+        "bonusCodes"
+      ],
+      "writes": [
+        "bonusCodes"
+      ]
+    },
+    {
+      "function_id": 5,
+      "function_name": "Destroy",
+      "reads": [
+        "owner"
+      ],
+      "writes": []
+    }
+  ],
+  "arg_domains": [
+    {
+      "function_id": 2,
+      "function_name": "PushBonusCode",
+      "param_index": 0,
+      "param_name": "c",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        10,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 4,
+      "function_name": "UpdateBonusCodeAt",
+      "param_index": 0,
+      "param_name": "idx",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        8,
+        10,
+        16,
+        32,
+        42,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 4,
+      "function_name": "UpdateBonusCodeAt",
+      "param_index": 1,
+      "param_name": "c",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        10,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    }
+  ],
+  "address_roles": [
+    {
+      "role": "owner",
+      "indices": [
+        0
+      ],
+      "evidence": [
+        "state_var:owner"
+      ],
+      "target_functions": []
+    },
+    {
+      "role": "attacker",
+      "indices": [
+        1
+      ],
+      "evidence": [
+        "adversarial-role"
+      ],
+      "target_functions": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ]
+    },
+    {
+      "role": "user",
+      "indices": [
+        2,
+        3,
+        4
+      ],
+      "evidence": [
+        "default-user-pool"
+      ],
+      "target_functions": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ]
+    }
+  ]
+}

@@ -1,0 +1,59 @@
+[
+  {
+    "engine": "static",
+    "finding_type": "access-control",
+    "severity": "medium",
+    "message": "public initialization path can seize authority; privileged operations become callable by an attacker",
+    "location": {
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/reentrancy/0x96edbe868531bd23a6c05e9d0c424ea64fb1b78b.sol",
+      "start": 586,
+      "end": 659,
+      "pc": null,
+      "function_id": 2,
+      "function_name": "Initialized"
+    },
+    "reproduction": null,
+    "signature": "static:runtime:rule-backstop:access-control:/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/reentrancy/0x96edbe868531bd23a6c05e9d0c424ea64fb1b78b.sol:586:659:none:2:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "rule-backstop",
+    "metadata": {}
+  },
+  {
+    "engine": "static",
+    "finding_type": "reentrancy",
+    "severity": "high",
+    "message": "RE-04: reentrancy in `Collect`: state variable is read before an ETH-sending external call and written after it inside nested control flow; update state before the call",
+    "location": {
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/reentrancy/0x96edbe868531bd23a6c05e9d0c424ea64fb1b78b.sol",
+      "start": 933,
+      "end": 1330,
+      "pc": null,
+      "function_id": 4,
+      "function_name": "Collect"
+    },
+    "reproduction": null,
+    "signature": "static:runtime:rule-backstop:reentrancy:/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/reentrancy/0x96edbe868531bd23a6c05e9d0c424ea64fb1b78b.sol:933:1330:none:4:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "rule-backstop",
+    "metadata": {}
+  },
+  {
+    "engine": "static",
+    "finding_type": "locked-ether",
+    "severity": "high",
+    "message": "DS-02: contract `PENNY_BY_PENNY` has `payable` function(s) but no withdrawal mechanism — Ether sent to this contract will be permanently locked",
+    "location": {
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/reentrancy/0x96edbe868531bd23a6c05e9d0c424ea64fb1b78b.sol",
+      "start": 102,
+      "end": 1410,
+      "pc": null,
+      "function_id": null,
+      "function_name": null
+    },
+    "reproduction": null,
+    "signature": "static:runtime:rule:locked-ether:/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/reentrancy/0x96edbe868531bd23a6c05e9d0c424ea64fb1b78b.sol:102:1410:none:none:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "rule",
+    "metadata": {}
+  }
+]

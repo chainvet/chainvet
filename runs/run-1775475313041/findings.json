@@ -1,0 +1,368 @@
+[
+  {
+    "engine": "fuzzing",
+    "finding_type": "access-control",
+    "severity": "high",
+    "message": "Missing access control: function 0 mutates authority slot(s) [creator] without checking msg.sender",
+    "location": {
+      "file": null,
+      "start": null,
+      "end": null,
+      "pc": null,
+      "function_id": 0,
+      "function_name": "initWallet"
+    },
+    "reproduction": {
+      "id": "repro-epoch1-83",
+      "txs": [
+        {
+          "function_id": 0,
+          "selector": null,
+          "calldata": null,
+          "args": [],
+          "sender": "1",
+          "value": "0",
+          "env": {
+            "block_timestamp": 1750000000,
+            "block_number": 1000000
+          }
+        }
+      ],
+      "state_snapshot_id": null,
+      "score": 3.5
+    },
+    "signature": "fuzzing:runtime:executor:access-control:none:none:none:none:0:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "executor",
+    "metadata": {
+      "confidence": "low"
+    }
+  },
+  {
+    "engine": "fuzzing",
+    "finding_type": "arbitrary-write",
+    "severity": "high",
+    "message": "Arbitrary write risk: function 0 writes storage without sender check and was exercised by 2 distinct senders (vars: creator)",
+    "location": {
+      "file": null,
+      "start": null,
+      "end": null,
+      "pc": null,
+      "function_id": 0,
+      "function_name": "initWallet"
+    },
+    "reproduction": {
+      "id": "repro-epoch1-140",
+      "txs": [
+        {
+          "function_id": 0,
+          "selector": null,
+          "calldata": null,
+          "args": [],
+          "sender": "3",
+          "value": "0",
+          "env": {
+            "block_timestamp": 619518717,
+            "block_number": 1000000
+          }
+        },
+        {
+          "function_id": 3,
+          "selector": null,
+          "calldata": null,
+          "args": [
+            "633825300114114700748351612232"
+          ],
+          "sender": "1",
+          "value": "0",
+          "env": {
+            "block_timestamp": 619518717,
+            "block_number": 1000000
+          }
+        },
+        {
+          "function_id": 0,
+          "selector": null,
+          "calldata": null,
+          "args": [],
+          "sender": "1",
+          "value": "0",
+          "env": {
+            "block_timestamp": 619518717,
+            "block_number": 1000000
+          }
+        }
+      ],
+      "state_snapshot_id": null,
+      "score": 3.5
+    },
+    "signature": "fuzzing:runtime:executor:arbitrary-write:none:none:none:none:0:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "executor",
+    "metadata": {
+      "confidence": "high"
+    }
+  },
+  {
+    "engine": "fuzzing",
+    "finding_type": "exception-disorder",
+    "severity": "medium",
+    "message": "Exception disorder: external call to '$t4' in function 2 followed by state change without checking return",
+    "location": {
+      "file": null,
+      "start": null,
+      "end": null,
+      "pc": null,
+      "function_id": 2,
+      "function_name": "withdraw"
+    },
+    "reproduction": {
+      "id": "repro-epoch2-124",
+      "txs": [
+        {
+          "function_id": 2,
+          "selector": null,
+          "calldata": null,
+          "args": [
+            "1000000"
+          ],
+          "sender": "1",
+          "value": "0",
+          "env": {
+            "block_timestamp": 1700000000,
+            "block_number": 20000000
+          }
+        }
+      ],
+      "state_snapshot_id": null,
+      "score": 3.5
+    },
+    "signature": "fuzzing:runtime:executor:exception-disorder:none:none:none:none:2:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "executor",
+    "metadata": {
+      "confidence": "low"
+    }
+  },
+  {
+    "engine": "fuzzing",
+    "finding_type": "hardcoded-gas-transfer",
+    "severity": "low",
+    "message": "Hardcoded gas: '$t4' in function 2 uses fixed 2300 gas stipend — may fail with contract recipients",
+    "location": {
+      "file": null,
+      "start": null,
+      "end": null,
+      "pc": null,
+      "function_id": 2,
+      "function_name": "withdraw"
+    },
+    "reproduction": {
+      "id": "repro-epoch2-124",
+      "txs": [
+        {
+          "function_id": 2,
+          "selector": null,
+          "calldata": null,
+          "args": [
+            "1000000"
+          ],
+          "sender": "1",
+          "value": "0",
+          "env": {
+            "block_timestamp": 1700000000,
+            "block_number": 20000000
+          }
+        }
+      ],
+      "state_snapshot_id": null,
+      "score": 3.5
+    },
+    "signature": "fuzzing:runtime:executor:hardcoded-gas-transfer:none:none:none:none:2:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "executor",
+    "metadata": {
+      "confidence": "medium"
+    }
+  },
+  {
+    "engine": "fuzzing",
+    "finding_type": "hardcoded-gas-transfer",
+    "severity": "low",
+    "message": "Hardcoded gas: '$t3' in function 3 uses fixed 2300 gas stipend — may fail with contract recipients",
+    "location": {
+      "file": null,
+      "start": null,
+      "end": null,
+      "pc": null,
+      "function_id": 3,
+      "function_name": "migrateTo"
+    },
+    "reproduction": {
+      "id": "repro-epoch6-14",
+      "txs": [
+        {
+          "function_id": 3,
+          "selector": null,
+          "calldata": null,
+          "args": [
+            "2174"
+          ],
+          "sender": "1",
+          "value": "0",
+          "env": {
+            "block_timestamp": 1750000000,
+            "block_number": 5000000
+          }
+        }
+      ],
+      "state_snapshot_id": null,
+      "score": 3.5
+    },
+    "signature": "fuzzing:runtime:executor:hardcoded-gas-transfer:none:none:none:none:3:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "executor",
+    "metadata": {
+      "confidence": "medium"
+    }
+  },
+  {
+    "engine": "fuzzing",
+    "finding_type": "integer-overflow",
+    "severity": "high",
+    "message": "Potential integer overflow in function 2: 0 - 1000000 = 340282366920938463463374607431767211456 (wrapping detected)",
+    "location": {
+      "file": null,
+      "start": null,
+      "end": null,
+      "pc": null,
+      "function_id": 2,
+      "function_name": "withdraw"
+    },
+    "reproduction": {
+      "id": "repro-epoch2-124",
+      "txs": [
+        {
+          "function_id": 2,
+          "selector": null,
+          "calldata": null,
+          "args": [
+            "1000000"
+          ],
+          "sender": "1",
+          "value": "0",
+          "env": {
+            "block_timestamp": 1700000000,
+            "block_number": 20000000
+          }
+        }
+      ],
+      "state_snapshot_id": null,
+      "score": 3.5
+    },
+    "signature": "fuzzing:runtime:executor:integer-overflow:none:none:none:none:2:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "executor",
+    "metadata": {
+      "confidence": "medium"
+    }
+  },
+  {
+    "engine": "fuzzing",
+    "finding_type": "integer-underflow",
+    "severity": "high",
+    "message": "Potential integer underflow in function 2: 0 - 1000000 = 340282366920938463463374607431767211456 (wrapping detected)",
+    "location": {
+      "file": null,
+      "start": null,
+      "end": null,
+      "pc": null,
+      "function_id": 2,
+      "function_name": "withdraw"
+    },
+    "reproduction": {
+      "id": "repro-epoch2-124",
+      "txs": [
+        {
+          "function_id": 2,
+          "selector": null,
+          "calldata": null,
+          "args": [
+            "1000000"
+          ],
+          "sender": "1",
+          "value": "0",
+          "env": {
+            "block_timestamp": 1700000000,
+            "block_number": 20000000
+          }
+        }
+      ],
+      "state_snapshot_id": null,
+      "score": 3.5
+    },
+    "signature": "fuzzing:runtime:executor:integer-underflow:none:none:none:none:2:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "executor",
+    "metadata": {
+      "confidence": "medium"
+    }
+  },
+  {
+    "engine": "static",
+    "finding_type": "access-control",
+    "severity": "medium",
+    "message": "public initialization path can seize authority; privileged operations become callable by an attacker",
+    "location": {
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/wallet_03_wrong_constructor.sol",
+      "start": 465,
+      "end": 533,
+      "pc": null,
+      "function_id": 0,
+      "function_name": "initWallet"
+    },
+    "reproduction": null,
+    "signature": "static:runtime:rule-backstop:access-control:/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/wallet_03_wrong_constructor.sol:465:533:none:0:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "rule-backstop",
+    "metadata": {}
+  },
+  {
+    "engine": "static",
+    "finding_type": "reentrancy",
+    "severity": "medium",
+    "message": "RE-02: reentrancy in `withdraw`: state variable updated after `.transfer()` / `.send()` call; update state **before** transferring to follow checks-effects-interactions",
+    "location": {
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/wallet_03_wrong_constructor.sol",
+      "start": 809,
+      "end": 836,
+      "pc": null,
+      "function_id": 2,
+      "function_name": "withdraw"
+    },
+    "reproduction": null,
+    "signature": "static:runtime:rule-backstop:reentrancy:/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/wallet_03_wrong_constructor.sol:809:836:none:2:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "rule-backstop",
+    "metadata": {}
+  },
+  {
+    "engine": "static",
+    "finding_type": "unprotected-ether-withdrawal",
+    "severity": "medium",
+    "message": "public initialization takeover can seize owner rights and expose this Ether-moving path",
+    "location": {
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/wallet_03_wrong_constructor.sol",
+      "start": 707,
+      "end": 885,
+      "pc": null,
+      "function_id": 2,
+      "function_name": "withdraw"
+    },
+    "reproduction": null,
+    "signature": "static:runtime:rule-backstop:unprotected-ether-withdrawal:/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/wallet_03_wrong_constructor.sol:707:885:none:2:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "rule-backstop",
+    "metadata": {}
+  }
+]

@@ -1,0 +1,249 @@
+[
+  {
+    "engine": "fuzzing",
+    "finding_type": "hardcoded-gas-transfer",
+    "severity": "low",
+    "message": "Hardcoded gas: '$t3' in function 1 uses fixed 2300 gas stipend — may fail with contract recipients",
+    "location": {
+      "file": null,
+      "start": null,
+      "end": null,
+      "pc": null,
+      "function_id": 1,
+      "function_name": "redeem"
+    },
+    "reproduction": {
+      "id": "repro-epoch2-113",
+      "txs": [
+        {
+          "function_id": 1,
+          "selector": null,
+          "calldata": null,
+          "args": [],
+          "sender": "3",
+          "value": "1000000000000000000",
+          "env": {
+            "block_timestamp": 1262149383,
+            "block_number": 10000000
+          }
+        }
+      ],
+      "state_snapshot_id": null,
+      "score": 3.5
+    },
+    "signature": "fuzzing:runtime:executor:hardcoded-gas-transfer:none:none:none:none:1:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "executor",
+    "metadata": {
+      "confidence": "medium"
+    }
+  },
+  {
+    "engine": "fuzzing",
+    "finding_type": "hardcoded-gas-transfer",
+    "severity": "low",
+    "message": "Hardcoded gas: '$t5' in function 2 uses fixed 2300 gas stipend — may fail with contract recipients",
+    "location": {
+      "file": null,
+      "start": null,
+      "end": null,
+      "pc": null,
+      "function_id": 2,
+      "function_name": "withdraw"
+    },
+    "reproduction": {
+      "id": "repro-epoch1-85",
+      "txs": [
+        {
+          "function_id": 2,
+          "selector": null,
+          "calldata": null,
+          "args": [],
+          "sender": "0",
+          "value": "1000000000000000000",
+          "env": {
+            "block_timestamp": 1800000000,
+            "block_number": 1000000
+          }
+        }
+      ],
+      "state_snapshot_id": null,
+      "score": 3.5
+    },
+    "signature": "fuzzing:runtime:executor:hardcoded-gas-transfer:none:none:none:none:2:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "executor",
+    "metadata": {
+      "confidence": "medium"
+    }
+  },
+  {
+    "engine": "fuzzing",
+    "finding_type": "reentrancy",
+    "severity": "low",
+    "message": "Heuristic reentrancy signal: feasible callback observed in function 3 without post-call state-write evidence",
+    "location": {
+      "file": null,
+      "start": null,
+      "end": null,
+      "pc": null,
+      "function_id": 3,
+      "function_name": "Command"
+    },
+    "reproduction": {
+      "id": "repro-epoch1-143",
+      "txs": [
+        {
+          "function_id": 3,
+          "selector": null,
+          "calldata": null,
+          "args": [
+            "100",
+            "1000"
+          ],
+          "sender": "1",
+          "value": "1",
+          "env": {
+            "block_timestamp": 1650000000,
+            "block_number": 20000000
+          }
+        }
+      ],
+      "state_snapshot_id": null,
+      "score": 3.5
+    },
+    "signature": "fuzzing:runtime:executor:reentrancy:none:none:none:none:3:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "executor",
+    "metadata": {
+      "confidence": "low"
+    }
+  },
+  {
+    "engine": "fuzzing",
+    "finding_type": "unchecked-call",
+    "severity": "medium",
+    "message": "Unchecked external call to '$t6' in function 3 — return value not verified",
+    "location": {
+      "file": null,
+      "start": null,
+      "end": null,
+      "pc": null,
+      "function_id": 3,
+      "function_name": "Command"
+    },
+    "reproduction": {
+      "id": "repro-epoch1-143",
+      "txs": [
+        {
+          "function_id": 3,
+          "selector": null,
+          "calldata": null,
+          "args": [
+            "100",
+            "1000"
+          ],
+          "sender": "1",
+          "value": "1",
+          "env": {
+            "block_timestamp": 1650000000,
+            "block_number": 20000000
+          }
+        }
+      ],
+      "state_snapshot_id": null,
+      "score": 3.5
+    },
+    "signature": "fuzzing:runtime:executor:unchecked-call:none:none:none:none:3:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "executor",
+    "metadata": {
+      "confidence": "high"
+    }
+  },
+  {
+    "engine": "fuzzing",
+    "finding_type": "unprotected-ether-withdrawal",
+    "severity": "high",
+    "message": "Unprotected Ether withdrawal via '$t3' in function 1 — anyone can drain funds",
+    "location": {
+      "file": null,
+      "start": null,
+      "end": null,
+      "pc": null,
+      "function_id": 1,
+      "function_name": "redeem"
+    },
+    "reproduction": {
+      "id": "repro-epoch2-113",
+      "txs": [
+        {
+          "function_id": 1,
+          "selector": null,
+          "calldata": null,
+          "args": [],
+          "sender": "3",
+          "value": "1000000000000000000",
+          "env": {
+            "block_timestamp": 1262149383,
+            "block_number": 10000000
+          }
+        }
+      ],
+      "state_snapshot_id": null,
+      "score": 3.5
+    },
+    "signature": "fuzzing:runtime:executor:unprotected-ether-withdrawal:none:none:none:none:1:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "executor",
+    "metadata": {
+      "confidence": "high"
+    }
+  },
+  {
+    "engine": "meta",
+    "finding_type": "honeypot",
+    "severity": "low",
+    "message": "contract 'WhaleGiveaway2' exposes a public funding path but its payout flow looks deceptive or trap-like",
+    "location": {
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/unchecked_low_level_calls/0x3f2ef511aa6e75231e4deafc7a3d2ecab3741de2.sol",
+      "start": 5968,
+      "end": 9209,
+      "pc": null,
+      "function_id": 2,
+      "function_name": "withdraw"
+    },
+    "reproduction": null,
+    "signature": "meta:meta:honeypot-heuristic:honeypot:/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/unchecked_low_level_calls/0x3f2ef511aa6e75231e4deafc7a3d2ecab3741de2.sol:5968:9209:none:2:none",
+    "analysis_layer": "meta",
+    "evidence_kind": "honeypot-heuristic",
+    "metadata": {
+      "confidence": "low",
+      "contract": "WhaleGiveaway2",
+      "reasons": "owner-or-secret-gate"
+    }
+  },
+  {
+    "engine": "meta",
+    "finding_type": "honeypot",
+    "severity": "low",
+    "message": "contract 'WhaleGiveaway2' exposes a public funding path but its payout flow looks deceptive or trap-like",
+    "location": {
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/unchecked_low_level_calls/0x3f2ef511aa6e75231e4deafc7a3d2ecab3741de2.sol",
+      "start": 5968,
+      "end": 9209,
+      "pc": null,
+      "function_id": 2,
+      "function_name": "withdraw"
+    },
+    "reproduction": null,
+    "signature": "meta:runtime:meta-runtime-backstop:honeypot:/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/unchecked_low_level_calls/0x3f2ef511aa6e75231e4deafc7a3d2ecab3741de2.sol:5968:9209:none:2:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "meta-runtime-backstop",
+    "metadata": {
+      "confidence": "low",
+      "contract": "WhaleGiveaway2",
+      "reasons": "owner-or-secret-gate"
+    }
+  }
+]

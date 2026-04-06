@@ -1,0 +1,344 @@
+{
+  "function_whitelist": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5
+  ],
+  "function_blacklist": [],
+  "hotspots": [
+    {
+      "function_id": 1,
+      "function_name": "proxy",
+      "score": 10.7,
+      "reasons": [
+        "external_calls=1",
+        "unresolved_calls=1",
+        "tainted_calls=2",
+        "uses_source=true"
+      ]
+    },
+    {
+      "function_id": 5,
+      "function_name": "withdraw",
+      "score": 7.699999999999999,
+      "reasons": [
+        "external_calls=1",
+        "low_level_calls=1",
+        "uses_source=true"
+      ]
+    },
+    {
+      "function_id": 3,
+      "function_name": "Vault",
+      "score": 3.3,
+      "reasons": [
+        "storage_writes=1",
+        "uses_source=true"
+      ]
+    },
+    {
+      "function_id": 4,
+      "function_name": "deposit",
+      "score": 3.3,
+      "reasons": [
+        "storage_writes=1",
+        "uses_source=true"
+      ]
+    },
+    {
+      "function_id": 0,
+      "function_name": "transferOwner",
+      "score": 1.8,
+      "reasons": [
+        "storage_writes=1"
+      ]
+    }
+  ],
+  "sinks": [
+    {
+      "function_id": 4294967295,
+      "function_name": null,
+      "sink_kind": "dangerous-state-var-init",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/unchecked_low_level_calls/0xbebbfe5b549f5db6e6c78ca97cac19d1fb03082c.sol",
+      "start": 175,
+      "end": 201
+    },
+    {
+      "function_id": 3,
+      "function_name": "Vault",
+      "sink_kind": "tx-origin",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/unchecked_low_level_calls/0xbebbfe5b549f5db6e6c78ca97cac19d1fb03082c.sol",
+      "start": 658,
+      "end": 667
+    },
+    {
+      "function_id": 3,
+      "function_name": "Vault",
+      "sink_kind": "uninit-permission-check",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/unchecked_low_level_calls/0xbebbfe5b549f5db6e6c78ca97cac19d1fb03082c.sol",
+      "start": 598,
+      "end": 741
+    },
+    {
+      "function_id": 0,
+      "function_name": "transferOwner",
+      "sink_kind": "missing-input-validation",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/unchecked_low_level_calls/0xbebbfe5b549f5db6e6c78ca97cac19d1fb03082c.sol",
+      "start": 207,
+      "end": 282
+    },
+    {
+      "function_id": 1,
+      "function_name": "proxy",
+      "sink_kind": "missing-input-validation",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/unchecked_low_level_calls/0xbebbfe5b549f5db6e6c78ca97cac19d1fb03082c.sol",
+      "start": 288,
+      "end": 442
+    },
+    {
+      "function_id": 5,
+      "function_name": "withdraw",
+      "sink_kind": "transaction-order-dependency",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/unchecked_low_level_calls/0xbebbfe5b549f5db6e6c78ca97cac19d1fb03082c.sol",
+      "start": 896,
+      "end": 1061
+    },
+    {
+      "function_id": 5,
+      "function_name": "withdraw",
+      "sink_kind": "hardcoded-gas-transfer",
+      "severity": "low",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/unchecked_low_level_calls/0xbebbfe5b549f5db6e6c78ca97cac19d1fb03082c.sol",
+      "start": 1017,
+      "end": 1044
+    },
+    {
+      "function_id": 4294967295,
+      "function_name": null,
+      "sink_kind": "locked-ether",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/unchecked_low_level_calls/0xbebbfe5b549f5db6e6c78ca97cac19d1fb03082c.sol",
+      "start": 102,
+      "end": 444
+    },
+    {
+      "function_id": 0,
+      "function_name": "transferOwner",
+      "sink_kind": "storage-array-by-value",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/unchecked_low_level_calls/0xbebbfe5b549f5db6e6c78ca97cac19d1fb03082c.sol",
+      "start": 265,
+      "end": 279
+    },
+    {
+      "function_id": 1,
+      "function_name": "proxy",
+      "sink_kind": "tainted-call",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/unchecked_low_level_calls/0xbebbfe5b549f5db6e6c78ca97cac19d1fb03082c.sol",
+      "start": 401,
+      "end": 435
+    },
+    {
+      "function_id": 1,
+      "function_name": "proxy",
+      "sink_kind": "tainted-call",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/unchecked_low_level_calls/0xbebbfe5b549f5db6e6c78ca97cac19d1fb03082c.sol",
+      "start": 401,
+      "end": 429
+    }
+  ],
+  "callgraph": {
+    "total_sites": 4,
+    "resolved": 1,
+    "ambiguous": 0,
+    "external": 2,
+    "unknown": 1
+  },
+  "taint": {
+    "source_functions": 4,
+    "tainted_functions": 4,
+    "tainted_vars": 2,
+    "tainted_calls": 2
+  },
+  "storage_rw_map": [
+    {
+      "function_id": 0,
+      "function_name": "transferOwner",
+      "reads": [],
+      "writes": [
+        "Owner"
+      ]
+    },
+    {
+      "function_id": 1,
+      "function_name": "proxy",
+      "reads": [],
+      "writes": []
+    },
+    {
+      "function_id": 2,
+      "function_name": null,
+      "reads": [],
+      "writes": []
+    },
+    {
+      "function_id": 3,
+      "function_name": "Vault",
+      "reads": [],
+      "writes": [
+        "Owner"
+      ]
+    },
+    {
+      "function_id": 4,
+      "function_name": "deposit",
+      "reads": [
+        "Deposits"
+      ],
+      "writes": [
+        "Deposits"
+      ]
+    },
+    {
+      "function_id": 5,
+      "function_name": "withdraw",
+      "reads": [
+        "Deposits"
+      ],
+      "writes": []
+    }
+  ],
+  "arg_domains": [
+    {
+      "function_id": 0,
+      "function_name": "transferOwner",
+      "param_index": 0,
+      "param_name": "_owner",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        10,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 1,
+      "function_name": "proxy",
+      "param_index": 0,
+      "param_name": "target",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        10,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 1,
+      "function_name": "proxy",
+      "param_index": 1,
+      "param_name": "data",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        10,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 5,
+      "function_name": "withdraw",
+      "param_index": 0,
+      "param_name": "amount",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        10,
+        100,
+        1000,
+        1000000,
+        1000000000000000000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    }
+  ],
+  "address_roles": [
+    {
+      "role": "owner",
+      "indices": [
+        0
+      ],
+      "evidence": [
+        "state_var:Owner",
+        "state_var:Owner"
+      ],
+      "target_functions": [
+        0,
+        5
+      ]
+    },
+    {
+      "role": "attacker",
+      "indices": [
+        1
+      ],
+      "evidence": [
+        "adversarial-role"
+      ],
+      "target_functions": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ]
+    },
+    {
+      "role": "user",
+      "indices": [
+        2,
+        3,
+        4
+      ],
+      "evidence": [
+        "default-user-pool"
+      ],
+      "target_functions": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ]
+    }
+  ]
+}

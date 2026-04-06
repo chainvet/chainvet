@@ -1,0 +1,310 @@
+[
+  {
+    "engine": "fuzzing",
+    "finding_type": "denial-of-service",
+    "severity": "medium",
+    "message": "Potential DoS: unbounded loop in function 3 with storage-dependent condition '$t2'",
+    "location": {
+      "file": null,
+      "start": null,
+      "end": null,
+      "pc": null,
+      "function_id": 3,
+      "function_name": "totalDebt"
+    },
+    "reproduction": {
+      "id": "repro-epoch1-84",
+      "txs": [
+        {
+          "function_id": 1,
+          "selector": null,
+          "calldata": null,
+          "args": [
+            "49"
+          ],
+          "sender": "3",
+          "value": "0",
+          "env": {
+            "block_timestamp": 1650000000,
+            "block_number": 1000000
+          }
+        },
+        {
+          "function_id": 3,
+          "selector": null,
+          "calldata": null,
+          "args": [],
+          "sender": "1",
+          "value": "0",
+          "env": {
+            "block_timestamp": 1650000000,
+            "block_number": 1000000
+          }
+        }
+      ],
+      "state_snapshot_id": null,
+      "score": 3.5
+    },
+    "signature": "fuzzing:runtime:executor:denial-of-service:none:none:none:none:3:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "executor",
+    "metadata": {
+      "confidence": "low"
+    }
+  },
+  {
+    "engine": "fuzzing",
+    "finding_type": "denial-of-service",
+    "severity": "medium",
+    "message": "Potential DoS: unbounded loop in function 4 with storage-dependent condition '$t1'",
+    "location": {
+      "file": null,
+      "start": null,
+      "end": null,
+      "pc": null,
+      "function_id": 4,
+      "function_name": "totalPayedOut"
+    },
+    "reproduction": {
+      "id": "repro-epoch1-165",
+      "txs": [
+        {
+          "function_id": 1,
+          "selector": null,
+          "calldata": null,
+          "args": [
+            "6801"
+          ],
+          "sender": "3",
+          "value": "0",
+          "env": {
+            "block_timestamp": 1650000000,
+            "block_number": 1000000
+          }
+        },
+        {
+          "function_id": 4,
+          "selector": null,
+          "calldata": null,
+          "args": [],
+          "sender": "1",
+          "value": "0",
+          "env": {
+            "block_timestamp": 1650000000,
+            "block_number": 1000000
+          }
+        }
+      ],
+      "state_snapshot_id": null,
+      "score": 3.5
+    },
+    "signature": "fuzzing:runtime:executor:denial-of-service:none:none:none:none:4:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "executor",
+    "metadata": {
+      "confidence": "low"
+    }
+  },
+  {
+    "engine": "fuzzing",
+    "finding_type": "hardcoded-gas-transfer",
+    "severity": "low",
+    "message": "Hardcoded gas: '$t70' in function 1 uses fixed 2300 gas stipend — may fail with contract recipients",
+    "location": {
+      "file": null,
+      "start": null,
+      "end": null,
+      "pc": null,
+      "function_id": 1,
+      "function_name": "lendGovernmentMoney"
+    },
+    "reproduction": {
+      "id": "repro-epoch1-59",
+      "txs": [
+        {
+          "function_id": 1,
+          "selector": null,
+          "calldata": null,
+          "args": [
+            "2"
+          ],
+          "sender": "1",
+          "value": "0",
+          "env": {
+            "block_timestamp": 1700000000,
+            "block_number": 5000000
+          }
+        }
+      ],
+      "state_snapshot_id": null,
+      "score": 3.5
+    },
+    "signature": "fuzzing:runtime:executor:hardcoded-gas-transfer:none:none:none:none:1:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "executor",
+    "metadata": {
+      "confidence": "medium"
+    }
+  },
+  {
+    "engine": "fuzzing",
+    "finding_type": "timestamp-dependency",
+    "severity": "medium",
+    "message": "Timestamp dependency: block.timestamp used in conditional branch in function 1",
+    "location": {
+      "file": null,
+      "start": null,
+      "end": null,
+      "pc": null,
+      "function_id": 1,
+      "function_name": "lendGovernmentMoney"
+    },
+    "reproduction": {
+      "id": "repro-epoch1-59",
+      "txs": [
+        {
+          "function_id": 1,
+          "selector": null,
+          "calldata": null,
+          "args": [
+            "2"
+          ],
+          "sender": "1",
+          "value": "0",
+          "env": {
+            "block_timestamp": 1700000000,
+            "block_number": 5000000
+          }
+        }
+      ],
+      "state_snapshot_id": null,
+      "score": 3.5
+    },
+    "signature": "fuzzing:runtime:executor:timestamp-dependency:none:none:none:none:1:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "executor",
+    "metadata": {
+      "confidence": "medium"
+    }
+  },
+  {
+    "engine": "fuzzing",
+    "finding_type": "unchecked-call",
+    "severity": "medium",
+    "message": "Unchecked external call to '$t70' in function 1 — return value not verified",
+    "location": {
+      "file": null,
+      "start": null,
+      "end": null,
+      "pc": null,
+      "function_id": 1,
+      "function_name": "lendGovernmentMoney"
+    },
+    "reproduction": {
+      "id": "repro-epoch1-59",
+      "txs": [
+        {
+          "function_id": 1,
+          "selector": null,
+          "calldata": null,
+          "args": [
+            "2"
+          ],
+          "sender": "1",
+          "value": "0",
+          "env": {
+            "block_timestamp": 1700000000,
+            "block_number": 5000000
+          }
+        }
+      ],
+      "state_snapshot_id": null,
+      "score": 3.5
+    },
+    "signature": "fuzzing:runtime:executor:unchecked-call:none:none:none:none:1:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "executor",
+    "metadata": {
+      "confidence": "high"
+    }
+  },
+  {
+    "engine": "fuzzing",
+    "finding_type": "unprotected-ether-withdrawal",
+    "severity": "high",
+    "message": "Unprotected Ether withdrawal via '$t70' in function 1 — anyone can drain funds",
+    "location": {
+      "file": null,
+      "start": null,
+      "end": null,
+      "pc": null,
+      "function_id": 1,
+      "function_name": "lendGovernmentMoney"
+    },
+    "reproduction": {
+      "id": "repro-epoch1-59",
+      "txs": [
+        {
+          "function_id": 1,
+          "selector": null,
+          "calldata": null,
+          "args": [
+            "2"
+          ],
+          "sender": "1",
+          "value": "0",
+          "env": {
+            "block_timestamp": 1700000000,
+            "block_number": 5000000
+          }
+        }
+      ],
+      "state_snapshot_id": null,
+      "score": 3.5
+    },
+    "signature": "fuzzing:runtime:executor:unprotected-ether-withdrawal:none:none:none:none:1:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "executor",
+    "metadata": {
+      "confidence": "high"
+    }
+  },
+  {
+    "engine": "static",
+    "finding_type": "reentrancy",
+    "severity": "high",
+    "message": "RE-04: reentrancy in `lendGovernmentMoney`: state variable is read before an ETH-sending external call and written after it inside nested control flow; update state before the call",
+    "location": {
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/denial_of_service/list_dos.sol",
+      "start": 896,
+      "end": 3818,
+      "pc": null,
+      "function_id": 1,
+      "function_name": "lendGovernmentMoney"
+    },
+    "reproduction": null,
+    "signature": "static:runtime:rule-backstop:reentrancy:/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/denial_of_service/list_dos.sol:896:3818:none:1:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "rule-backstop",
+    "metadata": {}
+  },
+  {
+    "engine": "static",
+    "finding_type": "dos-block-gas-limit",
+    "severity": "medium",
+    "message": "DS-03: `for` loop in `totalDebt` iterates over a dynamically-sized array (`.length`); if the array grows without bound, this function may exceed the block gas limit and become permanently uncallable",
+    "location": {
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/denial_of_service/list_dos.sol",
+      "start": 3962,
+      "end": 4078,
+      "pc": null,
+      "function_id": 3,
+      "function_name": "totalDebt"
+    },
+    "reproduction": null,
+    "signature": "static:runtime:rule:dos-block-gas-limit:/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/denial_of_service/list_dos.sol:3962:4078:none:3:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "rule",
+    "metadata": {}
+  }
+]

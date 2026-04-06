@@ -1,0 +1,207 @@
+[
+  {
+    "engine": "fuzzing",
+    "finding_type": "exception-disorder",
+    "severity": "medium",
+    "message": "Exception disorder: external call to '$t2' in function 0 followed by state change without checking return",
+    "location": {
+      "file": null,
+      "start": null,
+      "end": null,
+      "pc": null,
+      "function_id": 0,
+      "function_name": "withdrawReward"
+    },
+    "reproduction": {
+      "id": "repro-epoch1-128",
+      "txs": [
+        {
+          "function_id": 0,
+          "selector": null,
+          "calldata": null,
+          "args": [
+            "340282366920938463463374607431768211454"
+          ],
+          "sender": "1",
+          "value": "0",
+          "env": {
+            "block_timestamp": 119726498,
+            "block_number": 1000010
+          }
+        }
+      ],
+      "state_snapshot_id": null,
+      "score": 3.5
+    },
+    "signature": "fuzzing:runtime:executor:exception-disorder:none:none:none:none:0:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "executor",
+    "metadata": {
+      "confidence": "low"
+    }
+  },
+  {
+    "engine": "fuzzing",
+    "finding_type": "hardcoded-gas-transfer",
+    "severity": "low",
+    "message": "Hardcoded gas: '$t3' in function 0 uses fixed 2300 gas stipend — may fail with contract recipients",
+    "location": {
+      "file": null,
+      "start": null,
+      "end": null,
+      "pc": null,
+      "function_id": 0,
+      "function_name": "withdrawReward"
+    },
+    "reproduction": {
+      "id": "repro-epoch1-67",
+      "txs": [
+        {
+          "function_id": 0,
+          "selector": null,
+          "calldata": null,
+          "args": [
+            "10"
+          ],
+          "sender": "0",
+          "value": "0",
+          "env": {
+            "block_timestamp": 1700000000,
+            "block_number": 5000000
+          }
+        }
+      ],
+      "state_snapshot_id": null,
+      "score": 3.5
+    },
+    "signature": "fuzzing:runtime:executor:hardcoded-gas-transfer:none:none:none:none:0:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "executor",
+    "metadata": {
+      "confidence": "medium"
+    }
+  },
+  {
+    "engine": "fuzzing",
+    "finding_type": "reentrancy",
+    "severity": "high",
+    "message": "Potential reentrancy: feasible callback in function 0 followed by storage write 'rewardsForA[recipient]' (evidence=stale-read+post-call-mutation)",
+    "location": {
+      "file": null,
+      "start": null,
+      "end": null,
+      "pc": null,
+      "function_id": 0,
+      "function_name": "withdrawReward"
+    },
+    "reproduction": {
+      "id": "repro-epoch1-128",
+      "txs": [
+        {
+          "function_id": 0,
+          "selector": null,
+          "calldata": null,
+          "args": [
+            "340282366920938463463374607431768211454"
+          ],
+          "sender": "1",
+          "value": "0",
+          "env": {
+            "block_timestamp": 119726498,
+            "block_number": 1000010
+          }
+        }
+      ],
+      "state_snapshot_id": null,
+      "score": 3.5
+    },
+    "signature": "fuzzing:runtime:executor:reentrancy:none:none:none:none:0:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "executor",
+    "metadata": {
+      "confidence": "high"
+    }
+  },
+  {
+    "engine": "fuzzing",
+    "finding_type": "unchecked-call",
+    "severity": "medium",
+    "message": "Unchecked external call to '$t3' in function 0 — return value not verified",
+    "location": {
+      "file": null,
+      "start": null,
+      "end": null,
+      "pc": null,
+      "function_id": 0,
+      "function_name": "withdrawReward"
+    },
+    "reproduction": {
+      "id": "repro-epoch1-67",
+      "txs": [
+        {
+          "function_id": 0,
+          "selector": null,
+          "calldata": null,
+          "args": [
+            "10"
+          ],
+          "sender": "0",
+          "value": "0",
+          "env": {
+            "block_timestamp": 1700000000,
+            "block_number": 5000000
+          }
+        }
+      ],
+      "state_snapshot_id": null,
+      "score": 3.5
+    },
+    "signature": "fuzzing:runtime:executor:unchecked-call:none:none:none:none:0:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "executor",
+    "metadata": {
+      "confidence": "high"
+    }
+  },
+  {
+    "engine": "fuzzing",
+    "finding_type": "unprotected-ether-withdrawal",
+    "severity": "high",
+    "message": "Unprotected Ether withdrawal via '$t2' in function 0 — anyone can drain funds",
+    "location": {
+      "file": null,
+      "start": null,
+      "end": null,
+      "pc": null,
+      "function_id": 0,
+      "function_name": "withdrawReward"
+    },
+    "reproduction": {
+      "id": "repro-epoch1-67",
+      "txs": [
+        {
+          "function_id": 0,
+          "selector": null,
+          "calldata": null,
+          "args": [
+            "10"
+          ],
+          "sender": "0",
+          "value": "0",
+          "env": {
+            "block_timestamp": 1700000000,
+            "block_number": 5000000
+          }
+        }
+      ],
+      "state_snapshot_id": null,
+      "score": 3.5
+    },
+    "signature": "fuzzing:runtime:executor:unprotected-ether-withdrawal:none:none:none:none:0:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "executor",
+    "metadata": {
+      "confidence": "high"
+    }
+  }
+]

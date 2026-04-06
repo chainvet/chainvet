@@ -1,0 +1,105 @@
+{
+  "function_whitelist": [
+    0
+  ],
+  "function_blacklist": [],
+  "hotspots": [
+    {
+      "function_id": 0,
+      "function_name": "withdrawBalance",
+      "score": 8.1,
+      "reasons": [
+        "storage_writes=1",
+        "external_calls=1",
+        "unresolved_calls=1",
+        "uses_source=true"
+      ]
+    }
+  ],
+  "sinks": [
+    {
+      "function_id": 0,
+      "function_name": "withdrawBalance",
+      "sink_kind": "reentrancy-eth-transfer",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/reentrancy/reentrancy_insecure.sol",
+      "start": 273,
+      "end": 629
+    },
+    {
+      "function_id": 0,
+      "function_name": "withdrawBalance",
+      "sink_kind": "reentrancy-no-eth-transfer",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/reentrancy/reentrancy_insecure.sol",
+      "start": 412,
+      "end": 474
+    }
+  ],
+  "callgraph": {
+    "total_sites": 3,
+    "resolved": 0,
+    "ambiguous": 0,
+    "external": 1,
+    "unknown": 1
+  },
+  "taint": {
+    "source_functions": 1,
+    "tainted_functions": 1,
+    "tainted_vars": 0,
+    "tainted_calls": 0
+  },
+  "storage_rw_map": [
+    {
+      "function_id": 0,
+      "function_name": "withdrawBalance",
+      "reads": [
+        "userBalances"
+      ],
+      "writes": [
+        "userBalances"
+      ]
+    }
+  ],
+  "arg_domains": [],
+  "address_roles": [
+    {
+      "role": "owner",
+      "indices": [
+        0
+      ],
+      "evidence": [
+        "default-owner-role"
+      ],
+      "target_functions": [
+        0
+      ]
+    },
+    {
+      "role": "attacker",
+      "indices": [
+        1
+      ],
+      "evidence": [
+        "adversarial-role"
+      ],
+      "target_functions": [
+        0
+      ]
+    },
+    {
+      "role": "user",
+      "indices": [
+        2,
+        3,
+        4
+      ],
+      "evidence": [
+        "default-user-pool"
+      ],
+      "target_functions": [
+        0
+      ]
+    }
+  ]
+}

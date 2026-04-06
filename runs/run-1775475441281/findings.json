@@ -1,0 +1,182 @@
+[
+  {
+    "engine": "fuzzing",
+    "finding_type": "reentrancy",
+    "severity": "low",
+    "message": "Heuristic reentrancy signal: feasible callback observed in function 4 without post-call state-write evidence",
+    "location": {
+      "file": null,
+      "start": null,
+      "end": null,
+      "pc": null,
+      "function_id": 4,
+      "function_name": "Collect"
+    },
+    "reproduction": {
+      "id": "repro-epoch1-4",
+      "txs": [
+        {
+          "function_id": 4,
+          "selector": null,
+          "calldata": null,
+          "args": [
+            "0"
+          ],
+          "sender": "1",
+          "value": "1000000000000000000",
+          "env": {
+            "block_timestamp": 1800000000,
+            "block_number": 20000000
+          }
+        }
+      ],
+      "state_snapshot_id": null,
+      "score": 5.0
+    },
+    "signature": "fuzzing:runtime:executor:reentrancy:none:none:none:none:4:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "executor",
+    "metadata": {
+      "confidence": "low"
+    }
+  },
+  {
+    "engine": "fuzzing",
+    "finding_type": "unchecked-call",
+    "severity": "medium",
+    "message": "Unchecked external call to '$t10' in function 4 — return value not verified",
+    "location": {
+      "file": null,
+      "start": null,
+      "end": null,
+      "pc": null,
+      "function_id": 4,
+      "function_name": "Collect"
+    },
+    "reproduction": {
+      "id": "repro-epoch1-4",
+      "txs": [
+        {
+          "function_id": 4,
+          "selector": null,
+          "calldata": null,
+          "args": [
+            "0"
+          ],
+          "sender": "1",
+          "value": "1000000000000000000",
+          "env": {
+            "block_timestamp": 1800000000,
+            "block_number": 20000000
+          }
+        }
+      ],
+      "state_snapshot_id": null,
+      "score": 5.0
+    },
+    "signature": "fuzzing:runtime:executor:unchecked-call:none:none:none:none:4:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "executor",
+    "metadata": {
+      "confidence": "high"
+    }
+  },
+  {
+    "engine": "fuzzing",
+    "finding_type": "unprotected-ether-withdrawal",
+    "severity": "high",
+    "message": "Unprotected Ether withdrawal via '$t10' in function 4 — anyone can drain funds",
+    "location": {
+      "file": null,
+      "start": null,
+      "end": null,
+      "pc": null,
+      "function_id": 4,
+      "function_name": "Collect"
+    },
+    "reproduction": {
+      "id": "repro-epoch1-4",
+      "txs": [
+        {
+          "function_id": 4,
+          "selector": null,
+          "calldata": null,
+          "args": [
+            "0"
+          ],
+          "sender": "1",
+          "value": "1000000000000000000",
+          "env": {
+            "block_timestamp": 1800000000,
+            "block_number": 20000000
+          }
+        }
+      ],
+      "state_snapshot_id": null,
+      "score": 5.0
+    },
+    "signature": "fuzzing:runtime:executor:unprotected-ether-withdrawal:none:none:none:none:4:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "executor",
+    "metadata": {
+      "confidence": "high"
+    }
+  },
+  {
+    "engine": "static",
+    "finding_type": "access-control",
+    "severity": "medium",
+    "message": "public initialization path can seize authority; privileged operations become callable by an attacker",
+    "location": {
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/reentrancy/0x4e73b32ed6c35f570686b89848e5f39f20ecc106.sol",
+      "start": 509,
+      "end": 582,
+      "pc": null,
+      "function_id": 2,
+      "function_name": "Initialized"
+    },
+    "reproduction": null,
+    "signature": "static:runtime:rule-backstop:access-control:/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/reentrancy/0x4e73b32ed6c35f570686b89848e5f39f20ecc106.sol:509:582:none:2:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "rule-backstop",
+    "metadata": {}
+  },
+  {
+    "engine": "static",
+    "finding_type": "reentrancy",
+    "severity": "high",
+    "message": "RE-04: reentrancy in `Collect`: state variable is read before an ETH-sending external call and written after it inside nested control flow; update state before the call",
+    "location": {
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/reentrancy/0x4e73b32ed6c35f570686b89848e5f39f20ecc106.sol",
+      "start": 749,
+      "end": 1115,
+      "pc": null,
+      "function_id": 4,
+      "function_name": "Collect"
+    },
+    "reproduction": null,
+    "signature": "static:runtime:rule-backstop:reentrancy:/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/reentrancy/0x4e73b32ed6c35f570686b89848e5f39f20ecc106.sol:749:1115:none:4:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "rule-backstop",
+    "metadata": {}
+  },
+  {
+    "engine": "static",
+    "finding_type": "locked-ether",
+    "severity": "high",
+    "message": "DS-02: contract `PRIVATE_ETH_CELL` has `payable` function(s) but no withdrawal mechanism — Ether sent to this contract will be permanently locked",
+    "location": {
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/reentrancy/0x4e73b32ed6c35f570686b89848e5f39f20ecc106.sol",
+      "start": 102,
+      "end": 1198,
+      "pc": null,
+      "function_id": null,
+      "function_name": null
+    },
+    "reproduction": null,
+    "signature": "static:runtime:rule:locked-ether:/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/reentrancy/0x4e73b32ed6c35f570686b89848e5f39f20ecc106.sol:102:1198:none:none:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "rule",
+    "metadata": {}
+  }
+]

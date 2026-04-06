@@ -1,0 +1,113 @@
+{
+  "run_id": "run-1775475303709",
+  "runtime_ms": 501,
+  "total_epochs": 12,
+  "coverage_curve": [
+    {
+      "epoch": 1,
+      "covered_edges": 4,
+      "total_edges": 4,
+      "coverage_pct": 100.0,
+      "delta_edges": 1,
+      "edge_rate": 0.005
+    },
+    {
+      "epoch": 2,
+      "covered_edges": 4,
+      "total_edges": 4,
+      "coverage_pct": 100.0,
+      "delta_edges": 0,
+      "edge_rate": 0.0
+    },
+    {
+      "epoch": 3,
+      "covered_edges": 4,
+      "total_edges": 4,
+      "coverage_pct": 100.0,
+      "delta_edges": 0,
+      "edge_rate": 0.0
+    },
+    {
+      "epoch": 4,
+      "covered_edges": 4,
+      "total_edges": 4,
+      "coverage_pct": 100.0,
+      "delta_edges": 0,
+      "edge_rate": 0.0
+    },
+    {
+      "epoch": 5,
+      "covered_edges": 4,
+      "total_edges": 4,
+      "coverage_pct": 100.0,
+      "delta_edges": 0,
+      "edge_rate": 0.0
+    },
+    {
+      "epoch": 6,
+      "covered_edges": 4,
+      "total_edges": 4,
+      "coverage_pct": 100.0,
+      "delta_edges": 0,
+      "edge_rate": 0.0
+    },
+    {
+      "epoch": 7,
+      "covered_edges": 4,
+      "total_edges": 4,
+      "coverage_pct": 100.0,
+      "delta_edges": 0,
+      "edge_rate": 0.0
+    },
+    {
+      "epoch": 8,
+      "covered_edges": 4,
+      "total_edges": 4,
+      "coverage_pct": 100.0,
+      "delta_edges": 0,
+      "edge_rate": 0.0
+    },
+    {
+      "epoch": 9,
+      "covered_edges": 4,
+      "total_edges": 4,
+      "coverage_pct": 100.0,
+      "delta_edges": 0,
+      "edge_rate": 0.0
+    },
+    {
+      "epoch": 10,
+      "covered_edges": 4,
+      "total_edges": 4,
+      "coverage_pct": 100.0,
+      "delta_edges": 0,
+      "edge_rate": 0.0
+    },
+    {
+      "epoch": 11,
+      "covered_edges": 4,
+      "total_edges": 4,
+      "coverage_pct": 100.0,
+      "delta_edges": 0,
+      "edge_rate": 0.0
+    },
+    {
+      "epoch": 12,
+      "covered_edges": 4,
+      "total_edges": 4,
+      "coverage_pct": 100.0,
+      "delta_edges": 0,
+      "edge_rate": 0.0
+    }
+  ],
+  "findings_total": 2498,
+  "findings_unique": 2,
+  "runtime_findings_total": 2498,
+  "runtime_findings_unique": 2,
+  "meta_findings_total": 0,
+  "meta_findings_unique": 0,
+  "se_assists": 0,
+  "seeds_injected_by_se": 0,
+  "se_new_edges_from_injected": 0,
+  "time_to_first_finding_ms": 7
+}

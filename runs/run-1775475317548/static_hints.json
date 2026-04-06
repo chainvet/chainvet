@@ -1,0 +1,147 @@
+{
+  "function_whitelist": [
+    0
+  ],
+  "function_blacklist": [],
+  "hotspots": [
+    {
+      "function_id": 0,
+      "function_name": "transfer",
+      "score": 5.1,
+      "reasons": [
+        "storage_writes=2",
+        "uses_source=true"
+      ]
+    }
+  ],
+  "sinks": [
+    {
+      "function_id": 0,
+      "function_name": "transfer",
+      "sink_kind": "missing-input-validation",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/arithmetic/insecure_transfer.sol",
+      "start": 321,
+      "end": 581
+    },
+    {
+      "function_id": 0,
+      "function_name": "transfer",
+      "sink_kind": "storage-array-by-value",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/arithmetic/insecure_transfer.sol",
+      "start": 476,
+      "end": 507
+    },
+    {
+      "function_id": 0,
+      "function_name": "transfer",
+      "sink_kind": "storage-array-by-value",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/arithmetic/insecure_transfer.sol",
+      "start": 554,
+      "end": 578
+    }
+  ],
+  "callgraph": {
+    "total_sites": 1,
+    "resolved": 0,
+    "ambiguous": 0,
+    "external": 0,
+    "unknown": 0
+  },
+  "taint": {
+    "source_functions": 1,
+    "tainted_functions": 1,
+    "tainted_vars": 0,
+    "tainted_calls": 0
+  },
+  "storage_rw_map": [
+    {
+      "function_id": 0,
+      "function_name": "transfer",
+      "reads": [
+        "balanceOf"
+      ],
+      "writes": [
+        "balanceOf"
+      ]
+    }
+  ],
+  "arg_domains": [
+    {
+      "function_id": 0,
+      "function_name": "transfer",
+      "param_index": 0,
+      "param_name": "_to",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        10,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 0,
+      "function_name": "transfer",
+      "param_index": 1,
+      "param_name": "_value",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        10,
+        100,
+        1000,
+        1000000,
+        1000000000000000000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    }
+  ],
+  "address_roles": [
+    {
+      "role": "owner",
+      "indices": [
+        0
+      ],
+      "evidence": [
+        "default-owner-role"
+      ],
+      "target_functions": []
+    },
+    {
+      "role": "attacker",
+      "indices": [
+        1
+      ],
+      "evidence": [
+        "adversarial-role"
+      ],
+      "target_functions": [
+        0
+      ]
+    },
+    {
+      "role": "user",
+      "indices": [
+        2,
+        3,
+        4
+      ],
+      "evidence": [
+        "default-user-pool"
+      ],
+      "target_functions": [
+        0
+      ]
+    }
+  ]
+}

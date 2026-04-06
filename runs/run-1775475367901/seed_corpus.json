@@ -1,0 +1,122 @@
+[
+  {
+    "id": "bootstrap-fn-0",
+    "txs": [
+      {
+        "function_id": 0,
+        "selector": null,
+        "calldata": null,
+        "args": [
+          "0",
+          "0"
+        ],
+        "sender": "0",
+        "value": "0",
+        "env": {
+          "block_timestamp": 1700000000,
+          "block_number": 1000000
+        }
+      }
+    ],
+    "state_snapshot_id": null,
+    "score": 1.0
+  },
+  {
+    "id": "bootstrap-fn-1",
+    "txs": [
+      {
+        "function_id": 1,
+        "selector": null,
+        "calldata": null,
+        "args": [],
+        "sender": "0",
+        "value": "0",
+        "env": {
+          "block_timestamp": 1700000000,
+          "block_number": 1000000
+        }
+      }
+    ],
+    "state_snapshot_id": null,
+    "score": 1.0
+  },
+  {
+    "id": "bootstrap-fn-2",
+    "txs": [
+      {
+        "function_id": 2,
+        "selector": null,
+        "calldata": null,
+        "args": [],
+        "sender": "0",
+        "value": "0",
+        "env": {
+          "block_timestamp": 1700000000,
+          "block_number": 1000000
+        }
+      }
+    ],
+    "state_snapshot_id": null,
+    "score": 1.0
+  },
+  {
+    "id": "bootstrap-fn-3",
+    "txs": [
+      {
+        "function_id": 3,
+        "selector": null,
+        "calldata": null,
+        "args": [],
+        "sender": "0",
+        "value": "0",
+        "env": {
+          "block_timestamp": 1700000000,
+          "block_number": 1000000
+        }
+      }
+    ],
+    "state_snapshot_id": null,
+    "score": 1.0
+  },
+  {
+    "id": "bootstrap-fn-4",
+    "txs": [
+      {
+        "function_id": 4,
+        "selector": null,
+        "calldata": null,
+        "args": [],
+        "sender": "0",
+        "value": "0",
+        "env": {
+          "block_timestamp": 1700000000,
+          "block_number": 1000000
+        }
+      }
+    ],
+    "state_snapshot_id": null,
+    "score": 1.0
+  },
+  {
+    "id": "bootstrap-hotspot-0",
+    "txs": [
+      {
+        "function_id": 0,
+        "selector": null,
+        "calldata": null,
+        "args": [
+          "1",
+          "1"
+        ],
+        "sender": "0",
+        "value": "0",
+        "env": {
+          "block_timestamp": 1700000100,
+          "block_number": 1000010
+        }
+      }
+    ],
+    "state_snapshot_id": null,
+    "score": 3.6
+  }
+]

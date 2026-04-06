@@ -1,0 +1,3199 @@
+{
+  "function_whitelist": [
+    2,
+    3,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20,
+    21,
+    22,
+    23,
+    24,
+    25,
+    26,
+    27,
+    28,
+    29,
+    30,
+    32,
+    33,
+    34,
+    35,
+    38,
+    39,
+    40,
+    41,
+    42,
+    43,
+    44,
+    45,
+    48,
+    49
+  ],
+  "function_blacklist": [
+    0,
+    1,
+    4,
+    31,
+    36,
+    37,
+    46,
+    47
+  ],
+  "hotspots": [
+    {
+      "function_id": 33,
+      "function_name": "invest",
+      "score": 66.1,
+      "reasons": [
+        "storage_writes=9",
+        "external_calls=2",
+        "low_level_calls=1",
+        "unresolved_calls=12",
+        "tainted_calls=7",
+        "uses_source=true"
+      ]
+    },
+    {
+      "function_id": 39,
+      "function_name": "won",
+      "score": 58.3,
+      "reasons": [
+        "storage_writes=5",
+        "external_calls=1",
+        "unresolved_calls=17",
+        "tainted_calls=5",
+        "uses_source=true"
+      ]
+    },
+    {
+      "function_id": 46,
+      "function_name": "calcHashes",
+      "score": 50.0,
+      "reasons": [
+        "external_calls=10",
+        "unresolved_calls=11"
+      ]
+    },
+    {
+      "function_id": 43,
+      "function_name": "playSystem",
+      "score": 44.9,
+      "reasons": [
+        "storage_writes=8",
+        "unresolved_calls=9",
+        "tainted_calls=5",
+        "uses_source=true"
+      ]
+    },
+    {
+      "function_id": 8,
+      "function_name": "transfer",
+      "score": 31.5,
+      "reasons": [
+        "storage_writes=3",
+        "unresolved_calls=9",
+        "tainted_calls=3",
+        "uses_source=true"
+      ]
+    },
+    {
+      "function_id": 31,
+      "function_name": "pay",
+      "score": 23.3,
+      "reasons": [
+        "storage_writes=3",
+        "external_calls=2",
+        "low_level_calls=2",
+        "unresolved_calls=2",
+        "uses_source=true"
+      ]
+    },
+    {
+      "function_id": 10,
+      "function_name": "transferFrom",
+      "score": 16.1,
+      "reasons": [
+        "storage_writes=1",
+        "external_calls=1",
+        "unresolved_calls=5",
+        "uses_source=true"
+      ]
+    },
+    {
+      "function_id": 34,
+      "function_name": "disinvest",
+      "score": 15.5,
+      "reasons": [
+        "storage_writes=2",
+        "unresolved_calls=3",
+        "tainted_calls=2",
+        "uses_source=true"
+      ]
+    },
+    {
+      "function_id": 36,
+      "function_name": "commitDividend",
+      "score": 15.2,
+      "reasons": [
+        "storage_writes=4",
+        "unresolved_calls=4"
+      ]
+    },
+    {
+      "function_id": 41,
+      "function_name": "play",
+      "score": 14.100000000000001,
+      "reasons": [
+        "unresolved_calls=3",
+        "tainted_calls=3",
+        "uses_source=true"
+      ]
+    },
+    {
+      "function_id": 42,
+      "function_name": "playRandom",
+      "score": 12.100000000000001,
+      "reasons": [
+        "unresolved_calls=2",
+        "tainted_calls=3",
+        "uses_source=true"
+      ]
+    },
+    {
+      "function_id": 37,
+      "function_name": "betPrize",
+      "score": 12.0,
+      "reasons": [
+        "unresolved_calls=6"
+      ]
+    },
+    {
+      "function_id": 13,
+      "function_name": "SmartBillions",
+      "score": 10.899999999999999,
+      "reasons": [
+        "storage_writes=1",
+        "external_calls=2",
+        "unresolved_calls=1",
+        "uses_source=true"
+      ]
+    },
+    {
+      "function_id": 27,
+      "function_name": "coldStore",
+      "score": 9.5,
+      "reasons": [
+        "storage_writes=1",
+        "external_calls=1",
+        "low_level_calls=1",
+        "uses_source=true"
+      ]
+    },
+    {
+      "function_id": 44,
+      "function_name": "addHashes",
+      "score": 9.0,
+      "reasons": [
+        "storage_writes=5"
+      ]
+    },
+    {
+      "function_id": 38,
+      "function_name": "betOf",
+      "score": 8.8,
+      "reasons": [
+        "external_calls=1",
+        "unresolved_calls=3"
+      ]
+    },
+    {
+      "function_id": 48,
+      "function_name": "putHash",
+      "score": 7.6,
+      "reasons": [
+        "storage_writes=2",
+        "unresolved_calls=2"
+      ]
+    },
+    {
+      "function_id": 11,
+      "function_name": "approve",
+      "score": 7.5,
+      "reasons": [
+        "storage_writes=1",
+        "unresolved_calls=1",
+        "tainted_calls=1",
+        "uses_source=true"
+      ]
+    },
+    {
+      "function_id": 22,
+      "function_name": "changeOwner",
+      "score": 5.7,
+      "reasons": [
+        "unresolved_calls=1",
+        "tainted_calls=1",
+        "uses_source=true"
+      ]
+    },
+    {
+      "function_id": 23,
+      "function_name": "changeAnimator",
+      "score": 5.7,
+      "reasons": [
+        "unresolved_calls=1",
+        "tainted_calls=1",
+        "uses_source=true"
+      ]
+    },
+    {
+      "function_id": 30,
+      "function_name": "payWallet",
+      "score": 5.1,
+      "reasons": [
+        "storage_writes=2",
+        "uses_source=true"
+      ]
+    },
+    {
+      "function_id": 29,
+      "function_name": "houseKeeping",
+      "score": 4.6,
+      "reasons": [
+        "storage_writes=1",
+        "external_calls=1"
+      ]
+    },
+    {
+      "function_id": 35,
+      "function_name": "payDividends",
+      "score": 3.7,
+      "reasons": [
+        "tainted_calls=1",
+        "uses_source=true"
+      ]
+    },
+    {
+      "function_id": 40,
+      "function_name": null,
+      "score": 3.7,
+      "reasons": [
+        "tainted_calls=1",
+        "uses_source=true"
+      ]
+    },
+    {
+      "function_id": 26,
+      "function_name": "resetBet",
+      "score": 3.6,
+      "reasons": [
+        "storage_writes=2"
+      ]
+    },
+    {
+      "function_id": 14,
+      "function_name": "hashesLength",
+      "score": 2.0,
+      "reasons": [
+        "unresolved_calls=1"
+      ]
+    },
+    {
+      "function_id": 15,
+      "function_name": "walletBalanceOf",
+      "score": 2.0,
+      "reasons": [
+        "unresolved_calls=1"
+      ]
+    },
+    {
+      "function_id": 16,
+      "function_name": "walletPeriodOf",
+      "score": 2.0,
+      "reasons": [
+        "unresolved_calls=1"
+      ]
+    },
+    {
+      "function_id": 17,
+      "function_name": "walletBlockOf",
+      "score": 2.0,
+      "reasons": [
+        "unresolved_calls=1"
+      ]
+    },
+    {
+      "function_id": 18,
+      "function_name": "betValueOf",
+      "score": 2.0,
+      "reasons": [
+        "unresolved_calls=1"
+      ]
+    },
+    {
+      "function_id": 19,
+      "function_name": "betHashOf",
+      "score": 2.0,
+      "reasons": [
+        "unresolved_calls=1"
+      ]
+    },
+    {
+      "function_id": 20,
+      "function_name": "betBlockNumberOf",
+      "score": 2.0,
+      "reasons": [
+        "unresolved_calls=1"
+      ]
+    },
+    {
+      "function_id": 47,
+      "function_name": "getHash",
+      "score": 2.0,
+      "reasons": [
+        "unresolved_calls=1"
+      ]
+    },
+    {
+      "function_id": 24,
+      "function_name": "setInvestStart",
+      "score": 1.8,
+      "reasons": [
+        "storage_writes=1"
+      ]
+    },
+    {
+      "function_id": 25,
+      "function_name": "setBetMax",
+      "score": 1.8,
+      "reasons": [
+        "storage_writes=1"
+      ]
+    }
+  ],
+  "sinks": [
+    {
+      "function_id": 3,
+      "function_name": "transfer",
+      "sink_kind": "missing-input-validation",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 626,
+      "end": 668
+    },
+    {
+      "function_id": 5,
+      "function_name": "allowance",
+      "sink_kind": "missing-input-validation",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 853,
+      "end": 928
+    },
+    {
+      "function_id": 5,
+      "function_name": "allowance",
+      "sink_kind": "missing-input-validation",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 853,
+      "end": 928
+    },
+    {
+      "function_id": 6,
+      "function_name": "transferFrom",
+      "sink_kind": "missing-input-validation",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 931,
+      "end": 991
+    },
+    {
+      "function_id": 6,
+      "function_name": "transferFrom",
+      "sink_kind": "missing-input-validation",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 931,
+      "end": 991
+    },
+    {
+      "function_id": 7,
+      "function_name": "approve",
+      "sink_kind": "missing-input-validation",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 994,
+      "end": 1040
+    },
+    {
+      "function_id": 8,
+      "function_name": "transfer",
+      "sink_kind": "missing-input-validation",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 1469,
+      "end": 1943
+    },
+    {
+      "function_id": 9,
+      "function_name": "balanceOf",
+      "sink_kind": "missing-input-validation",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 2141,
+      "end": 2242
+    },
+    {
+      "function_id": 10,
+      "function_name": "transferFrom",
+      "sink_kind": "missing-input-validation",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 2619,
+      "end": 3001
+    },
+    {
+      "function_id": 10,
+      "function_name": "transferFrom",
+      "sink_kind": "missing-input-validation",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 2619,
+      "end": 3001
+    },
+    {
+      "function_id": 11,
+      "function_name": "approve",
+      "sink_kind": "missing-input-validation",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 3231,
+      "end": 3516
+    },
+    {
+      "function_id": 12,
+      "function_name": "allowance",
+      "sink_kind": "missing-input-validation",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 3828,
+      "end": 3958
+    },
+    {
+      "function_id": 12,
+      "function_name": "allowance",
+      "sink_kind": "missing-input-validation",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 3828,
+      "end": 3958
+    },
+    {
+      "function_id": 15,
+      "function_name": "walletBalanceOf",
+      "sink_kind": "missing-input-validation",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 7114,
+      "end": 7241
+    },
+    {
+      "function_id": 16,
+      "function_name": "walletPeriodOf",
+      "sink_kind": "missing-input-validation",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 7360,
+      "end": 7497
+    },
+    {
+      "function_id": 17,
+      "function_name": "walletBlockOf",
+      "sink_kind": "missing-input-validation",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 7625,
+      "end": 7760
+    },
+    {
+      "function_id": 18,
+      "function_name": "betValueOf",
+      "sink_kind": "missing-input-validation",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 7857,
+      "end": 7974
+    },
+    {
+      "function_id": 19,
+      "function_name": "betHashOf",
+      "sink_kind": "missing-input-validation",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 8102,
+      "end": 8220
+    },
+    {
+      "function_id": 20,
+      "function_name": "betBlockNumberOf",
+      "sink_kind": "missing-input-validation",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 8348,
+      "end": 8474
+    },
+    {
+      "function_id": 33,
+      "function_name": "invest",
+      "sink_kind": "unprotected-ether-withdrawal",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 13022,
+      "end": 14958
+    },
+    {
+      "function_id": 1,
+      "function_name": "add",
+      "sink_kind": "integer-overflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 398,
+      "end": 403
+    },
+    {
+      "function_id": 21,
+      "function_name": "dividendsBlocks",
+      "sink_kind": "integer-overflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 8743,
+      "end": 8758
+    },
+    {
+      "function_id": 21,
+      "function_name": "dividendsBlocks",
+      "sink_kind": "integer-overflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 8848,
+      "end": 8863
+    },
+    {
+      "function_id": 21,
+      "function_name": "dividendsBlocks",
+      "sink_kind": "integer-overflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 8898,
+      "end": 8913
+    },
+    {
+      "function_id": 26,
+      "function_name": "resetBet",
+      "sink_kind": "integer-overflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 10164,
+      "end": 10180
+    },
+    {
+      "function_id": 27,
+      "function_name": "coldStore",
+      "sink_kind": "integer-overflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 10621,
+      "end": 10671
+    },
+    {
+      "function_id": 27,
+      "function_name": "coldStore",
+      "sink_kind": "integer-overflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 10621,
+      "end": 10661
+    },
+    {
+      "function_id": 27,
+      "function_name": "coldStore",
+      "sink_kind": "integer-overflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 10622,
+      "end": 10639
+    },
+    {
+      "function_id": 27,
+      "function_name": "coldStore",
+      "sink_kind": "integer-overflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 10813,
+      "end": 10844
+    },
+    {
+      "function_id": 27,
+      "function_name": "coldStore",
+      "sink_kind": "integer-overflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 10829,
+      "end": 10844
+    },
+    {
+      "function_id": 27,
+      "function_name": "coldStore",
+      "sink_kind": "integer-overflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 10829,
+      "end": 10840
+    },
+    {
+      "function_id": 27,
+      "function_name": "coldStore",
+      "sink_kind": "integer-overflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 10829,
+      "end": 10835
+    },
+    {
+      "function_id": 29,
+      "function_name": "houseKeeping",
+      "sink_kind": "integer-overflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 11248,
+      "end": 11278
+    },
+    {
+      "function_id": 29,
+      "function_name": "houseKeeping",
+      "sink_kind": "integer-overflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 11263,
+      "end": 11277
+    },
+    {
+      "function_id": 29,
+      "function_name": "houseKeeping",
+      "sink_kind": "integer-overflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 11462,
+      "end": 11477
+    },
+    {
+      "function_id": 31,
+      "function_name": "pay",
+      "sink_kind": "integer-overflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 12648,
+      "end": 12679
+    },
+    {
+      "function_id": 31,
+      "function_name": "pay",
+      "sink_kind": "integer-overflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 12663,
+      "end": 12679
+    },
+    {
+      "function_id": 31,
+      "function_name": "pay",
+      "sink_kind": "integer-overflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 12663,
+      "end": 12674
+    },
+    {
+      "function_id": 31,
+      "function_name": "pay",
+      "sink_kind": "integer-overflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 12663,
+      "end": 12669
+    },
+    {
+      "function_id": 33,
+      "function_name": "invest",
+      "sink_kind": "integer-overflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 13197,
+      "end": 13227
+    },
+    {
+      "function_id": 33,
+      "function_name": "invest",
+      "sink_kind": "integer-overflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 13212,
+      "end": 13226
+    },
+    {
+      "function_id": 33,
+      "function_name": "invest",
+      "sink_kind": "integer-overflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 13931,
+      "end": 13956
+    },
+    {
+      "function_id": 33,
+      "function_name": "invest",
+      "sink_kind": "integer-overflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 13932,
+      "end": 13945
+    },
+    {
+      "function_id": 33,
+      "function_name": "invest",
+      "sink_kind": "integer-overflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 14004,
+      "end": 14017
+    },
+    {
+      "function_id": 33,
+      "function_name": "invest",
+      "sink_kind": "integer-overflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 14105,
+      "end": 14118
+    },
+    {
+      "function_id": 33,
+      "function_name": "invest",
+      "sink_kind": "integer-overflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 14331,
+      "end": 14345
+    },
+    {
+      "function_id": 33,
+      "function_name": "invest",
+      "sink_kind": "integer-overflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 14389,
+      "end": 14403
+    },
+    {
+      "function_id": 33,
+      "function_name": "invest",
+      "sink_kind": "integer-overflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 14641,
+      "end": 14687
+    },
+    {
+      "function_id": 33,
+      "function_name": "invest",
+      "sink_kind": "integer-overflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 14641,
+      "end": 14669
+    },
+    {
+      "function_id": 34,
+      "function_name": "disinvest",
+      "sink_kind": "integer-overflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 15220,
+      "end": 15249
+    },
+    {
+      "function_id": 34,
+      "function_name": "disinvest",
+      "sink_kind": "integer-overflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 15514,
+      "end": 15535
+    },
+    {
+      "function_id": 36,
+      "function_name": "commitDividend",
+      "sink_kind": "integer-overflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 16177,
+      "end": 16204
+    },
+    {
+      "function_id": 36,
+      "function_name": "commitDividend",
+      "sink_kind": "integer-overflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 16312,
+      "end": 16335
+    },
+    {
+      "function_id": 37,
+      "function_name": "betPrize",
+      "sink_kind": "integer-overflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 16831,
+      "end": 17083
+    },
+    {
+      "function_id": 37,
+      "function_name": "betPrize",
+      "sink_kind": "integer-overflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 16831,
+      "end": 17036
+    },
+    {
+      "function_id": 37,
+      "function_name": "betPrize",
+      "sink_kind": "integer-overflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 16831,
+      "end": 16990
+    },
+    {
+      "function_id": 37,
+      "function_name": "betPrize",
+      "sink_kind": "integer-overflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 16831,
+      "end": 16945
+    },
+    {
+      "function_id": 37,
+      "function_name": "betPrize",
+      "sink_kind": "integer-overflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 16831,
+      "end": 16901
+    },
+    {
+      "function_id": 37,
+      "function_name": "betPrize",
+      "sink_kind": "integer-overflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 17130,
+      "end": 17159
+    },
+    {
+      "function_id": 37,
+      "function_name": "betPrize",
+      "sink_kind": "integer-overflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 17217,
+      "end": 17244
+    },
+    {
+      "function_id": 37,
+      "function_name": "betPrize",
+      "sink_kind": "integer-overflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 17302,
+      "end": 17327
+    },
+    {
+      "function_id": 37,
+      "function_name": "betPrize",
+      "sink_kind": "integer-overflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 17385,
+      "end": 17409
+    },
+    {
+      "function_id": 37,
+      "function_name": "betPrize",
+      "sink_kind": "integer-overflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 17467,
+      "end": 17490
+    },
+    {
+      "function_id": 38,
+      "function_name": "betOf",
+      "sink_kind": "integer-overflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 17832,
+      "end": 17867
+    },
+    {
+      "function_id": 38,
+      "function_name": "betOf",
+      "sink_kind": "integer-overflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 17851,
+      "end": 17866
+    },
+    {
+      "function_id": 38,
+      "function_name": "betOf",
+      "sink_kind": "integer-overflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 17928,
+      "end": 17947
+    },
+    {
+      "function_id": 39,
+      "function_name": "won",
+      "sink_kind": "integer-overflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 18899,
+      "end": 18934
+    },
+    {
+      "function_id": 39,
+      "function_name": "won",
+      "sink_kind": "integer-overflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 18918,
+      "end": 18933
+    },
+    {
+      "function_id": 39,
+      "function_name": "won",
+      "sink_kind": "integer-overflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 19224,
+      "end": 19243
+    },
+    {
+      "function_id": 43,
+      "function_name": "playSystem",
+      "sink_kind": "integer-overflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 22445,
+      "end": 22461
+    },
+    {
+      "function_id": 43,
+      "function_name": "playSystem",
+      "sink_kind": "integer-overflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 22492,
+      "end": 22508
+    },
+    {
+      "function_id": 44,
+      "function_name": "addHashes",
+      "sink_kind": "integer-overflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 23403,
+      "end": 23412
+    },
+    {
+      "function_id": 46,
+      "function_name": "calcHashes",
+      "sink_kind": "integer-overflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 24283,
+      "end": 24291
+    },
+    {
+      "function_id": 46,
+      "function_name": "calcHashes",
+      "sink_kind": "integer-overflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 24399,
+      "end": 24407
+    },
+    {
+      "function_id": 46,
+      "function_name": "calcHashes",
+      "sink_kind": "integer-overflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 24515,
+      "end": 24523
+    },
+    {
+      "function_id": 46,
+      "function_name": "calcHashes",
+      "sink_kind": "integer-overflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 24631,
+      "end": 24639
+    },
+    {
+      "function_id": 46,
+      "function_name": "calcHashes",
+      "sink_kind": "integer-overflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 24747,
+      "end": 24755
+    },
+    {
+      "function_id": 46,
+      "function_name": "calcHashes",
+      "sink_kind": "integer-overflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 24864,
+      "end": 24872
+    },
+    {
+      "function_id": 46,
+      "function_name": "calcHashes",
+      "sink_kind": "integer-overflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 24981,
+      "end": 24989
+    },
+    {
+      "function_id": 46,
+      "function_name": "calcHashes",
+      "sink_kind": "integer-overflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 25098,
+      "end": 25106
+    },
+    {
+      "function_id": 46,
+      "function_name": "calcHashes",
+      "sink_kind": "integer-overflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 25215,
+      "end": 25223
+    },
+    {
+      "function_id": 47,
+      "function_name": "getHash",
+      "sink_kind": "integer-overflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 25686,
+      "end": 25696
+    },
+    {
+      "function_id": 48,
+      "function_name": "putHash",
+      "sink_kind": "integer-overflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 25882,
+      "end": 25892
+    },
+    {
+      "function_id": 48,
+      "function_name": "putHash",
+      "sink_kind": "integer-overflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 26399,
+      "end": 26409
+    },
+    {
+      "function_id": 0,
+      "function_name": "sub",
+      "sink_kind": "integer-underflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 317,
+      "end": 322
+    },
+    {
+      "function_id": 21,
+      "function_name": "dividendsBlocks",
+      "sink_kind": "integer-underflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 8714,
+      "end": 8738
+    },
+    {
+      "function_id": 21,
+      "function_name": "dividendsBlocks",
+      "sink_kind": "integer-underflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 8847,
+      "end": 8915
+    },
+    {
+      "function_id": 21,
+      "function_name": "dividendsBlocks",
+      "sink_kind": "integer-underflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 8869,
+      "end": 8893
+    },
+    {
+      "function_id": 29,
+      "function_name": "houseKeeping",
+      "sink_kind": "integer-underflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 11433,
+      "end": 11457
+    },
+    {
+      "function_id": 29,
+      "function_name": "houseKeeping",
+      "sink_kind": "integer-underflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 11509,
+      "end": 11529
+    },
+    {
+      "function_id": 29,
+      "function_name": "houseKeeping",
+      "sink_kind": "integer-underflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 11673,
+      "end": 11693
+    },
+    {
+      "function_id": 31,
+      "function_name": "pay",
+      "sink_kind": "integer-underflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 12464,
+      "end": 12480
+    },
+    {
+      "function_id": 33,
+      "function_name": "invest",
+      "sink_kind": "integer-underflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 13325,
+      "end": 13357
+    },
+    {
+      "function_id": 33,
+      "function_name": "invest",
+      "sink_kind": "integer-underflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 13385,
+      "end": 13417
+    },
+    {
+      "function_id": 44,
+      "function_name": "addHashes",
+      "sink_kind": "integer-underflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 23727,
+      "end": 23762
+    },
+    {
+      "function_id": 47,
+      "function_name": "getHash",
+      "sink_kind": "integer-underflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 25402,
+      "end": 25420
+    },
+    {
+      "function_id": 47,
+      "function_name": "getHash",
+      "sink_kind": "integer-underflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 25628,
+      "end": 25646
+    },
+    {
+      "function_id": 48,
+      "function_name": "putHash",
+      "sink_kind": "integer-underflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 26095,
+      "end": 26113
+    },
+    {
+      "function_id": 48,
+      "function_name": "putHash",
+      "sink_kind": "integer-underflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 26277,
+      "end": 26294
+    },
+    {
+      "function_id": 44,
+      "function_name": "addHashes",
+      "sink_kind": "unsafe-array-length-assignment",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 23504,
+      "end": 23526
+    },
+    {
+      "function_id": 27,
+      "function_name": "coldStore",
+      "sink_kind": "transaction-order-dependency",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 10496,
+      "end": 10954
+    },
+    {
+      "function_id": 33,
+      "function_name": "invest",
+      "sink_kind": "transaction-order-dependency",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 13022,
+      "end": 14958
+    },
+    {
+      "function_id": 21,
+      "function_name": "dividendsBlocks",
+      "sink_kind": "weak-prng",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 8714,
+      "end": 8738
+    },
+    {
+      "function_id": 21,
+      "function_name": "dividendsBlocks",
+      "sink_kind": "weak-prng",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 8847,
+      "end": 8915
+    },
+    {
+      "function_id": 21,
+      "function_name": "dividendsBlocks",
+      "sink_kind": "weak-prng",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 8868,
+      "end": 8914
+    },
+    {
+      "function_id": 21,
+      "function_name": "dividendsBlocks",
+      "sink_kind": "weak-prng",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 8869,
+      "end": 8893
+    },
+    {
+      "function_id": 26,
+      "function_name": "resetBet",
+      "sink_kind": "weak-prng",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 10164,
+      "end": 10180
+    },
+    {
+      "function_id": 29,
+      "function_name": "houseKeeping",
+      "sink_kind": "weak-prng",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 11433,
+      "end": 11457
+    },
+    {
+      "function_id": 31,
+      "function_name": "pay",
+      "sink_kind": "weak-prng",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 12648,
+      "end": 12679
+    },
+    {
+      "function_id": 41,
+      "function_name": "play",
+      "sink_kind": "weak-prng",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 21357,
+      "end": 21386
+    },
+    {
+      "function_id": 42,
+      "function_name": "playRandom",
+      "sink_kind": "weak-prng",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 21619,
+      "end": 21648
+    },
+    {
+      "function_id": 43,
+      "function_name": "playSystem",
+      "sink_kind": "weak-prng",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 22445,
+      "end": 22461
+    },
+    {
+      "function_id": 43,
+      "function_name": "playSystem",
+      "sink_kind": "weak-prng",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 22492,
+      "end": 22508
+    },
+    {
+      "function_id": 44,
+      "function_name": "addHashes",
+      "sink_kind": "weak-prng",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 23727,
+      "end": 23762
+    },
+    {
+      "function_id": 44,
+      "function_name": "addHashes",
+      "sink_kind": "weak-prng",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 23744,
+      "end": 23761
+    },
+    {
+      "function_id": 48,
+      "function_name": "putHash",
+      "sink_kind": "weak-prng",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 26095,
+      "end": 26113
+    },
+    {
+      "function_id": 11,
+      "function_name": "approve",
+      "sink_kind": "lack-of-signature-verification",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 3231,
+      "end": 3516
+    },
+    {
+      "function_id": 27,
+      "function_name": "coldStore",
+      "sink_kind": "hardcoded-gas-transfer",
+      "severity": "low",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 10881,
+      "end": 10909
+    },
+    {
+      "function_id": 31,
+      "function_name": "pay",
+      "sink_kind": "hardcoded-gas-transfer",
+      "severity": "low",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 12295,
+      "end": 12323
+    },
+    {
+      "function_id": 31,
+      "function_name": "pay",
+      "sink_kind": "hardcoded-gas-transfer",
+      "severity": "low",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 12725,
+      "end": 12752
+    },
+    {
+      "function_id": 33,
+      "function_name": "invest",
+      "sink_kind": "hardcoded-gas-transfer",
+      "severity": "low",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 13532,
+      "end": 13577
+    },
+    {
+      "function_id": 44,
+      "function_name": "addHashes",
+      "sink_kind": "dos-block-gas-limit",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 23546,
+      "end": 23634
+    },
+    {
+      "function_id": 27,
+      "function_name": "coldStore",
+      "sink_kind": "force-ether-balance-check",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 10582,
+      "end": 10672
+    },
+    {
+      "function_id": 27,
+      "function_name": "coldStore",
+      "sink_kind": "force-ether-balance-check",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 10770,
+      "end": 10861
+    },
+    {
+      "function_id": 27,
+      "function_name": "coldStore",
+      "sink_kind": "reentrancy-transfer",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 10881,
+      "end": 10909
+    },
+    {
+      "function_id": 33,
+      "function_name": "invest",
+      "sink_kind": "reentrancy-transfer",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 13310,
+      "end": 13683
+    },
+    {
+      "function_id": 27,
+      "function_name": "coldStore",
+      "sink_kind": "reentrancy-same-effect",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 10881,
+      "end": 10909
+    },
+    {
+      "function_id": 27,
+      "function_name": "coldStore",
+      "sink_kind": "reentrancy-eth-transfer",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 10881,
+      "end": 10909
+    },
+    {
+      "function_id": 33,
+      "function_name": "invest",
+      "sink_kind": "reentrancy-eth-transfer",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 13310,
+      "end": 13683
+    },
+    {
+      "function_id": 10,
+      "function_name": "transferFrom",
+      "sink_kind": "reentrancy-no-eth-transfer",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 2813,
+      "end": 2854
+    },
+    {
+      "function_id": 39,
+      "function_name": "won",
+      "sink_kind": "reentrancy-no-eth-transfer",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 19208,
+      "end": 20087
+    },
+    {
+      "function_id": 11,
+      "function_name": "approve",
+      "sink_kind": "storage-array-by-value",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 3429,
+      "end": 3467
+    },
+    {
+      "function_id": 22,
+      "function_name": "changeOwner",
+      "sink_kind": "storage-array-by-value",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 9214,
+      "end": 9226
+    },
+    {
+      "function_id": 23,
+      "function_name": "changeAnimator",
+      "sink_kind": "storage-array-by-value",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 9504,
+      "end": 9519
+    },
+    {
+      "function_id": 24,
+      "function_name": "setInvestStart",
+      "sink_kind": "storage-array-by-value",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 9771,
+      "end": 9790
+    },
+    {
+      "function_id": 25,
+      "function_name": "setBetMax",
+      "sink_kind": "storage-array-by-value",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 9975,
+      "end": 9995
+    },
+    {
+      "function_id": 8,
+      "function_name": "transfer",
+      "sink_kind": "tainted-call",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 1543,
+      "end": 1569
+    },
+    {
+      "function_id": 8,
+      "function_name": "transfer",
+      "sink_kind": "tainted-call",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 1757,
+      "end": 1792
+    },
+    {
+      "function_id": 8,
+      "function_name": "transfer",
+      "sink_kind": "tainted-call",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 1899,
+      "end": 1932
+    },
+    {
+      "function_id": 11,
+      "function_name": "approve",
+      "sink_kind": "tainted-call",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 3473,
+      "end": 3511
+    },
+    {
+      "function_id": 22,
+      "function_name": "changeOwner",
+      "sink_kind": "tainted-call",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 9148,
+      "end": 9174
+    },
+    {
+      "function_id": 23,
+      "function_name": "changeAnimator",
+      "sink_kind": "tainted-call",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 9438,
+      "end": 9464
+    },
+    {
+      "function_id": 33,
+      "function_name": "invest",
+      "sink_kind": "tainted-call",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 13824,
+      "end": 13847
+    },
+    {
+      "function_id": 33,
+      "function_name": "invest",
+      "sink_kind": "tainted-call",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 13996,
+      "end": 14024
+    },
+    {
+      "function_id": 33,
+      "function_name": "invest",
+      "sink_kind": "tainted-call",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 14097,
+      "end": 14125
+    },
+    {
+      "function_id": 33,
+      "function_name": "invest",
+      "sink_kind": "tainted-call",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 14697,
+      "end": 14742
+    },
+    {
+      "function_id": 33,
+      "function_name": "invest",
+      "sink_kind": "tainted-call",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 14769,
+      "end": 14808
+    },
+    {
+      "function_id": 33,
+      "function_name": "invest",
+      "sink_kind": "tainted-call",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 14835,
+      "end": 14880
+    },
+    {
+      "function_id": 33,
+      "function_name": "invest",
+      "sink_kind": "tainted-call",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 14907,
+      "end": 14951
+    },
+    {
+      "function_id": 34,
+      "function_name": "disinvest",
+      "sink_kind": "tainted-call",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 15159,
+      "end": 15185
+    },
+    {
+      "function_id": 34,
+      "function_name": "disinvest",
+      "sink_kind": "tainted-call",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 15259,
+      "end": 15311
+    },
+    {
+      "function_id": 35,
+      "function_name": "payDividends",
+      "sink_kind": "tainted-call",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 15702,
+      "end": 15728
+    },
+    {
+      "function_id": 39,
+      "function_name": "won",
+      "sink_kind": "tainted-call",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 18998,
+      "end": 19046
+    },
+    {
+      "function_id": 39,
+      "function_name": "won",
+      "sink_kind": "tainted-call",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 19911,
+      "end": 19959
+    },
+    {
+      "function_id": 39,
+      "function_name": "won",
+      "sink_kind": "tainted-call",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 20191,
+      "end": 20247
+    },
+    {
+      "function_id": 39,
+      "function_name": "won",
+      "sink_kind": "tainted-call",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 20329,
+      "end": 20359
+    },
+    {
+      "function_id": 39,
+      "function_name": "won",
+      "sink_kind": "tainted-call",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 20435,
+      "end": 20486
+    },
+    {
+      "function_id": 40,
+      "function_name": null,
+      "sink_kind": "tainted-call",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 21129,
+      "end": 21155
+    },
+    {
+      "function_id": 41,
+      "function_name": "play",
+      "sink_kind": "tainted-call",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 21341,
+      "end": 21400
+    },
+    {
+      "function_id": 41,
+      "function_name": "play",
+      "sink_kind": "tainted-call",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 21352,
+      "end": 21387
+    },
+    {
+      "function_id": 41,
+      "function_name": "play",
+      "sink_kind": "tainted-call",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 21357,
+      "end": 21386
+    },
+    {
+      "function_id": 42,
+      "function_name": "playRandom",
+      "sink_kind": "tainted-call",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 21603,
+      "end": 21660
+    },
+    {
+      "function_id": 42,
+      "function_name": "playRandom",
+      "sink_kind": "tainted-call",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 21614,
+      "end": 21649
+    },
+    {
+      "function_id": 42,
+      "function_name": "playRandom",
+      "sink_kind": "tainted-call",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 21619,
+      "end": 21648
+    },
+    {
+      "function_id": 43,
+      "function_name": "playSystem",
+      "sink_kind": "tainted-call",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 21951,
+      "end": 22006
+    },
+    {
+      "function_id": 43,
+      "function_name": "playSystem",
+      "sink_kind": "tainted-call",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 22370,
+      "end": 22382
+    },
+    {
+      "function_id": 43,
+      "function_name": "playSystem",
+      "sink_kind": "tainted-call",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 22852,
+      "end": 22938
+    },
+    {
+      "function_id": 43,
+      "function_name": "playSystem",
+      "sink_kind": "tainted-call",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 22864,
+      "end": 22882
+    },
+    {
+      "function_id": 43,
+      "function_name": "playSystem",
+      "sink_kind": "tainted-call",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/bad_randomness/smart_billions.sol",
+      "start": 22952,
+      "end": 23003
+    }
+  ],
+  "callgraph": {
+    "total_sites": 167,
+    "resolved": 32,
+    "ambiguous": 5,
+    "external": 21,
+    "unknown": 95
+  },
+  "taint": {
+    "source_functions": 17,
+    "tainted_functions": 18,
+    "tainted_vars": 17,
+    "tainted_calls": 33
+  },
+  "storage_rw_map": [
+    {
+      "function_id": 0,
+      "function_name": "sub",
+      "reads": [],
+      "writes": []
+    },
+    {
+      "function_id": 1,
+      "function_name": "add",
+      "reads": [],
+      "writes": []
+    },
+    {
+      "function_id": 2,
+      "function_name": "balanceOf",
+      "reads": [],
+      "writes": []
+    },
+    {
+      "function_id": 3,
+      "function_name": "transfer",
+      "reads": [],
+      "writes": []
+    },
+    {
+      "function_id": 4,
+      "function_name": "commitDividend",
+      "reads": [],
+      "writes": []
+    },
+    {
+      "function_id": 5,
+      "function_name": "allowance",
+      "reads": [],
+      "writes": []
+    },
+    {
+      "function_id": 6,
+      "function_name": "transferFrom",
+      "reads": [],
+      "writes": []
+    },
+    {
+      "function_id": 7,
+      "function_name": "approve",
+      "reads": [],
+      "writes": []
+    },
+    {
+      "function_id": 8,
+      "function_name": "transfer",
+      "reads": [
+        "balances"
+      ],
+      "writes": [
+        "balances"
+      ]
+    },
+    {
+      "function_id": 9,
+      "function_name": "balanceOf",
+      "reads": [
+        "balances"
+      ],
+      "writes": []
+    },
+    {
+      "function_id": 10,
+      "function_name": "transferFrom",
+      "reads": [
+        "allowed"
+      ],
+      "writes": [
+        "allowed"
+      ]
+    },
+    {
+      "function_id": 11,
+      "function_name": "approve",
+      "reads": [
+        "allowed"
+      ],
+      "writes": [
+        "allowed"
+      ]
+    },
+    {
+      "function_id": 12,
+      "function_name": "allowance",
+      "reads": [
+        "allowed"
+      ],
+      "writes": []
+    },
+    {
+      "function_id": 13,
+      "function_name": "SmartBillions",
+      "reads": [
+        "dividendPeriod",
+        "dividends",
+        "wallets"
+      ],
+      "writes": [
+        "wallets"
+      ]
+    },
+    {
+      "function_id": 14,
+      "function_name": "hashesLength",
+      "reads": [
+        "hashes"
+      ],
+      "writes": []
+    },
+    {
+      "function_id": 15,
+      "function_name": "walletBalanceOf",
+      "reads": [
+        "wallets"
+      ],
+      "writes": []
+    },
+    {
+      "function_id": 16,
+      "function_name": "walletPeriodOf",
+      "reads": [
+        "wallets"
+      ],
+      "writes": []
+    },
+    {
+      "function_id": 17,
+      "function_name": "walletBlockOf",
+      "reads": [
+        "wallets"
+      ],
+      "writes": []
+    },
+    {
+      "function_id": 18,
+      "function_name": "betValueOf",
+      "reads": [
+        "bets"
+      ],
+      "writes": []
+    },
+    {
+      "function_id": 19,
+      "function_name": "betHashOf",
+      "reads": [
+        "bets"
+      ],
+      "writes": []
+    },
+    {
+      "function_id": 20,
+      "function_name": "betBlockNumberOf",
+      "reads": [
+        "bets"
+      ],
+      "writes": []
+    },
+    {
+      "function_id": 21,
+      "function_name": "dividendsBlocks",
+      "reads": [
+        "dividendPeriod",
+        "hashFirst",
+        "hashesSize",
+        "investStart"
+      ],
+      "writes": []
+    },
+    {
+      "function_id": 22,
+      "function_name": "changeOwner",
+      "reads": [],
+      "writes": []
+    },
+    {
+      "function_id": 23,
+      "function_name": "changeAnimator",
+      "reads": [],
+      "writes": []
+    },
+    {
+      "function_id": 24,
+      "function_name": "setInvestStart",
+      "reads": [
+        "hashFirst",
+        "investStart"
+      ],
+      "writes": [
+        "investStart"
+      ]
+    },
+    {
+      "function_id": 25,
+      "function_name": "setBetMax",
+      "reads": [],
+      "writes": [
+        "hashBetMax"
+      ]
+    },
+    {
+      "function_id": 26,
+      "function_name": "resetBet",
+      "reads": [],
+      "writes": [
+        "hashBetSum",
+        "hashNext"
+      ]
+    },
+    {
+      "function_id": 27,
+      "function_name": "coldStore",
+      "reads": [
+        "balance",
+        "coldStoreLast",
+        "investBalance",
+        "investBalanceMax",
+        "walletBalance"
+      ],
+      "writes": [
+        "coldStoreLast"
+      ]
+    },
+    {
+      "function_id": 28,
+      "function_name": "hotStore",
+      "reads": [],
+      "writes": []
+    },
+    {
+      "function_id": 29,
+      "function_name": "houseKeeping",
+      "reads": [
+        "dividendPeriod",
+        "dividends",
+        "hashFirst",
+        "hashesSize",
+        "investStart"
+      ],
+      "writes": [
+        "dividendPeriod",
+        "investStart"
+      ]
+    },
+    {
+      "function_id": 30,
+      "function_name": "payWallet",
+      "reads": [
+        "walletBalance",
+        "wallets"
+      ],
+      "writes": [
+        "walletBalance",
+        "wallets"
+      ]
+    },
+    {
+      "function_id": 31,
+      "function_name": "pay",
+      "reads": [
+        "balance",
+        "walletBalance",
+        "wallets"
+      ],
+      "writes": [
+        "walletBalance",
+        "wallets"
+      ]
+    },
+    {
+      "function_id": 32,
+      "function_name": "investDirect",
+      "reads": [],
+      "writes": []
+    },
+    {
+      "function_id": 33,
+      "function_name": "invest",
+      "reads": [
+        "dividendPeriod",
+        "hashesSize",
+        "investBalance",
+        "investBalanceMax",
+        "investStart",
+        "walletBalance",
+        "wallets"
+      ],
+      "writes": [
+        "investBalance",
+        "investStart",
+        "walletBalance",
+        "wallets"
+      ]
+    },
+    {
+      "function_id": 34,
+      "function_name": "disinvest",
+      "reads": [
+        "investBalance",
+        "investStart",
+        "wallets"
+      ],
+      "writes": [
+        "investBalance",
+        "wallets"
+      ]
+    },
+    {
+      "function_id": 35,
+      "function_name": "payDividends",
+      "reads": [
+        "investStart"
+      ],
+      "writes": []
+    },
+    {
+      "function_id": 36,
+      "function_name": "commitDividend",
+      "reads": [
+        "dividendPeriod",
+        "dividends",
+        "walletBalance",
+        "wallets"
+      ],
+      "writes": [
+        "walletBalance",
+        "wallets"
+      ]
+    },
+    {
+      "function_id": 37,
+      "function_name": "betPrize",
+      "reads": [],
+      "writes": []
+    },
+    {
+      "function_id": 38,
+      "function_name": "betOf",
+      "reads": [
+        "bets",
+        "hashFirst",
+        "hashesSize"
+      ],
+      "writes": []
+    },
+    {
+      "function_id": 39,
+      "function_name": "won",
+      "reads": [
+        "bets",
+        "hashFirst",
+        "hashesSize",
+        "maxWin"
+      ],
+      "writes": [
+        "bets",
+        "maxWin"
+      ]
+    },
+    {
+      "function_id": 40,
+      "function_name": null,
+      "reads": [
+        "investStart"
+      ],
+      "writes": []
+    },
+    {
+      "function_id": 41,
+      "function_name": "play",
+      "reads": [],
+      "writes": []
+    },
+    {
+      "function_id": 42,
+      "function_name": "playRandom",
+      "reads": [],
+      "writes": []
+    },
+    {
+      "function_id": 43,
+      "function_name": "playSystem",
+      "reads": [
+        "dividendPeriod",
+        "dividends",
+        "hashBetMax",
+        "hashBetSum",
+        "hashNext",
+        "investStart",
+        "walletBalance",
+        "wallets"
+      ],
+      "writes": [
+        "bets",
+        "dividends",
+        "hashBetSum",
+        "hashNext",
+        "walletBalance",
+        "wallets"
+      ]
+    },
+    {
+      "function_id": 44,
+      "function_name": "addHashes",
+      "reads": [
+        "hashFirst",
+        "hashes",
+        "hashesSize"
+      ],
+      "writes": [
+        "hashFirst",
+        "hashLast",
+        "hashes"
+      ]
+    },
+    {
+      "function_id": 45,
+      "function_name": "addHashes128",
+      "reads": [],
+      "writes": []
+    },
+    {
+      "function_id": 46,
+      "function_name": "calcHashes",
+      "reads": [
+        "hashesSize"
+      ],
+      "writes": []
+    },
+    {
+      "function_id": 47,
+      "function_name": "getHash",
+      "reads": [
+        "hashFirst",
+        "hashes",
+        "hashesSize"
+      ],
+      "writes": []
+    },
+    {
+      "function_id": 48,
+      "function_name": "putHash",
+      "reads": [
+        "hashFirst",
+        "hashLast",
+        "hashesSize"
+      ],
+      "writes": [
+        "hashLast",
+        "hashes"
+      ]
+    },
+    {
+      "function_id": 49,
+      "function_name": "putHashes",
+      "reads": [],
+      "writes": []
+    }
+  ],
+  "arg_domains": [
+    {
+      "function_id": 2,
+      "function_name": "balanceOf",
+      "param_index": 0,
+      "param_name": "who",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        10,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 3,
+      "function_name": "transfer",
+      "param_index": 0,
+      "param_name": "to",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        10,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 3,
+      "function_name": "transfer",
+      "param_index": 1,
+      "param_name": "value",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        10,
+        100,
+        1000,
+        1000000,
+        1000000000000000000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 5,
+      "function_name": "allowance",
+      "param_index": 0,
+      "param_name": "owner",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        10,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 5,
+      "function_name": "allowance",
+      "param_index": 1,
+      "param_name": "spender",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        10,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 6,
+      "function_name": "transferFrom",
+      "param_index": 0,
+      "param_name": "from",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        10,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 6,
+      "function_name": "transferFrom",
+      "param_index": 1,
+      "param_name": "to",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        10,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 6,
+      "function_name": "transferFrom",
+      "param_index": 2,
+      "param_name": "value",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        10,
+        100,
+        1000,
+        1000000,
+        1000000000000000000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 7,
+      "function_name": "approve",
+      "param_index": 0,
+      "param_name": "spender",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        10,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 7,
+      "function_name": "approve",
+      "param_index": 1,
+      "param_name": "value",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        10,
+        100,
+        1000,
+        1000000,
+        1000000000000000000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 8,
+      "function_name": "transfer",
+      "param_index": 0,
+      "param_name": "_to",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        10,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 8,
+      "function_name": "transfer",
+      "param_index": 1,
+      "param_name": "_value",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        10,
+        100,
+        1000,
+        1000000,
+        1000000000000000000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 9,
+      "function_name": "balanceOf",
+      "param_index": 0,
+      "param_name": "_owner",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        10,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 10,
+      "function_name": "transferFrom",
+      "param_index": 0,
+      "param_name": "_from",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        10,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 10,
+      "function_name": "transferFrom",
+      "param_index": 1,
+      "param_name": "_to",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        10,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 10,
+      "function_name": "transferFrom",
+      "param_index": 2,
+      "param_name": "_value",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        10,
+        100,
+        1000,
+        1000000,
+        1000000000000000000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 11,
+      "function_name": "approve",
+      "param_index": 0,
+      "param_name": "_spender",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        10,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 11,
+      "function_name": "approve",
+      "param_index": 1,
+      "param_name": "_value",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        10,
+        100,
+        1000,
+        1000000,
+        1000000000000000000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 12,
+      "function_name": "allowance",
+      "param_index": 0,
+      "param_name": "_owner",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        10,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 12,
+      "function_name": "allowance",
+      "param_index": 1,
+      "param_name": "_spender",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        10,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 15,
+      "function_name": "walletBalanceOf",
+      "param_index": 0,
+      "param_name": "_owner",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        10,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 16,
+      "function_name": "walletPeriodOf",
+      "param_index": 0,
+      "param_name": "_owner",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        10,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 17,
+      "function_name": "walletBlockOf",
+      "param_index": 0,
+      "param_name": "_owner",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        10,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 18,
+      "function_name": "betValueOf",
+      "param_index": 0,
+      "param_name": "_owner",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        10,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 19,
+      "function_name": "betHashOf",
+      "param_index": 0,
+      "param_name": "_owner",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        10,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 20,
+      "function_name": "betBlockNumberOf",
+      "param_index": 0,
+      "param_name": "_owner",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        10,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 22,
+      "function_name": "changeOwner",
+      "param_index": 0,
+      "param_name": "_who",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        10,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 23,
+      "function_name": "changeAnimator",
+      "param_index": 0,
+      "param_name": "_who",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        10,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 24,
+      "function_name": "setInvestStart",
+      "param_index": 0,
+      "param_name": "_when",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        10,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 25,
+      "function_name": "setBetMax",
+      "param_index": 0,
+      "param_name": "_maxsum",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        10,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 27,
+      "function_name": "coldStore",
+      "param_index": 0,
+      "param_name": "_amount",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        10,
+        100,
+        1000,
+        1000000,
+        1000000000000000000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 33,
+      "function_name": "invest",
+      "param_index": 0,
+      "param_name": "_partner",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        9,
+        10,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 38,
+      "function_name": "betOf",
+      "param_index": 0,
+      "param_name": "_who",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        9,
+        10,
+        11,
+        100,
+        255,
+        256,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 42,
+      "function_name": "playRandom",
+      "param_index": 0,
+      "param_name": "_partner",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        10,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 43,
+      "function_name": "playSystem",
+      "param_index": 0,
+      "param_name": "_hash",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        10,
+        19,
+        20,
+        21,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 43,
+      "function_name": "playSystem",
+      "param_index": 1,
+      "param_name": "_partner",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        10,
+        19,
+        20,
+        21,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 44,
+      "function_name": "addHashes",
+      "param_index": 0,
+      "param_name": "_sadd",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        9,
+        10,
+        11,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 49,
+      "function_name": "putHashes",
+      "param_index": 0,
+      "param_name": "_num",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        10,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    }
+  ],
+  "address_roles": [
+    {
+      "role": "owner",
+      "indices": [
+        0
+      ],
+      "evidence": [
+        "state_var:owner"
+      ],
+      "target_functions": [
+        22,
+        24,
+        25,
+        26,
+        27
+      ]
+    },
+    {
+      "role": "attacker",
+      "indices": [
+        1
+      ],
+      "evidence": [
+        "adversarial-role"
+      ],
+      "target_functions": [
+        2,
+        3,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        32,
+        33,
+        34,
+        35,
+        38,
+        39,
+        40,
+        41,
+        42,
+        43,
+        44,
+        45,
+        48,
+        49
+      ]
+    },
+    {
+      "role": "user",
+      "indices": [
+        2,
+        3,
+        4
+      ],
+      "evidence": [
+        "default-user-pool"
+      ],
+      "target_functions": [
+        2,
+        3,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        32,
+        33,
+        34,
+        35,
+        38,
+        39,
+        40,
+        41,
+        42,
+        43,
+        44,
+        45,
+        48,
+        49
+      ]
+    }
+  ]
+}

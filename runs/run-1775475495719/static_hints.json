@@ -1,0 +1,193 @@
+{
+  "function_whitelist": [
+    1
+  ],
+  "function_blacklist": [],
+  "hotspots": [
+    {
+      "function_id": 1,
+      "function_name": "transfer",
+      "score": 11.899999999999999,
+      "reasons": [
+        "external_calls=1",
+        "low_level_calls=1",
+        "unresolved_calls=1",
+        "tainted_calls=1",
+        "uses_source=true"
+      ]
+    }
+  ],
+  "sinks": [
+    {
+      "function_id": 1,
+      "function_name": "transfer",
+      "sink_kind": "arbitrary-calldata",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/unchecked_low_level_calls/0xa1fceeff3acc57d257b917e30c4df661401d6431.sol",
+      "start": 768,
+      "end": 820
+    },
+    {
+      "function_id": 1,
+      "function_name": "transfer",
+      "sink_kind": "missing-input-validation",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/unchecked_low_level_calls/0xa1fceeff3acc57d257b917e30c4df661401d6431.sol",
+      "start": 325,
+      "end": 858
+    },
+    {
+      "function_id": 1,
+      "function_name": "transfer",
+      "sink_kind": "unused-return-value",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/unchecked_low_level_calls/0xa1fceeff3acc57d257b917e30c4df661401d6431.sol",
+      "start": 768,
+      "end": 820
+    },
+    {
+      "function_id": 1,
+      "function_name": "transfer",
+      "sink_kind": "dos-block-gas-limit",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/unchecked_low_level_calls/0xa1fceeff3acc57d257b917e30c4df661401d6431.sol",
+      "start": 668,
+      "end": 831
+    },
+    {
+      "function_id": 1,
+      "function_name": "transfer",
+      "sink_kind": "dos-with-failed-call",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/unchecked_low_level_calls/0xa1fceeff3acc57d257b917e30c4df661401d6431.sol",
+      "start": 668,
+      "end": 831
+    },
+    {
+      "function_id": 1,
+      "function_name": "transfer",
+      "sink_kind": "tainted-call",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/unchecked_low_level_calls/0xa1fceeff3acc57d257b917e30c4df661401d6431.sol",
+      "start": 768,
+      "end": 820
+    }
+  ],
+  "callgraph": {
+    "total_sites": 6,
+    "resolved": 0,
+    "ambiguous": 0,
+    "external": 1,
+    "unknown": 1
+  },
+  "taint": {
+    "source_functions": 1,
+    "tainted_functions": 1,
+    "tainted_vars": 0,
+    "tainted_calls": 1
+  },
+  "storage_rw_map": [
+    {
+      "function_id": 0,
+      "function_name": "AirDropContract",
+      "reads": [],
+      "writes": []
+    },
+    {
+      "function_id": 1,
+      "function_name": "transfer",
+      "reads": [],
+      "writes": []
+    }
+  ],
+  "arg_domains": [
+    {
+      "function_id": 1,
+      "function_name": "transfer",
+      "param_index": 0,
+      "param_name": "contract_address",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        10,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 1,
+      "function_name": "transfer",
+      "param_index": 1,
+      "param_name": "tos",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        10,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 1,
+      "function_name": "transfer",
+      "param_index": 2,
+      "param_name": "vs",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        10,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    }
+  ],
+  "address_roles": [
+    {
+      "role": "owner",
+      "indices": [
+        0
+      ],
+      "evidence": [
+        "default-owner-role"
+      ],
+      "target_functions": []
+    },
+    {
+      "role": "attacker",
+      "indices": [
+        1
+      ],
+      "evidence": [
+        "adversarial-role"
+      ],
+      "target_functions": [
+        1
+      ]
+    },
+    {
+      "role": "user",
+      "indices": [
+        2,
+        3,
+        4
+      ],
+      "evidence": [
+        "default-user-pool"
+      ],
+      "target_functions": [
+        1
+      ]
+    }
+  ]
+}
