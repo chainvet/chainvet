@@ -1,0 +1,209 @@
+[
+  {
+    "engine": "fuzzing",
+    "finding_type": "hardcoded-gas-transfer",
+    "severity": "low",
+    "message": "Hardcoded gas: '$t2' in function 2 uses fixed 2300 gas stipend — may fail with contract recipients",
+    "location": {
+      "file": null,
+      "start": null,
+      "end": null,
+      "pc": null,
+      "function_id": 2,
+      "function_name": "withdraw"
+    },
+    "reproduction": {
+      "id": "repro-epoch5-83",
+      "txs": [
+        {
+          "function_id": 4,
+          "selector": null,
+          "calldata": null,
+          "args": [
+            "0"
+          ],
+          "sender": "0",
+          "value": "0",
+          "env": {
+            "block_timestamp": 1800000000,
+            "block_number": 5000000
+          }
+        },
+        {
+          "function_id": 2,
+          "selector": null,
+          "calldata": null,
+          "args": [
+            "1000000000000000000"
+          ],
+          "sender": "0",
+          "value": "0",
+          "env": {
+            "block_timestamp": 1800000000,
+            "block_number": 5000000
+          }
+        }
+      ],
+      "state_snapshot_id": null,
+      "score": 3.5
+    },
+    "signature": "fuzzing:runtime:executor:hardcoded-gas-transfer:none:none:none:none:2:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "executor",
+    "metadata": {
+      "confidence": "medium"
+    }
+  },
+  {
+    "engine": "fuzzing",
+    "finding_type": "transaction-order-dependency",
+    "severity": "medium",
+    "message": "Transaction order dependency: function 1 has order-sensitive sensitive+value behavior across 2 distinct senders",
+    "location": {
+      "file": null,
+      "start": null,
+      "end": null,
+      "pc": null,
+      "function_id": 1,
+      "function_name": "tokens_buy"
+    },
+    "reproduction": {
+      "id": "repro-epoch1-124",
+      "txs": [
+        {
+          "function_id": 1,
+          "selector": null,
+          "calldata": null,
+          "args": [],
+          "sender": "3",
+          "value": "1",
+          "env": {
+            "block_timestamp": 1800000000,
+            "block_number": 20000000
+          }
+        },
+        {
+          "function_id": 1,
+          "selector": null,
+          "calldata": null,
+          "args": [],
+          "sender": "2",
+          "value": "634088223862476335",
+          "env": {
+            "block_timestamp": 1800000000,
+            "block_number": 20000000
+          }
+        }
+      ],
+      "state_snapshot_id": null,
+      "score": 3.5
+    },
+    "signature": "fuzzing:runtime:executor:transaction-order-dependency:none:none:none:none:1:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "executor",
+    "metadata": {
+      "confidence": "medium"
+    }
+  },
+  {
+    "engine": "fuzzing",
+    "finding_type": "unchecked-call",
+    "severity": "medium",
+    "message": "Unchecked external call to '$t2' in function 2 — return value not verified",
+    "location": {
+      "file": null,
+      "start": null,
+      "end": null,
+      "pc": null,
+      "function_id": 2,
+      "function_name": "withdraw"
+    },
+    "reproduction": {
+      "id": "repro-epoch5-83",
+      "txs": [
+        {
+          "function_id": 4,
+          "selector": null,
+          "calldata": null,
+          "args": [
+            "0"
+          ],
+          "sender": "0",
+          "value": "0",
+          "env": {
+            "block_timestamp": 1800000000,
+            "block_number": 5000000
+          }
+        },
+        {
+          "function_id": 2,
+          "selector": null,
+          "calldata": null,
+          "args": [
+            "1000000000000000000"
+          ],
+          "sender": "0",
+          "value": "0",
+          "env": {
+            "block_timestamp": 1800000000,
+            "block_number": 5000000
+          }
+        }
+      ],
+      "state_snapshot_id": null,
+      "score": 3.5
+    },
+    "signature": "fuzzing:runtime:executor:unchecked-call:none:none:none:none:2:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "executor",
+    "metadata": {
+      "confidence": "high"
+    }
+  },
+  {
+    "engine": "meta",
+    "finding_type": "honeypot",
+    "severity": "low",
+    "message": "contract 'Delta' exposes a public funding path but its payout flow looks deceptive or trap-like",
+    "location": {
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/unchecked_low_level_calls/0x9d06cbafa865037a01d322d3f4222fa3e04e5488.sol",
+      "start": 1818,
+      "end": 2101,
+      "pc": null,
+      "function_id": 2,
+      "function_name": "withdraw"
+    },
+    "reproduction": null,
+    "signature": "meta:meta:honeypot-heuristic:honeypot:/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/unchecked_low_level_calls/0x9d06cbafa865037a01d322d3f4222fa3e04e5488.sol:1818:2101:none:2:none",
+    "analysis_layer": "meta",
+    "evidence_kind": "honeypot-heuristic",
+    "metadata": {
+      "confidence": "low",
+      "contract": "Delta",
+      "reasons": "owner-or-secret-gate"
+    }
+  },
+  {
+    "engine": "meta",
+    "finding_type": "honeypot",
+    "severity": "low",
+    "message": "contract 'Delta' exposes a public funding path but its payout flow looks deceptive or trap-like",
+    "location": {
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/unchecked_low_level_calls/0x9d06cbafa865037a01d322d3f4222fa3e04e5488.sol",
+      "start": 1818,
+      "end": 2101,
+      "pc": null,
+      "function_id": 2,
+      "function_name": "withdraw"
+    },
+    "reproduction": null,
+    "signature": "meta:runtime:meta-runtime-backstop:honeypot:/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/unchecked_low_level_calls/0x9d06cbafa865037a01d322d3f4222fa3e04e5488.sol:1818:2101:none:2:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "meta-runtime-backstop",
+    "metadata": {
+      "confidence": "low",
+      "contract": "Delta",
+      "reasons": "owner-or-secret-gate"
+    }
+  }
+]

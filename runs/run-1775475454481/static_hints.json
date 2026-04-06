@@ -1,0 +1,158 @@
+{
+  "function_whitelist": [
+    0,
+    1
+  ],
+  "function_blacklist": [],
+  "hotspots": [
+    {
+      "function_id": 0,
+      "function_name": "withdrawReward",
+      "score": 6.6,
+      "reasons": [
+        "storage_writes=1",
+        "external_calls=1",
+        "unresolved_calls=1"
+      ]
+    },
+    {
+      "function_id": 1,
+      "function_name": "getFirstWithdrawalBonus",
+      "score": 3.6,
+      "reasons": [
+        "storage_writes=2"
+      ]
+    }
+  ],
+  "sinks": [
+    {
+      "function_id": 0,
+      "function_name": "withdrawReward",
+      "sink_kind": "missing-input-validation",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/reentrancy/reentrancy_bonus.sol",
+      "start": 373,
+      "end": 619
+    }
+  ],
+  "callgraph": {
+    "total_sites": 5,
+    "resolved": 1,
+    "ambiguous": 0,
+    "external": 1,
+    "unknown": 1
+  },
+  "taint": {
+    "source_functions": 0,
+    "tainted_functions": 0,
+    "tainted_vars": 0,
+    "tainted_calls": 0
+  },
+  "storage_rw_map": [
+    {
+      "function_id": 0,
+      "function_name": "withdrawReward",
+      "reads": [
+        "rewardsForA"
+      ],
+      "writes": [
+        "rewardsForA"
+      ]
+    },
+    {
+      "function_id": 1,
+      "function_name": "getFirstWithdrawalBonus",
+      "reads": [
+        "claimedBonus",
+        "rewardsForA"
+      ],
+      "writes": [
+        "claimedBonus",
+        "rewardsForA"
+      ]
+    }
+  ],
+  "arg_domains": [
+    {
+      "function_id": 0,
+      "function_name": "withdrawReward",
+      "param_index": 0,
+      "param_name": "recipient",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        10,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 1,
+      "function_name": "getFirstWithdrawalBonus",
+      "param_index": 0,
+      "param_name": "recipient",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        10,
+        99,
+        100,
+        101,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    }
+  ],
+  "address_roles": [
+    {
+      "role": "owner",
+      "indices": [
+        0
+      ],
+      "evidence": [
+        "default-owner-role"
+      ],
+      "target_functions": [
+        0,
+        1
+      ]
+    },
+    {
+      "role": "attacker",
+      "indices": [
+        1
+      ],
+      "evidence": [
+        "adversarial-role"
+      ],
+      "target_functions": [
+        0,
+        1
+      ]
+    },
+    {
+      "role": "user",
+      "indices": [
+        2,
+        3,
+        4
+      ],
+      "evidence": [
+        "default-user-pool"
+      ],
+      "target_functions": [
+        0,
+        1
+      ]
+    }
+  ]
+}

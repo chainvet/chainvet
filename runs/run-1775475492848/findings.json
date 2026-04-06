@@ -1,0 +1,135 @@
+[
+  {
+    "engine": "fuzzing",
+    "finding_type": "access-control",
+    "severity": "high",
+    "message": "Missing access control: function 2 mutates authority slot(s) [owner] without checking msg.sender",
+    "location": {
+      "file": null,
+      "start": null,
+      "end": null,
+      "pc": null,
+      "function_id": 2,
+      "function_name": "acceptOwnership"
+    },
+    "reproduction": {
+      "id": "repro-epoch1-3",
+      "txs": [
+        {
+          "function_id": 2,
+          "selector": null,
+          "calldata": null,
+          "args": [],
+          "sender": "0",
+          "value": "0",
+          "env": {
+            "block_timestamp": 1700000100,
+            "block_number": 20000000
+          }
+        }
+      ],
+      "state_snapshot_id": null,
+      "score": 3.5
+    },
+    "signature": "fuzzing:runtime:executor:access-control:none:none:none:none:2:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "executor",
+    "metadata": {
+      "confidence": "low"
+    }
+  },
+  {
+    "engine": "fuzzing",
+    "finding_type": "arbitrary-write",
+    "severity": "high",
+    "message": "Arbitrary write risk: function 2 writes storage without sender check and was exercised by 2 distinct senders (vars: owner)",
+    "location": {
+      "file": null,
+      "start": null,
+      "end": null,
+      "pc": null,
+      "function_id": 2,
+      "function_name": "acceptOwnership"
+    },
+    "reproduction": {
+      "id": "repro-epoch4-129",
+      "txs": [
+        {
+          "function_id": 2,
+          "selector": null,
+          "calldata": null,
+          "args": [],
+          "sender": "0",
+          "value": "0",
+          "env": {
+            "block_timestamp": 1750000000,
+            "block_number": 10000000
+          }
+        },
+        {
+          "function_id": 2,
+          "selector": null,
+          "calldata": null,
+          "args": [],
+          "sender": "1",
+          "value": "0",
+          "env": {
+            "block_timestamp": 1750000000,
+            "block_number": 10000000
+          }
+        }
+      ],
+      "state_snapshot_id": null,
+      "score": 3.5
+    },
+    "signature": "fuzzing:runtime:executor:arbitrary-write:none:none:none:none:2:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "executor",
+    "metadata": {
+      "confidence": "high"
+    }
+  },
+  {
+    "engine": "fuzzing",
+    "finding_type": "unchecked-call",
+    "severity": "medium",
+    "message": "Unchecked external call to '$t2' in function 3 — return value not verified",
+    "location": {
+      "file": null,
+      "start": null,
+      "end": null,
+      "pc": null,
+      "function_id": 3,
+      "function_name": "execute"
+    },
+    "reproduction": {
+      "id": "repro-epoch1-0",
+      "txs": [
+        {
+          "function_id": 3,
+          "selector": null,
+          "calldata": null,
+          "args": [
+            "340282366920938463463374607431768211455",
+            "340282366920938463463374607431768211455",
+            "340282366920938463463374607431768211455"
+          ],
+          "sender": "1",
+          "value": "0",
+          "env": {
+            "block_timestamp": 1700000000,
+            "block_number": 5000000
+          }
+        }
+      ],
+      "state_snapshot_id": null,
+      "score": 3.5
+    },
+    "signature": "fuzzing:runtime:executor:unchecked-call:none:none:none:none:3:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "executor",
+    "metadata": {
+      "confidence": "high"
+    }
+  }
+]

@@ -1,0 +1,86 @@
+[
+  {
+    "epoch": 2,
+    "goal": {
+      "id": "g-1-0-0-6",
+      "function_id": 0,
+      "function_name": "ifillArray",
+      "block_id": 6,
+      "edge_from": 0,
+      "edge_to": 6,
+      "sink_kind": "tainted-call",
+      "reason": "uncovered edge after fuzz epoch",
+      "priority": 19.3,
+      "attempts": 1
+    },
+    "injected_seed_ids": [
+      "se-solve-g-1-0-0-6-0",
+      "se-solve-g-1-0-0-6-1",
+      "se-solve-g-1-0-0-6-2",
+      "se-solve-g-1-0-0-6-3",
+      "se-solve-g-1-0-0-6-4",
+      "se-solve-g-1-0-0-6-5",
+      "se-solve-g-1-0-0-6-6",
+      "se-solve-g-1-0-0-6-7"
+    ],
+    "solver": {
+      "elapsed_ms": 32,
+      "states_explored": 3,
+      "max_depth_reached": 2,
+      "satisfiable_paths": 8
+    }
+  },
+  {
+    "epoch": 3,
+    "goal": {
+      "id": "g-1-0-5-6",
+      "function_id": 0,
+      "function_name": "ifillArray",
+      "block_id": 6,
+      "edge_from": 5,
+      "edge_to": 6,
+      "sink_kind": "tainted-call",
+      "reason": "uncovered edge after fuzz epoch",
+      "priority": 19.3,
+      "attempts": 1
+    },
+    "injected_seed_ids": [],
+    "solver": {
+      "elapsed_ms": 23,
+      "states_explored": 3,
+      "max_depth_reached": 2,
+      "satisfiable_paths": 8
+    }
+  },
+  {
+    "epoch": 4,
+    "goal": {
+      "id": "g-3-0-0-6",
+      "function_id": 0,
+      "function_name": "ifillArray",
+      "block_id": 6,
+      "edge_from": 0,
+      "edge_to": 6,
+      "sink_kind": "tainted-call",
+      "reason": "uncovered edge after fuzz epoch",
+      "priority": 19.3,
+      "attempts": 1
+    },
+    "injected_seed_ids": [
+      "se-solve-g-3-0-0-6-0",
+      "se-solve-g-3-0-0-6-1",
+      "se-solve-g-3-0-0-6-2",
+      "se-solve-g-3-0-0-6-3",
+      "se-solve-g-3-0-0-6-4",
+      "se-solve-g-3-0-0-6-5",
+      "se-solve-g-3-0-0-6-6",
+      "se-solve-g-3-0-0-6-7"
+    ],
+    "solver": {
+      "elapsed_ms": 22,
+      "states_explored": 3,
+      "max_depth_reached": 2,
+      "satisfiable_paths": 8
+    }
+  }
+]

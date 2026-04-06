@@ -1,0 +1,193 @@
+[
+  {
+    "engine": "fuzzing",
+    "finding_type": "hardcoded-gas-transfer",
+    "severity": "low",
+    "message": "Hardcoded gas: '$t1' in function 16 uses fixed 2300 gas stipend — may fail with contract recipients",
+    "location": {
+      "file": null,
+      "start": null,
+      "end": null,
+      "pc": null,
+      "function_id": 16,
+      "function_name": "transferAnyERC20Token"
+    },
+    "reproduction": {
+      "id": "repro-epoch1-8",
+      "txs": [
+        {
+          "function_id": 5,
+          "selector": null,
+          "calldata": null,
+          "args": [],
+          "sender": "1",
+          "value": "1000000000000000000",
+          "env": {
+            "block_timestamp": 1650000000,
+            "block_number": 5000000
+          }
+        },
+        {
+          "function_id": 16,
+          "selector": null,
+          "calldata": null,
+          "args": [
+            "1624",
+            "2",
+            "1"
+          ],
+          "sender": "1",
+          "value": "0",
+          "env": {
+            "block_timestamp": 1650000000,
+            "block_number": 5000000
+          }
+        },
+        {
+          "function_id": 6,
+          "selector": null,
+          "calldata": null,
+          "args": [],
+          "sender": "2",
+          "value": "0",
+          "env": {
+            "block_timestamp": 1650000000,
+            "block_number": 5000000
+          }
+        }
+      ],
+      "state_snapshot_id": null,
+      "score": 3.5
+    },
+    "signature": "fuzzing:runtime:executor:hardcoded-gas-transfer:none:none:none:none:16:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "executor",
+    "metadata": {
+      "confidence": "medium"
+    }
+  },
+  {
+    "engine": "fuzzing",
+    "finding_type": "weak-prng",
+    "severity": "medium",
+    "message": "Weak PRNG: block.number/blockhash used in function 5 — predictable randomness source",
+    "location": {
+      "file": null,
+      "start": null,
+      "end": null,
+      "pc": null,
+      "function_id": 5,
+      "function_name": "wager"
+    },
+    "reproduction": {
+      "id": "repro-epoch4-161",
+      "txs": [
+        {
+          "function_id": 5,
+          "selector": null,
+          "calldata": null,
+          "args": [],
+          "sender": "1",
+          "value": "1",
+          "env": {
+            "block_timestamp": 1700000000,
+            "block_number": 10000000
+          }
+        }
+      ],
+      "state_snapshot_id": null,
+      "score": 3.5
+    },
+    "signature": "fuzzing:runtime:executor:weak-prng:none:none:none:none:5:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "executor",
+    "metadata": {
+      "confidence": "medium"
+    }
+  },
+  {
+    "engine": "fuzzing",
+    "finding_type": "weak-prng",
+    "severity": "medium",
+    "message": "Weak PRNG: block.number/blockhash used in function 6 — predictable randomness source",
+    "location": {
+      "file": null,
+      "start": null,
+      "end": null,
+      "pc": null,
+      "function_id": 6,
+      "function_name": "play"
+    },
+    "reproduction": {
+      "id": "repro-epoch1-168",
+      "txs": [
+        {
+          "function_id": 6,
+          "selector": null,
+          "calldata": null,
+          "args": [],
+          "sender": "1",
+          "value": "0",
+          "env": {
+            "block_timestamp": 1700000000,
+            "block_number": 20000000
+          }
+        }
+      ],
+      "state_snapshot_id": null,
+      "score": 3.5
+    },
+    "signature": "fuzzing:runtime:executor:weak-prng:none:none:none:none:6:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "executor",
+    "metadata": {
+      "confidence": "medium"
+    }
+  },
+  {
+    "engine": "meta",
+    "finding_type": "honeypot",
+    "severity": "low",
+    "message": "contract 'PoCGame' exposes a public funding path but its payout flow looks deceptive or trap-like",
+    "location": {
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/unchecked_low_level_calls/0x07f7ecb66d788ab01dc93b9b71a88401de7d0f2e.sol",
+      "start": 5570,
+      "end": 5799,
+      "pc": null,
+      "function_id": 16,
+      "function_name": "transferAnyERC20Token"
+    },
+    "reproduction": null,
+    "signature": "meta:meta:honeypot-heuristic:honeypot:/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/unchecked_low_level_calls/0x07f7ecb66d788ab01dc93b9b71a88401de7d0f2e.sol:5570:5799:none:16:none",
+    "analysis_layer": "meta",
+    "evidence_kind": "honeypot-heuristic",
+    "metadata": {
+      "confidence": "low",
+      "contract": "PoCGame",
+      "reasons": "owner-or-secret-gate"
+    }
+  },
+  {
+    "engine": "meta",
+    "finding_type": "honeypot",
+    "severity": "low",
+    "message": "contract 'PoCGame' exposes a public funding path but its payout flow looks deceptive or trap-like",
+    "location": {
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/unchecked_low_level_calls/0x07f7ecb66d788ab01dc93b9b71a88401de7d0f2e.sol",
+      "start": 5570,
+      "end": 5799,
+      "pc": null,
+      "function_id": 16,
+      "function_name": "transferAnyERC20Token"
+    },
+    "reproduction": null,
+    "signature": "meta:runtime:meta-runtime-backstop:honeypot:/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/unchecked_low_level_calls/0x07f7ecb66d788ab01dc93b9b71a88401de7d0f2e.sol:5570:5799:none:16:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "meta-runtime-backstop",
+    "metadata": {
+      "confidence": "low",
+      "contract": "PoCGame",
+      "reasons": "owner-or-secret-gate"
+    }
+  }
+]

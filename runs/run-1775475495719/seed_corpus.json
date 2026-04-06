@@ -1,0 +1,71 @@
+[
+  {
+    "id": "bootstrap-fn-1",
+    "txs": [
+      {
+        "function_id": 1,
+        "selector": null,
+        "calldata": null,
+        "args": [
+          "0",
+          "0",
+          "0"
+        ],
+        "sender": "0",
+        "value": "0",
+        "env": {
+          "block_timestamp": 1700000000,
+          "block_number": 1000000
+        }
+      }
+    ],
+    "state_snapshot_id": null,
+    "score": 1.0
+  },
+  {
+    "id": "bootstrap-hotspot-1",
+    "txs": [
+      {
+        "function_id": 1,
+        "selector": null,
+        "calldata": null,
+        "args": [
+          "1",
+          "1",
+          "1"
+        ],
+        "sender": "0",
+        "value": "0",
+        "env": {
+          "block_timestamp": 1700000100,
+          "block_number": 1000010
+        }
+      }
+    ],
+    "state_snapshot_id": null,
+    "score": 11.899999999999999
+  },
+  {
+    "id": "fuzz-epoch9-1",
+    "txs": [
+      {
+        "function_id": 1,
+        "selector": null,
+        "calldata": null,
+        "args": [
+          "0",
+          "340282366920938463463374607431768211454",
+          "0"
+        ],
+        "sender": "1",
+        "value": "0",
+        "env": {
+          "block_timestamp": 1750000000,
+          "block_number": 1000010
+        }
+      }
+    ],
+    "state_snapshot_id": null,
+    "score": 5.0
+  }
+]

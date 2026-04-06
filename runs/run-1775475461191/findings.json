@@ -1,0 +1,192 @@
+[
+  {
+    "engine": "static",
+    "finding_type": "access-control",
+    "severity": "medium",
+    "message": "public initialization path can seize authority; privileged operations become callable by an attacker",
+    "location": {
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/reentrancy/spank_chain_payment.sol",
+      "start": 24607,
+      "end": 26655,
+      "pc": null,
+      "function_id": 26,
+      "function_name": "initVCstate"
+    },
+    "reproduction": null,
+    "signature": "static:runtime:rule-backstop:access-control:/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/reentrancy/spank_chain_payment.sol:24607:26655:none:26:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "rule-backstop",
+    "metadata": {}
+  },
+  {
+    "engine": "static",
+    "finding_type": "dos-with-failed-call",
+    "severity": "high",
+    "message": "DS-04: `LCOpenTimeout` uses a required push payment (`require(...send/transfer/call...)`); a reverting recipient can DoS the function",
+    "location": {
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/reentrancy/spank_chain_payment.sol",
+      "start": 16581,
+      "end": 17475,
+      "pc": null,
+      "function_id": 21,
+      "function_name": "LCOpenTimeout"
+    },
+    "reproduction": null,
+    "signature": "static:runtime:rule-backstop:dos-with-failed-call:/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/reentrancy/spank_chain_payment.sol:16581:17475:none:21:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "rule-backstop",
+    "metadata": {}
+  },
+  {
+    "engine": "static",
+    "finding_type": "dos-with-failed-call",
+    "severity": "high",
+    "message": "DS-04: `consensusCloseChannel` uses a required push payment (`require(...send/transfer/call...)`); a reverting recipient can DoS the function",
+    "location": {
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/reentrancy/spank_chain_payment.sol",
+      "start": 20067,
+      "end": 22285,
+      "pc": null,
+      "function_id": 24,
+      "function_name": "consensusCloseChannel"
+    },
+    "reproduction": null,
+    "signature": "static:runtime:rule-backstop:dos-with-failed-call:/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/reentrancy/spank_chain_payment.sol:20067:22285:none:24:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "rule-backstop",
+    "metadata": {}
+  },
+  {
+    "engine": "static",
+    "finding_type": "reentrancy",
+    "severity": "high",
+    "message": "RE-04: reentrancy in `LCOpenTimeout`: state variable is read before an ETH-sending external call and written after it inside nested control flow; update state before the call",
+    "location": {
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/reentrancy/spank_chain_payment.sol",
+      "start": 16581,
+      "end": 17475,
+      "pc": null,
+      "function_id": 21,
+      "function_name": "LCOpenTimeout"
+    },
+    "reproduction": null,
+    "signature": "static:runtime:rule-backstop:reentrancy:/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/reentrancy/spank_chain_payment.sol:16581:17475:none:21:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "rule-backstop",
+    "metadata": {}
+  },
+  {
+    "engine": "static",
+    "finding_type": "reentrancy",
+    "severity": "high",
+    "message": "RE-01: reentrancy in `byzantineCloseChannel`: state variable updated and event emitted after external call; a re-entrant callback will cause incorrect event data (negative events)",
+    "location": {
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/reentrancy/spank_chain_payment.sol",
+      "start": 33401,
+      "end": 33578,
+      "pc": null,
+      "function_id": 29,
+      "function_name": "byzantineCloseChannel"
+    },
+    "reproduction": null,
+    "signature": "static:runtime:rule-backstop:reentrancy:/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/reentrancy/spank_chain_payment.sol:33401:33578:none:29:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "rule-backstop",
+    "metadata": {}
+  },
+  {
+    "engine": "static",
+    "finding_type": "reentrancy",
+    "severity": "high",
+    "message": "RE-01: reentrancy in `byzantineCloseChannel`: state variable updated and event emitted after external call; a re-entrant callback will cause incorrect event data (negative events)",
+    "location": {
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/reentrancy/spank_chain_payment.sol",
+      "start": 33589,
+      "end": 34018,
+      "pc": null,
+      "function_id": 29,
+      "function_name": "byzantineCloseChannel"
+    },
+    "reproduction": null,
+    "signature": "static:runtime:rule-backstop:reentrancy:/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/reentrancy/spank_chain_payment.sol:33589:34018:none:29:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "rule-backstop",
+    "metadata": {}
+  },
+  {
+    "engine": "static",
+    "finding_type": "dos-block-gas-limit",
+    "severity": "medium",
+    "message": "DS-03: `for` loop in `_isContained` iterates over a dynamically-sized array (`.length`); if the array grows without bound, this function may exceed the block gas limit and become permanently uncallable",
+    "location": {
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/reentrancy/spank_chain_payment.sol",
+      "start": 34366,
+      "end": 34714,
+      "pc": null,
+      "function_id": 30,
+      "function_name": "_isContained"
+    },
+    "reproduction": null,
+    "signature": "static:runtime:rule:dos-block-gas-limit:/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/reentrancy/spank_chain_payment.sol:34366:34714:none:30:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "rule",
+    "metadata": {}
+  },
+  {
+    "engine": "static",
+    "finding_type": "dos-block-gas-limit",
+    "severity": "medium",
+    "message": "DS-03: loop in `hexstrToBytes` depends on dynamic bounds (`.length`/gas), which can make the function exceed the block gas limit",
+    "location": {
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/reentrancy/spank_chain_payment.sol",
+      "start": 4070,
+      "end": 4640,
+      "pc": null,
+      "function_id": 7,
+      "function_name": "hexstrToBytes"
+    },
+    "reproduction": null,
+    "signature": "static:runtime:rule:dos-block-gas-limit:/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/reentrancy/spank_chain_payment.sol:4070:4640:none:7:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "rule",
+    "metadata": {}
+  },
+  {
+    "engine": "static",
+    "finding_type": "dos-block-gas-limit",
+    "severity": "medium",
+    "message": "DS-03: loop in `substring` depends on dynamic bounds (`.length`/gas), which can make the function exceed the block gas limit",
+    "location": {
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/reentrancy/spank_chain_payment.sol",
+      "start": 6624,
+      "end": 7122,
+      "pc": null,
+      "function_id": 12,
+      "function_name": "substring"
+    },
+    "reproduction": null,
+    "signature": "static:runtime:rule:dos-block-gas-limit:/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/reentrancy/spank_chain_payment.sol:6624:7122:none:12:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "rule",
+    "metadata": {}
+  },
+  {
+    "engine": "static",
+    "finding_type": "memory-manipulation",
+    "severity": "high",
+    "message": "function `uintToBytes32` uses inline assembly and creates memory arrays; assembly `mstore`/`mload` can improperly modify memory or storage, leading to unintended state changes or security risks",
+    "location": {
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/reentrancy/spank_chain_payment.sol",
+      "start": 5514,
+      "end": 5557,
+      "pc": null,
+      "function_id": 9,
+      "function_name": "uintToBytes32"
+    },
+    "reproduction": null,
+    "signature": "static:runtime:rule:memory-manipulation:/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/reentrancy/spank_chain_payment.sol:5514:5557:none:9:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "rule",
+    "metadata": {}
+  }
+]

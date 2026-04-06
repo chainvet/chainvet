@@ -1,0 +1,144 @@
+[
+  {
+    "engine": "fuzzing",
+    "finding_type": "reentrancy",
+    "severity": "low",
+    "message": "Heuristic reentrancy signal: feasible callback observed in function 3 without post-call state-write evidence",
+    "location": {
+      "file": null,
+      "start": null,
+      "end": null,
+      "pc": null,
+      "function_id": 3,
+      "function_name": "CashOut"
+    },
+    "reproduction": {
+      "id": "repro-epoch1-64",
+      "txs": [
+        {
+          "function_id": 3,
+          "selector": null,
+          "calldata": null,
+          "args": [
+            "0"
+          ],
+          "sender": "1",
+          "value": "0",
+          "env": {
+            "block_timestamp": 1700000000,
+            "block_number": 20000000
+          }
+        }
+      ],
+      "state_snapshot_id": null,
+      "score": 4.5125
+    },
+    "signature": "fuzzing:runtime:executor:reentrancy:none:none:none:none:3:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "executor",
+    "metadata": {
+      "confidence": "low"
+    }
+  },
+  {
+    "engine": "fuzzing",
+    "finding_type": "unchecked-call",
+    "severity": "medium",
+    "message": "Unchecked external call to '$t5' in function 3 — return value not verified",
+    "location": {
+      "file": null,
+      "start": null,
+      "end": null,
+      "pc": null,
+      "function_id": 3,
+      "function_name": "CashOut"
+    },
+    "reproduction": {
+      "id": "repro-epoch1-64",
+      "txs": [
+        {
+          "function_id": 3,
+          "selector": null,
+          "calldata": null,
+          "args": [
+            "0"
+          ],
+          "sender": "1",
+          "value": "0",
+          "env": {
+            "block_timestamp": 1700000000,
+            "block_number": 20000000
+          }
+        }
+      ],
+      "state_snapshot_id": null,
+      "score": 4.5125
+    },
+    "signature": "fuzzing:runtime:executor:unchecked-call:none:none:none:none:3:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "executor",
+    "metadata": {
+      "confidence": "high"
+    }
+  },
+  {
+    "engine": "fuzzing",
+    "finding_type": "unprotected-ether-withdrawal",
+    "severity": "high",
+    "message": "Unprotected Ether withdrawal via '$t5' in function 3 — anyone can drain funds",
+    "location": {
+      "file": null,
+      "start": null,
+      "end": null,
+      "pc": null,
+      "function_id": 3,
+      "function_name": "CashOut"
+    },
+    "reproduction": {
+      "id": "repro-epoch1-64",
+      "txs": [
+        {
+          "function_id": 3,
+          "selector": null,
+          "calldata": null,
+          "args": [
+            "0"
+          ],
+          "sender": "1",
+          "value": "0",
+          "env": {
+            "block_timestamp": 1700000000,
+            "block_number": 20000000
+          }
+        }
+      ],
+      "state_snapshot_id": null,
+      "score": 4.5125
+    },
+    "signature": "fuzzing:runtime:executor:unprotected-ether-withdrawal:none:none:none:none:3:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "executor",
+    "metadata": {
+      "confidence": "high"
+    }
+  },
+  {
+    "engine": "static",
+    "finding_type": "reentrancy",
+    "severity": "high",
+    "message": "RE-04: reentrancy in `CashOut`: state variable is read before an ETH-sending external call and written after it inside nested control flow; update state before the call",
+    "location": {
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/reentrancy/0x7a8721a9d64c74da899424c1b52acbf58ddc9782.sol",
+      "start": 821,
+      "end": 1152,
+      "pc": null,
+      "function_id": 3,
+      "function_name": "CashOut"
+    },
+    "reproduction": null,
+    "signature": "static:runtime:rule-backstop:reentrancy:/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/reentrancy/0x7a8721a9d64c74da899424c1b52acbf58ddc9782.sol:821:1152:none:3:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "rule-backstop",
+    "metadata": {}
+  }
+]

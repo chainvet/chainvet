@@ -1,0 +1,308 @@
+{
+  "function_whitelist": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5
+  ],
+  "function_blacklist": [],
+  "hotspots": [
+    {
+      "function_id": 0,
+      "function_name": "overflowaddtostate",
+      "score": 1.8,
+      "reasons": [
+        "storage_writes=1"
+      ]
+    },
+    {
+      "function_id": 1,
+      "function_name": "overflowmultostate",
+      "score": 1.8,
+      "reasons": [
+        "storage_writes=1"
+      ]
+    },
+    {
+      "function_id": 2,
+      "function_name": "underflowtostate",
+      "score": 1.8,
+      "reasons": [
+        "storage_writes=1"
+      ]
+    }
+  ],
+  "sinks": [
+    {
+      "function_id": 3,
+      "function_name": "overflowlocalonly",
+      "sink_kind": "integer-overflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/arithmetic/overflow_single_tx.sol",
+      "start": 1043,
+      "end": 1056
+    },
+    {
+      "function_id": 4,
+      "function_name": "overflowmulocalonly",
+      "sink_kind": "integer-overflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/arithmetic/overflow_single_tx.sol",
+      "start": 1219,
+      "end": 1232
+    },
+    {
+      "function_id": 5,
+      "function_name": "underflowlocalonly",
+      "sink_kind": "integer-underflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/arithmetic/overflow_single_tx.sol",
+      "start": 1391,
+      "end": 1404
+    },
+    {
+      "function_id": 0,
+      "function_name": "overflowaddtostate",
+      "sink_kind": "storage-array-by-value",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/arithmetic/overflow_single_tx.sol",
+      "start": 509,
+      "end": 523
+    },
+    {
+      "function_id": 1,
+      "function_name": "overflowmultostate",
+      "sink_kind": "storage-array-by-value",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/arithmetic/overflow_single_tx.sol",
+      "start": 691,
+      "end": 705
+    },
+    {
+      "function_id": 2,
+      "function_name": "underflowtostate",
+      "sink_kind": "storage-array-by-value",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/arithmetic/overflow_single_tx.sol",
+      "start": 868,
+      "end": 882
+    }
+  ],
+  "callgraph": {
+    "total_sites": 0,
+    "resolved": 0,
+    "ambiguous": 0,
+    "external": 0,
+    "unknown": 0
+  },
+  "taint": {
+    "source_functions": 0,
+    "tainted_functions": 0,
+    "tainted_vars": 0,
+    "tainted_calls": 0
+  },
+  "storage_rw_map": [
+    {
+      "function_id": 0,
+      "function_name": "overflowaddtostate",
+      "reads": [
+        "count"
+      ],
+      "writes": [
+        "count"
+      ]
+    },
+    {
+      "function_id": 1,
+      "function_name": "overflowmultostate",
+      "reads": [
+        "count"
+      ],
+      "writes": [
+        "count"
+      ]
+    },
+    {
+      "function_id": 2,
+      "function_name": "underflowtostate",
+      "reads": [
+        "count"
+      ],
+      "writes": [
+        "count"
+      ]
+    },
+    {
+      "function_id": 3,
+      "function_name": "overflowlocalonly",
+      "reads": [
+        "count"
+      ],
+      "writes": []
+    },
+    {
+      "function_id": 4,
+      "function_name": "overflowmulocalonly",
+      "reads": [
+        "count"
+      ],
+      "writes": []
+    },
+    {
+      "function_id": 5,
+      "function_name": "underflowlocalonly",
+      "reads": [
+        "count"
+      ],
+      "writes": []
+    }
+  ],
+  "arg_domains": [
+    {
+      "function_id": 0,
+      "function_name": "overflowaddtostate",
+      "param_index": 0,
+      "param_name": "input",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        10,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 1,
+      "function_name": "overflowmultostate",
+      "param_index": 0,
+      "param_name": "input",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        10,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 2,
+      "function_name": "underflowtostate",
+      "param_index": 0,
+      "param_name": "input",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        10,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 3,
+      "function_name": "overflowlocalonly",
+      "param_index": 0,
+      "param_name": "input",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        10,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 4,
+      "function_name": "overflowmulocalonly",
+      "param_index": 0,
+      "param_name": "input",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        10,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 5,
+      "function_name": "underflowlocalonly",
+      "param_index": 0,
+      "param_name": "input",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        10,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    }
+  ],
+  "address_roles": [
+    {
+      "role": "owner",
+      "indices": [
+        0
+      ],
+      "evidence": [
+        "default-owner-role"
+      ],
+      "target_functions": []
+    },
+    {
+      "role": "attacker",
+      "indices": [
+        1
+      ],
+      "evidence": [
+        "adversarial-role"
+      ],
+      "target_functions": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ]
+    },
+    {
+      "role": "user",
+      "indices": [
+        2,
+        3,
+        4
+      ],
+      "evidence": [
+        "default-user-pool"
+      ],
+      "target_functions": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ]
+    }
+  ]
+}

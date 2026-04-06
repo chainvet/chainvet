@@ -1,0 +1,198 @@
+{
+  "function_whitelist": [
+    1
+  ],
+  "function_blacklist": [],
+  "hotspots": [
+    {
+      "function_id": 1,
+      "function_name": "sendTo",
+      "score": 9.899999999999999,
+      "reasons": [
+        "external_calls=1",
+        "low_level_calls=1",
+        "tainted_calls=1",
+        "uses_source=true"
+      ]
+    },
+    {
+      "function_id": 0,
+      "function_name": "MyContract",
+      "score": 3.3,
+      "reasons": [
+        "storage_writes=1",
+        "uses_source=true"
+      ]
+    }
+  ],
+  "sinks": [
+    {
+      "function_id": 1,
+      "function_name": "sendTo",
+      "sink_kind": "tx-origin",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/mycontract.sol",
+      "start": 462,
+      "end": 471
+    },
+    {
+      "function_id": 1,
+      "function_name": "sendTo",
+      "sink_kind": "missing-input-validation",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/mycontract.sol",
+      "start": 349,
+      "end": 523
+    },
+    {
+      "function_id": 1,
+      "function_name": "sendTo",
+      "sink_kind": "arbitrary-ether-send",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/mycontract.sol",
+      "start": 491,
+      "end": 516
+    },
+    {
+      "function_id": 1,
+      "function_name": "sendTo",
+      "sink_kind": "unprotected-ether-withdrawal",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/mycontract.sol",
+      "start": 349,
+      "end": 523
+    },
+    {
+      "function_id": 1,
+      "function_name": "sendTo",
+      "sink_kind": "transaction-order-dependency",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/mycontract.sol",
+      "start": 349,
+      "end": 523
+    },
+    {
+      "function_id": 1,
+      "function_name": "sendTo",
+      "sink_kind": "hardcoded-gas-transfer",
+      "severity": "low",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/mycontract.sol",
+      "start": 491,
+      "end": 516
+    },
+    {
+      "function_id": 1,
+      "function_name": "sendTo",
+      "sink_kind": "tainted-call",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/mycontract.sol",
+      "start": 454,
+      "end": 481
+    }
+  ],
+  "callgraph": {
+    "total_sites": 2,
+    "resolved": 0,
+    "ambiguous": 0,
+    "external": 1,
+    "unknown": 0
+  },
+  "taint": {
+    "source_functions": 2,
+    "tainted_functions": 2,
+    "tainted_vars": 1,
+    "tainted_calls": 1
+  },
+  "storage_rw_map": [
+    {
+      "function_id": 0,
+      "function_name": "MyContract",
+      "reads": [],
+      "writes": [
+        "owner"
+      ]
+    },
+    {
+      "function_id": 1,
+      "function_name": "sendTo",
+      "reads": [
+        "owner"
+      ],
+      "writes": []
+    }
+  ],
+  "arg_domains": [
+    {
+      "function_id": 1,
+      "function_name": "sendTo",
+      "param_index": 0,
+      "param_name": "receiver",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        10,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 1,
+      "function_name": "sendTo",
+      "param_index": 1,
+      "param_name": "amount",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        10,
+        100,
+        1000,
+        1000000,
+        1000000000000000000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    }
+  ],
+  "address_roles": [
+    {
+      "role": "owner",
+      "indices": [
+        0
+      ],
+      "evidence": [
+        "state_var:owner"
+      ],
+      "target_functions": []
+    },
+    {
+      "role": "attacker",
+      "indices": [
+        1
+      ],
+      "evidence": [
+        "adversarial-role"
+      ],
+      "target_functions": [
+        1
+      ]
+    },
+    {
+      "role": "user",
+      "indices": [
+        2,
+        3,
+        4
+      ],
+      "evidence": [
+        "default-user-pool"
+      ],
+      "target_functions": [
+        1
+      ]
+    }
+  ]
+}

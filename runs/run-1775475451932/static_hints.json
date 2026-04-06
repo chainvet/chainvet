@@ -1,0 +1,194 @@
+{
+  "function_whitelist": [
+    0,
+    1
+  ],
+  "function_blacklist": [],
+  "hotspots": [
+    {
+      "function_id": 1,
+      "function_name": "withdrawFunds",
+      "score": 9.9,
+      "reasons": [
+        "storage_writes=2",
+        "external_calls=1",
+        "unresolved_calls=1",
+        "uses_source=true"
+      ]
+    },
+    {
+      "function_id": 0,
+      "function_name": "depositFunds",
+      "score": 3.3,
+      "reasons": [
+        "storage_writes=1",
+        "uses_source=true"
+      ]
+    }
+  ],
+  "sinks": [
+    {
+      "function_id": 1,
+      "function_name": "withdrawFunds",
+      "sink_kind": "integer-overflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/reentrancy/etherstore.sol",
+      "start": 713,
+      "end": 751
+    },
+    {
+      "function_id": 1,
+      "function_name": "withdrawFunds",
+      "sink_kind": "dangerous-block-timestamp",
+      "severity": "low",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/reentrancy/etherstore.sol",
+      "start": 905,
+      "end": 939
+    },
+    {
+      "function_id": 1,
+      "function_name": "withdrawFunds",
+      "sink_kind": "dangerous-block-timestamp",
+      "severity": "low",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/reentrancy/etherstore.sol",
+      "start": 698,
+      "end": 752
+    },
+    {
+      "function_id": 1,
+      "function_name": "withdrawFunds",
+      "sink_kind": "dos-with-failed-call",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/reentrancy/etherstore.sol",
+      "start": 446,
+      "end": 946
+    },
+    {
+      "function_id": 1,
+      "function_name": "withdrawFunds",
+      "sink_kind": "reentrancy-eth-transfer",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/reentrancy/etherstore.sol",
+      "start": 446,
+      "end": 946
+    },
+    {
+      "function_id": 1,
+      "function_name": "withdrawFunds",
+      "sink_kind": "reentrancy-no-eth-transfer",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/reentrancy/etherstore.sol",
+      "start": 799,
+      "end": 847
+    },
+    {
+      "function_id": 1,
+      "function_name": "withdrawFunds",
+      "sink_kind": "storage-array-by-value",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/reentrancy/etherstore.sol",
+      "start": 857,
+      "end": 895
+    }
+  ],
+  "callgraph": {
+    "total_sites": 6,
+    "resolved": 0,
+    "ambiguous": 0,
+    "external": 1,
+    "unknown": 1
+  },
+  "taint": {
+    "source_functions": 2,
+    "tainted_functions": 2,
+    "tainted_vars": 1,
+    "tainted_calls": 0
+  },
+  "storage_rw_map": [
+    {
+      "function_id": 0,
+      "function_name": "depositFunds",
+      "reads": [
+        "balances"
+      ],
+      "writes": [
+        "balances"
+      ]
+    },
+    {
+      "function_id": 1,
+      "function_name": "withdrawFunds",
+      "reads": [
+        "balances",
+        "lastWithdrawTime",
+        "withdrawalLimit"
+      ],
+      "writes": [
+        "balances",
+        "lastWithdrawTime"
+      ]
+    }
+  ],
+  "arg_domains": [
+    {
+      "function_id": 1,
+      "function_name": "withdrawFunds",
+      "param_index": 0,
+      "param_name": "_weiToWithdraw",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        10,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    }
+  ],
+  "address_roles": [
+    {
+      "role": "owner",
+      "indices": [
+        0
+      ],
+      "evidence": [
+        "default-owner-role"
+      ],
+      "target_functions": [
+        1
+      ]
+    },
+    {
+      "role": "attacker",
+      "indices": [
+        1
+      ],
+      "evidence": [
+        "adversarial-role"
+      ],
+      "target_functions": [
+        0,
+        1
+      ]
+    },
+    {
+      "role": "user",
+      "indices": [
+        2,
+        3,
+        4
+      ],
+      "evidence": [
+        "default-user-pool"
+      ],
+      "target_functions": [
+        0,
+        1
+      ]
+    }
+  ]
+}

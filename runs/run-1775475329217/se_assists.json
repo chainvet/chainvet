@@ -1,0 +1,68 @@
+[
+  {
+    "epoch": 1,
+    "goal": {
+      "id": "g-1-2-3-4",
+      "function_id": 2,
+      "function_name": "buyTickets",
+      "block_id": 4,
+      "edge_from": 3,
+      "edge_to": 4,
+      "sink_kind": "tainted-call",
+      "reason": "uncovered edge after fuzz epoch",
+      "priority": 37.5,
+      "attempts": 1
+    },
+    "injected_seed_ids": [],
+    "solver": {
+      "elapsed_ms": 33,
+      "states_explored": 5,
+      "max_depth_reached": 3,
+      "satisfiable_paths": 8
+    }
+  },
+  {
+    "epoch": 2,
+    "goal": {
+      "id": "g-1-2-4-5",
+      "function_id": 2,
+      "function_name": "buyTickets",
+      "block_id": 5,
+      "edge_from": 4,
+      "edge_to": 5,
+      "sink_kind": "tainted-call",
+      "reason": "uncovered edge after fuzz epoch",
+      "priority": 37.5,
+      "attempts": 1
+    },
+    "injected_seed_ids": [],
+    "solver": {
+      "elapsed_ms": 47,
+      "states_explored": 7,
+      "max_depth_reached": 4,
+      "satisfiable_paths": 8
+    }
+  },
+  {
+    "epoch": 3,
+    "goal": {
+      "id": "g-1-2-4-7",
+      "function_id": 2,
+      "function_name": "buyTickets",
+      "block_id": 7,
+      "edge_from": 4,
+      "edge_to": 7,
+      "sink_kind": "tainted-call",
+      "reason": "uncovered edge after fuzz epoch",
+      "priority": 37.5,
+      "attempts": 1
+    },
+    "injected_seed_ids": [],
+    "solver": {
+      "elapsed_ms": 50,
+      "states_explored": 8,
+      "max_depth_reached": 5,
+      "satisfiable_paths": 8
+    }
+  }
+]

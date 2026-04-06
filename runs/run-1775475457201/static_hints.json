@@ -1,0 +1,122 @@
+{
+  "function_whitelist": [
+    0,
+    1
+  ],
+  "function_blacklist": [],
+  "hotspots": [
+    {
+      "function_id": 0,
+      "function_name": "withdrawAll",
+      "score": 9.9,
+      "reasons": [
+        "storage_writes=2",
+        "external_calls=1",
+        "unresolved_calls=1",
+        "uses_source=true"
+      ]
+    },
+    {
+      "function_id": 1,
+      "function_name": "deposit",
+      "score": 5.1,
+      "reasons": [
+        "storage_writes=2",
+        "uses_source=true"
+      ]
+    }
+  ],
+  "sinks": [
+    {
+      "function_id": 0,
+      "function_name": "withdrawAll",
+      "sink_kind": "reentrancy-eth-transfer",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/reentrancy/reentrancy_dao.sol",
+      "start": 245,
+      "end": 569
+    }
+  ],
+  "callgraph": {
+    "total_sites": 3,
+    "resolved": 0,
+    "ambiguous": 0,
+    "external": 1,
+    "unknown": 1
+  },
+  "taint": {
+    "source_functions": 2,
+    "tainted_functions": 2,
+    "tainted_vars": 2,
+    "tainted_calls": 0
+  },
+  "storage_rw_map": [
+    {
+      "function_id": 0,
+      "function_name": "withdrawAll",
+      "reads": [
+        "balance",
+        "credit"
+      ],
+      "writes": [
+        "balance",
+        "credit"
+      ]
+    },
+    {
+      "function_id": 1,
+      "function_name": "deposit",
+      "reads": [
+        "balance",
+        "credit"
+      ],
+      "writes": [
+        "balance",
+        "credit"
+      ]
+    }
+  ],
+  "arg_domains": [],
+  "address_roles": [
+    {
+      "role": "owner",
+      "indices": [
+        0
+      ],
+      "evidence": [
+        "default-owner-role"
+      ],
+      "target_functions": [
+        0
+      ]
+    },
+    {
+      "role": "attacker",
+      "indices": [
+        1
+      ],
+      "evidence": [
+        "adversarial-role"
+      ],
+      "target_functions": [
+        0,
+        1
+      ]
+    },
+    {
+      "role": "user",
+      "indices": [
+        2,
+        3,
+        4
+      ],
+      "evidence": [
+        "default-user-pool"
+      ],
+      "target_functions": [
+        0,
+        1
+      ]
+    }
+  ]
+}

@@ -1,0 +1,77 @@
+[
+  {
+    "epoch": 1,
+    "goal": {
+      "id": "g-1-2-0-2",
+      "function_id": 2,
+      "function_name": "settle",
+      "block_id": 2,
+      "edge_from": 0,
+      "edge_to": 2,
+      "sink_kind": "hardcoded-gas-transfer",
+      "reason": "uncovered edge after fuzz epoch",
+      "priority": 18.5,
+      "attempts": 1
+    },
+    "injected_seed_ids": [
+      "se-solve-g-1-2-0-2-0",
+      "se-solve-g-1-2-0-2-1",
+      "se-solve-g-1-2-0-2-2",
+      "se-solve-g-1-2-0-2-3",
+      "se-solve-g-1-2-0-2-4",
+      "se-solve-g-1-2-0-2-5",
+      "se-solve-g-1-2-0-2-6",
+      "se-solve-g-1-2-0-2-7"
+    ],
+    "solver": {
+      "elapsed_ms": 22,
+      "states_explored": 3,
+      "max_depth_reached": 2,
+      "satisfiable_paths": 8
+    }
+  },
+  {
+    "epoch": 2,
+    "goal": {
+      "id": "g-2-2-0-2",
+      "function_id": 2,
+      "function_name": "settle",
+      "block_id": 2,
+      "edge_from": 0,
+      "edge_to": 2,
+      "sink_kind": "hardcoded-gas-transfer",
+      "reason": "uncovered edge after fuzz epoch",
+      "priority": 18.5,
+      "attempts": 1
+    },
+    "injected_seed_ids": [],
+    "solver": {
+      "elapsed_ms": 18,
+      "states_explored": 3,
+      "max_depth_reached": 2,
+      "satisfiable_paths": 8
+    }
+  },
+  {
+    "epoch": 3,
+    "goal": {
+      "id": "g-2-2-0-2",
+      "function_id": 2,
+      "function_name": "settle",
+      "block_id": 2,
+      "edge_from": 0,
+      "edge_to": 2,
+      "sink_kind": "hardcoded-gas-transfer",
+      "reason": "uncovered edge after fuzz epoch",
+      "priority": 16.650000000000002,
+      "attempts": 2
+    },
+    "injected_seed_ids": [],
+    "solver": {
+      "elapsed_ms": 18,
+      "states_explored": 3,
+      "max_depth_reached": 2,
+      "satisfiable_paths": 8
+    }
+  }
+]

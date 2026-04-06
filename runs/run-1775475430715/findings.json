@@ -1,0 +1,213 @@
+[
+  {
+    "engine": "fuzzing",
+    "finding_type": "hardcoded-gas-transfer",
+    "severity": "low",
+    "message": "Hardcoded gas: '$t9' in function 10 uses fixed 2300 gas stipend — may fail with contract recipients",
+    "location": {
+      "file": null,
+      "start": null,
+      "end": null,
+      "pc": null,
+      "function_id": 10,
+      "function_name": "transferFrom"
+    },
+    "reproduction": {
+      "id": "repro-epoch1-5",
+      "txs": [
+        {
+          "function_id": 8,
+          "selector": null,
+          "calldata": null,
+          "args": [
+            "0",
+            "0"
+          ],
+          "sender": "1",
+          "value": "0",
+          "env": {
+            "block_timestamp": 1700000000,
+            "block_number": 20000000
+          }
+        }
+      ],
+      "state_snapshot_id": null,
+      "score": 3.5
+    },
+    "signature": "fuzzing:runtime:executor:hardcoded-gas-transfer:none:none:none:none:10:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "executor",
+    "metadata": {
+      "confidence": "medium"
+    }
+  },
+  {
+    "engine": "fuzzing",
+    "finding_type": "hardcoded-gas-transfer",
+    "severity": "low",
+    "message": "Hardcoded gas: '$t8' in function 8 uses fixed 2300 gas stipend — may fail with contract recipients",
+    "location": {
+      "file": null,
+      "start": null,
+      "end": null,
+      "pc": null,
+      "function_id": 8,
+      "function_name": "transfer"
+    },
+    "reproduction": {
+      "id": "repro-epoch1-3",
+      "txs": [
+        {
+          "function_id": 8,
+          "selector": null,
+          "calldata": null,
+          "args": [
+            "0",
+            "0"
+          ],
+          "sender": "2",
+          "value": "0",
+          "env": {
+            "block_timestamp": 1700000000,
+            "block_number": 20000000
+          }
+        }
+      ],
+      "state_snapshot_id": null,
+      "score": 3.5
+    },
+    "signature": "fuzzing:runtime:executor:hardcoded-gas-transfer:none:none:none:none:8:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "executor",
+    "metadata": {
+      "confidence": "medium"
+    }
+  },
+  {
+    "engine": "fuzzing",
+    "finding_type": "integer-overflow",
+    "severity": "high",
+    "message": "Potential integer overflow in function 0: 1171 * 9796957009462238471320388279439040023 = 242918549689311955624812629974764888885 (wrapping detected)",
+    "location": {
+      "file": null,
+      "start": null,
+      "end": null,
+      "pc": null,
+      "function_id": 0,
+      "function_name": "mul"
+    },
+    "reproduction": {
+      "id": "repro-epoch12-26",
+      "txs": [
+        {
+          "function_id": 0,
+          "selector": null,
+          "calldata": null,
+          "args": [
+            "1171",
+            "9796957009462238471320388279439040023"
+          ],
+          "sender": "2",
+          "value": "0",
+          "env": {
+            "block_timestamp": 1750000000,
+            "block_number": 7653096
+          }
+        }
+      ],
+      "state_snapshot_id": null,
+      "score": 3.5
+    },
+    "signature": "fuzzing:runtime:executor:integer-overflow:none:none:none:none:0:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "executor",
+    "metadata": {
+      "confidence": "medium"
+    }
+  },
+  {
+    "engine": "fuzzing",
+    "finding_type": "reentrancy",
+    "severity": "high",
+    "message": "Potential reentrancy: feasible callback in function 10 followed by storage write '_balances[from]' (evidence=stale-read+post-call-mutation)",
+    "location": {
+      "file": null,
+      "start": null,
+      "end": null,
+      "pc": null,
+      "function_id": 10,
+      "function_name": "transferFrom"
+    },
+    "reproduction": {
+      "id": "repro-epoch1-9",
+      "txs": [
+        {
+          "function_id": 10,
+          "selector": null,
+          "calldata": null,
+          "args": [
+            "0",
+            "0",
+            "0"
+          ],
+          "sender": "1",
+          "value": "0",
+          "env": {
+            "block_timestamp": 1750000000,
+            "block_number": 30965738
+          }
+        }
+      ],
+      "state_snapshot_id": null,
+      "score": 3.5
+    },
+    "signature": "fuzzing:runtime:executor:reentrancy:none:none:none:none:10:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "executor",
+    "metadata": {
+      "confidence": "high"
+    }
+  },
+  {
+    "engine": "fuzzing",
+    "finding_type": "reentrancy",
+    "severity": "high",
+    "message": "Potential reentrancy: feasible callback in function 8 followed by storage write '_balances[msg.sender]' (evidence=stale-read+post-call-mutation)",
+    "location": {
+      "file": null,
+      "start": null,
+      "end": null,
+      "pc": null,
+      "function_id": 8,
+      "function_name": "transfer"
+    },
+    "reproduction": {
+      "id": "repro-epoch1-5",
+      "txs": [
+        {
+          "function_id": 8,
+          "selector": null,
+          "calldata": null,
+          "args": [
+            "0",
+            "0"
+          ],
+          "sender": "1",
+          "value": "0",
+          "env": {
+            "block_timestamp": 1700000000,
+            "block_number": 20000000
+          }
+        }
+      ],
+      "state_snapshot_id": null,
+      "score": 3.5
+    },
+    "signature": "fuzzing:runtime:executor:reentrancy:none:none:none:none:8:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "executor",
+    "metadata": {
+      "confidence": "high"
+    }
+  }
+]

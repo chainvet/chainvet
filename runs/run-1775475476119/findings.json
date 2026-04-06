@@ -1,0 +1,21 @@
+[
+  {
+    "engine": "static",
+    "finding_type": "dos-block-gas-limit",
+    "severity": "medium",
+    "message": "DS-03: `for` loop in `transfer` iterates over a dynamically-sized array (`.length`); if the array grows without bound, this function may exceed the block gas limit and become permanently uncallable",
+    "location": {
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/unchecked_low_level_calls/0x4b71ad9c1a84b9b643aa54fdd66e2dec96e8b152.sol",
+      "start": 343,
+      "end": 480,
+      "pc": null,
+      "function_id": 0,
+      "function_name": "transfer"
+    },
+    "reproduction": null,
+    "signature": "static:runtime:rule:dos-block-gas-limit:/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/unchecked_low_level_calls/0x4b71ad9c1a84b9b643aa54fdd66e2dec96e8b152.sol:343:480:none:0:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "rule",
+    "metadata": {}
+  }
+]

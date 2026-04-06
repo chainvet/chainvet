@@ -1,0 +1,105 @@
+[
+  {
+    "engine": "meta",
+    "finding_type": "honeypot",
+    "severity": "low",
+    "message": "contract 'WalletLibrary' exposes a public funding path but its payout flow looks deceptive or trap-like",
+    "location": {
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_2.sol",
+      "start": 8689,
+      "end": 9662,
+      "pc": null,
+      "function_id": 25,
+      "function_name": "execute"
+    },
+    "reproduction": null,
+    "signature": "meta:meta:honeypot-heuristic:honeypot:/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_2.sol:8689:9662:none:25:none",
+    "analysis_layer": "meta",
+    "evidence_kind": "honeypot-heuristic",
+    "metadata": {
+      "confidence": "low",
+      "contract": "WalletLibrary",
+      "reasons": "owner-or-secret-gate,public-funding-path"
+    }
+  },
+  {
+    "engine": "meta",
+    "finding_type": "honeypot",
+    "severity": "low",
+    "message": "contract 'WalletLibrary' exposes a public funding path but its payout flow looks deceptive or trap-like",
+    "location": {
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_2.sol",
+      "start": 8689,
+      "end": 9662,
+      "pc": null,
+      "function_id": 25,
+      "function_name": "execute"
+    },
+    "reproduction": null,
+    "signature": "meta:runtime:meta-runtime-backstop:honeypot:/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_2.sol:8689:9662:none:25:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "meta-runtime-backstop",
+    "metadata": {
+      "confidence": "low",
+      "contract": "WalletLibrary",
+      "reasons": "owner-or-secret-gate,public-funding-path"
+    }
+  },
+  {
+    "engine": "static",
+    "finding_type": "reentrancy",
+    "severity": "high",
+    "message": "RE-04: reentrancy in `confirm`: state variable is read before an ETH-sending external call and written after it inside nested control flow; update state before the call",
+    "location": {
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_2.sol",
+      "start": 10082,
+      "end": 10610,
+      "pc": null,
+      "function_id": 27,
+      "function_name": "confirm"
+    },
+    "reproduction": null,
+    "signature": "static:runtime:rule-backstop:reentrancy:/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_2.sol:10082:10610:none:27:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "rule-backstop",
+    "metadata": {}
+  },
+  {
+    "engine": "static",
+    "finding_type": "dos-block-gas-limit",
+    "severity": "medium",
+    "message": "DS-03: loop in `clearPending` depends on dynamic bounds (`.length`/gas), which can make the function exceed the block gas limit",
+    "location": {
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_2.sol",
+      "start": 13354,
+      "end": 13627,
+      "pc": null,
+      "function_id": 32,
+      "function_name": "clearPending"
+    },
+    "reproduction": null,
+    "signature": "static:runtime:rule:dos-block-gas-limit:/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_2.sol:13354:13627:none:32:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "rule",
+    "metadata": {}
+  },
+  {
+    "engine": "static",
+    "finding_type": "dos-block-gas-limit",
+    "severity": "medium",
+    "message": "DS-03: `for` loop in `initMultiowned` iterates over a dynamically-sized array (`.length`); if the array grows without bound, this function may exceed the block gas limit and become permanently uncallable",
+    "location": {
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_2.sol",
+      "start": 4236,
+      "end": 4377,
+      "pc": null,
+      "function_id": 11,
+      "function_name": "initMultiowned"
+    },
+    "reproduction": null,
+    "signature": "static:runtime:rule:dos-block-gas-limit:/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_2.sol:4236:4377:none:11:none",
+    "analysis_layer": "runtime",
+    "evidence_kind": "rule",
+    "metadata": {}
+  }
+]

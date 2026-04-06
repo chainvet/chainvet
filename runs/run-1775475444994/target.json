@@ -1,0 +1,16 @@
+{
+  "id": "0x93c32845fae42c83a70e5f06214c8433665c2ab5",
+  "input_path": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/reentrancy/0x93c32845fae42c83a70e5f06214c8433665c2ab5.sol",
+  "source_paths": [
+    "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/reentrancy/0x93c32845fae42c83a70e5f06214c8433665c2ab5.sol"
+  ],
+  "chain_id": null,
+  "address": null,
+  "abi": null,
+  "bytecode": null,
+  "compiler": {
+    "frontend_mode": "full",
+    "compiler_name": "solc",
+    "compiler_version": "0.4.25"
+  }
+}

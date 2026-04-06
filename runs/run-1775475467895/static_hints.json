@@ -1,0 +1,114 @@
+{
+  "function_whitelist": [
+    0
+  ],
+  "function_blacklist": [],
+  "hotspots": [
+    {
+      "function_id": 0,
+      "function_name": "callAddress",
+      "score": 6.199999999999999,
+      "reasons": [
+        "external_calls=1",
+        "low_level_calls=1"
+      ]
+    }
+  ],
+  "sinks": [
+    {
+      "function_id": 0,
+      "function_name": "callAddress",
+      "sink_kind": "arbitrary-calldata",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/unchecked_low_level_calls/0x0cbe050f75bc8f8c2d6c0d249fea125fd6e1acc9.sol",
+      "start": 211,
+      "end": 219
+    },
+    {
+      "function_id": 0,
+      "function_name": "callAddress",
+      "sink_kind": "unused-return-value",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/unchecked_low_level_calls/0x0cbe050f75bc8f8c2d6c0d249fea125fd6e1acc9.sol",
+      "start": 211,
+      "end": 219
+    }
+  ],
+  "callgraph": {
+    "total_sites": 1,
+    "resolved": 0,
+    "ambiguous": 0,
+    "external": 1,
+    "unknown": 0
+  },
+  "taint": {
+    "source_functions": 0,
+    "tainted_functions": 0,
+    "tainted_vars": 0,
+    "tainted_calls": 0
+  },
+  "storage_rw_map": [
+    {
+      "function_id": 0,
+      "function_name": "callAddress",
+      "reads": [],
+      "writes": []
+    }
+  ],
+  "arg_domains": [
+    {
+      "function_id": 0,
+      "function_name": "callAddress",
+      "param_index": 0,
+      "param_name": "a",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        10,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    }
+  ],
+  "address_roles": [
+    {
+      "role": "owner",
+      "indices": [
+        0
+      ],
+      "evidence": [
+        "default-owner-role"
+      ],
+      "target_functions": []
+    },
+    {
+      "role": "attacker",
+      "indices": [
+        1
+      ],
+      "evidence": [
+        "adversarial-role"
+      ],
+      "target_functions": [
+        0
+      ]
+    },
+    {
+      "role": "user",
+      "indices": [
+        2,
+        3,
+        4
+      ],
+      "evidence": [
+        "default-user-pool"
+      ],
+      "target_functions": [
+        0
+      ]
+    }
+  ]
+}

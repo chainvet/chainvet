@@ -1,0 +1,494 @@
+{
+  "function_whitelist": [
+    1,
+    2,
+    3,
+    4,
+    6,
+    7,
+    8,
+    9
+  ],
+  "function_blacklist": [
+    10
+  ],
+  "hotspots": [
+    {
+      "function_id": 7,
+      "function_name": "run",
+      "score": 12.6,
+      "reasons": [
+        "storage_writes=2",
+        "external_calls=2",
+        "low_level_calls=1"
+      ]
+    },
+    {
+      "function_id": 6,
+      "function_name": "fill",
+      "score": 9.2,
+      "reasons": [
+        "storage_writes=4",
+        "unresolved_calls=1"
+      ]
+    },
+    {
+      "function_id": 2,
+      "function_name": "execute",
+      "score": 4.8,
+      "reasons": [
+        "external_calls=1",
+        "unresolved_calls=1"
+      ]
+    },
+    {
+      "function_id": 5,
+      "function_name": "TokenSender",
+      "score": 3.8,
+      "reasons": [
+        "storage_writes=1",
+        "unresolved_calls=1"
+      ]
+    },
+    {
+      "function_id": 0,
+      "function_name": "Owned",
+      "score": 3.3,
+      "reasons": [
+        "storage_writes=1",
+        "uses_source=true"
+      ]
+    },
+    {
+      "function_id": 1,
+      "function_name": "changeOwner",
+      "score": 1.8,
+      "reasons": [
+        "storage_writes=1"
+      ]
+    }
+  ],
+  "sinks": [
+    {
+      "function_id": 1,
+      "function_name": "changeOwner",
+      "sink_kind": "missing-input-validation",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/unchecked_low_level_calls/0xec329ffc97d75fe03428ae155fc7793431487f63.sol",
+      "start": 476,
+      "end": 560
+    },
+    {
+      "function_id": 5,
+      "function_name": "TokenSender",
+      "sink_kind": "missing-input-validation",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/unchecked_low_level_calls/0xec329ffc97d75fe03428ae155fc7793431487f63.sol",
+      "start": 1382,
+      "end": 1457
+    },
+    {
+      "function_id": 6,
+      "function_name": "fill",
+      "sink_kind": "integer-overflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/unchecked_low_level_calls/0xec329ffc97d75fe03428ae155fc7793431487f63.sol",
+      "start": 2186,
+      "end": 2216
+    },
+    {
+      "function_id": 6,
+      "function_name": "fill",
+      "sink_kind": "integer-overflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/unchecked_low_level_calls/0xec329ffc97d75fe03428ae155fc7793431487f63.sol",
+      "start": 2391,
+      "end": 2401
+    },
+    {
+      "function_id": 6,
+      "function_name": "fill",
+      "sink_kind": "integer-overflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/unchecked_low_level_calls/0xec329ffc97d75fe03428ae155fc7793431487f63.sol",
+      "start": 2438,
+      "end": 2448
+    },
+    {
+      "function_id": 6,
+      "function_name": "fill",
+      "sink_kind": "integer-underflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/unchecked_low_level_calls/0xec329ffc97d75fe03428ae155fc7793431487f63.sol",
+      "start": 2315,
+      "end": 2321
+    },
+    {
+      "function_id": 6,
+      "function_name": "fill",
+      "sink_kind": "unsafe-array-length-assignment",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/unchecked_low_level_calls/0xec329ffc97d75fe03428ae155fc7793431487f63.sol",
+      "start": 2167,
+      "end": 2216
+    },
+    {
+      "function_id": 7,
+      "function_name": "run",
+      "sink_kind": "transaction-order-dependency",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/unchecked_low_level_calls/0xec329ffc97d75fe03428ae155fc7793431487f63.sol",
+      "start": 2760,
+      "end": 3484
+    },
+    {
+      "function_id": 7,
+      "function_name": "run",
+      "sink_kind": "hardcoded-gas-transfer",
+      "severity": "low",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/unchecked_low_level_calls/0xec329ffc97d75fe03428ae155fc7793431487f63.sol",
+      "start": 3311,
+      "end": 3356
+    },
+    {
+      "function_id": 6,
+      "function_name": "fill",
+      "sink_kind": "dos-block-gas-limit",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/unchecked_low_level_calls/0xec329ffc97d75fe03428ae155fc7793431487f63.sol",
+      "start": 2226,
+      "end": 2503
+    },
+    {
+      "function_id": 7,
+      "function_name": "run",
+      "sink_kind": "dos-block-gas-limit",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/unchecked_low_level_calls/0xec329ffc97d75fe03428ae155fc7793431487f63.sol",
+      "start": 3102,
+      "end": 3410
+    },
+    {
+      "function_id": 7,
+      "function_name": "run",
+      "sink_kind": "dos-with-failed-call",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/unchecked_low_level_calls/0xec329ffc97d75fe03428ae155fc7793431487f63.sol",
+      "start": 3102,
+      "end": 3410
+    },
+    {
+      "function_id": 7,
+      "function_name": "run",
+      "sink_kind": "reentrancy-transfer",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/unchecked_low_level_calls/0xec329ffc97d75fe03428ae155fc7793431487f63.sol",
+      "start": 3102,
+      "end": 3410
+    },
+    {
+      "function_id": 7,
+      "function_name": "run",
+      "sink_kind": "reentrancy-same-effect",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/unchecked_low_level_calls/0xec329ffc97d75fe03428ae155fc7793431487f63.sol",
+      "start": 3102,
+      "end": 3410
+    },
+    {
+      "function_id": 7,
+      "function_name": "run",
+      "sink_kind": "reentrancy-eth-transfer",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/unchecked_low_level_calls/0xec329ffc97d75fe03428ae155fc7793431487f63.sol",
+      "start": 3102,
+      "end": 3410
+    },
+    {
+      "function_id": 7,
+      "function_name": "run",
+      "sink_kind": "reentrancy-no-eth-transfer",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/unchecked_low_level_calls/0xec329ffc97d75fe03428ae155fc7793431487f63.sol",
+      "start": 3018,
+      "end": 3091
+    },
+    {
+      "function_id": 10,
+      "function_name": "gas",
+      "sink_kind": "arbitrary-function-jump",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/unchecked_low_level_calls/0xec329ffc97d75fe03428ae155fc7793431487f63.sol",
+      "start": 3910,
+      "end": 3959
+    },
+    {
+      "function_id": 10,
+      "function_name": "gas",
+      "sink_kind": "error-prone-assembly",
+      "severity": "low",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/unchecked_low_level_calls/0xec329ffc97d75fe03428ae155fc7793431487f63.sol",
+      "start": 3910,
+      "end": 3959
+    },
+    {
+      "function_id": 1,
+      "function_name": "changeOwner",
+      "sink_kind": "storage-array-by-value",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/unchecked_low_level_calls/0xec329ffc97d75fe03428ae155fc7793431487f63.sol",
+      "start": 536,
+      "end": 553
+    }
+  ],
+  "callgraph": {
+    "total_sites": 7,
+    "resolved": 1,
+    "ambiguous": 0,
+    "external": 3,
+    "unknown": 3
+  },
+  "taint": {
+    "source_functions": 1,
+    "tainted_functions": 1,
+    "tainted_vars": 1,
+    "tainted_calls": 0
+  },
+  "storage_rw_map": [
+    {
+      "function_id": 0,
+      "function_name": "Owned",
+      "reads": [],
+      "writes": [
+        "owner"
+      ]
+    },
+    {
+      "function_id": 1,
+      "function_name": "changeOwner",
+      "reads": [],
+      "writes": [
+        "owner"
+      ]
+    },
+    {
+      "function_id": 2,
+      "function_name": "execute",
+      "reads": [],
+      "writes": []
+    },
+    {
+      "function_id": 3,
+      "function_name": "transfer",
+      "reads": [],
+      "writes": []
+    },
+    {
+      "function_id": 4,
+      "function_name": "balanceOf",
+      "reads": [],
+      "writes": []
+    },
+    {
+      "function_id": 5,
+      "function_name": "TokenSender",
+      "reads": [],
+      "writes": [
+        "token"
+      ]
+    },
+    {
+      "function_id": 6,
+      "function_name": "fill",
+      "reads": [
+        "D160",
+        "next",
+        "totalToDistribute",
+        "transfers"
+      ],
+      "writes": [
+        "totalToDistribute",
+        "transfers"
+      ]
+    },
+    {
+      "function_id": 7,
+      "function_name": "run",
+      "reads": [
+        "next",
+        "token",
+        "totalToDistribute",
+        "transfers"
+      ],
+      "writes": [
+        "next"
+      ]
+    },
+    {
+      "function_id": 8,
+      "function_name": "hasTerminated",
+      "reads": [
+        "next",
+        "transfers"
+      ],
+      "writes": []
+    },
+    {
+      "function_id": 9,
+      "function_name": "nTransfers",
+      "reads": [
+        "transfers"
+      ],
+      "writes": []
+    },
+    {
+      "function_id": 10,
+      "function_name": "gas",
+      "reads": [],
+      "writes": []
+    }
+  ],
+  "arg_domains": [
+    {
+      "function_id": 1,
+      "function_name": "changeOwner",
+      "param_index": 0,
+      "param_name": "_newOwner",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        10,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 2,
+      "function_name": "execute",
+      "param_index": 0,
+      "param_name": "_dst",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        10,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 2,
+      "function_name": "execute",
+      "param_index": 1,
+      "param_name": "_value",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        10,
+        100,
+        1000,
+        1000000,
+        1000000000000000000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 2,
+      "function_name": "execute",
+      "param_index": 2,
+      "param_name": "_data",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        10,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 6,
+      "function_name": "fill",
+      "param_index": 0,
+      "param_name": "data",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        10,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    }
+  ],
+  "address_roles": [
+    {
+      "role": "owner",
+      "indices": [
+        0
+      ],
+      "evidence": [
+        "state_var:owner"
+      ],
+      "target_functions": [
+        1,
+        2,
+        6,
+        7
+      ]
+    },
+    {
+      "role": "attacker",
+      "indices": [
+        1
+      ],
+      "evidence": [
+        "adversarial-role"
+      ],
+      "target_functions": [
+        1,
+        2,
+        3,
+        4,
+        6,
+        7,
+        8,
+        9
+      ]
+    },
+    {
+      "role": "user",
+      "indices": [
+        2,
+        3,
+        4
+      ],
+      "evidence": [
+        "default-user-pool"
+      ],
+      "target_functions": [
+        1,
+        2,
+        3,
+        4,
+        6,
+        7,
+        8,
+        9
+      ]
+    }
+  ]
+}

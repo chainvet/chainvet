@@ -1,0 +1,363 @@
+{
+  "function_whitelist": [
+    0,
+    1,
+    3,
+    4,
+    5
+  ],
+  "function_blacklist": [],
+  "hotspots": [
+    {
+      "function_id": 3,
+      "function_name": "withdrawTokens",
+      "score": 11.0,
+      "reasons": [
+        "external_calls=2",
+        "low_level_calls=1",
+        "unresolved_calls=1"
+      ]
+    },
+    {
+      "function_id": 4,
+      "function_name": "withdrawEther",
+      "score": 6.199999999999999,
+      "reasons": [
+        "external_calls=1",
+        "low_level_calls=1"
+      ]
+    },
+    {
+      "function_id": 5,
+      "function_name": "getTokens",
+      "score": 4.8,
+      "reasons": [
+        "external_calls=1",
+        "unresolved_calls=1"
+      ]
+    },
+    {
+      "function_id": 2,
+      "function_name": "EtherGet",
+      "score": 3.3,
+      "reasons": [
+        "storage_writes=1",
+        "uses_source=true"
+      ]
+    }
+  ],
+  "sinks": [
+    {
+      "function_id": 0,
+      "function_name": "transfer",
+      "sink_kind": "missing-input-validation",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/unchecked_low_level_calls/0x52d2e0f9b01101a59b38a3d05c80b7618aeed984.sol",
+      "start": 122,
+      "end": 189
+    },
+    {
+      "function_id": 1,
+      "function_name": "balanceOf",
+      "sink_kind": "missing-input-validation",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/unchecked_low_level_calls/0x52d2e0f9b01101a59b38a3d05c80b7618aeed984.sol",
+      "start": 194,
+      "end": 261
+    },
+    {
+      "function_id": 3,
+      "function_name": "withdrawTokens",
+      "sink_kind": "missing-input-validation",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/unchecked_low_level_calls/0x52d2e0f9b01101a59b38a3d05c80b7618aeed984.sol",
+      "start": 367,
+      "end": 517
+    },
+    {
+      "function_id": 5,
+      "function_name": "getTokens",
+      "sink_kind": "missing-input-validation",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/unchecked_low_level_calls/0x52d2e0f9b01101a59b38a3d05c80b7618aeed984.sol",
+      "start": 604,
+      "end": 797
+    },
+    {
+      "function_id": 3,
+      "function_name": "withdrawTokens",
+      "sink_kind": "unprotected-ether-withdrawal",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/unchecked_low_level_calls/0x52d2e0f9b01101a59b38a3d05c80b7618aeed984.sol",
+      "start": 367,
+      "end": 517
+    },
+    {
+      "function_id": 4,
+      "function_name": "withdrawEther",
+      "sink_kind": "unprotected-ether-withdrawal",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/unchecked_low_level_calls/0x52d2e0f9b01101a59b38a3d05c80b7618aeed984.sol",
+      "start": 522,
+      "end": 599
+    },
+    {
+      "function_id": 3,
+      "function_name": "withdrawTokens",
+      "sink_kind": "transaction-order-dependency",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/unchecked_low_level_calls/0x52d2e0f9b01101a59b38a3d05c80b7618aeed984.sol",
+      "start": 367,
+      "end": 517
+    },
+    {
+      "function_id": 4,
+      "function_name": "withdrawEther",
+      "sink_kind": "transaction-order-dependency",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/unchecked_low_level_calls/0x52d2e0f9b01101a59b38a3d05c80b7618aeed984.sol",
+      "start": 522,
+      "end": 599
+    },
+    {
+      "function_id": 3,
+      "function_name": "withdrawTokens",
+      "sink_kind": "hardcoded-gas-transfer",
+      "severity": "low",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/unchecked_low_level_calls/0x52d2e0f9b01101a59b38a3d05c80b7618aeed984.sol",
+      "start": 472,
+      "end": 510
+    },
+    {
+      "function_id": 4,
+      "function_name": "withdrawEther",
+      "sink_kind": "hardcoded-gas-transfer",
+      "severity": "low",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/unchecked_low_level_calls/0x52d2e0f9b01101a59b38a3d05c80b7618aeed984.sol",
+      "start": 564,
+      "end": 592
+    },
+    {
+      "function_id": 5,
+      "function_name": "getTokens",
+      "sink_kind": "dos-with-failed-call",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/unchecked_low_level_calls/0x52d2e0f9b01101a59b38a3d05c80b7618aeed984.sol",
+      "start": 604,
+      "end": 797
+    }
+  ],
+  "callgraph": {
+    "total_sites": 6,
+    "resolved": 0,
+    "ambiguous": 0,
+    "external": 4,
+    "unknown": 2
+  },
+  "taint": {
+    "source_functions": 1,
+    "tainted_functions": 1,
+    "tainted_vars": 1,
+    "tainted_calls": 0
+  },
+  "storage_rw_map": [
+    {
+      "function_id": 0,
+      "function_name": "transfer",
+      "reads": [],
+      "writes": []
+    },
+    {
+      "function_id": 1,
+      "function_name": "balanceOf",
+      "reads": [],
+      "writes": []
+    },
+    {
+      "function_id": 2,
+      "function_name": "EtherGet",
+      "reads": [],
+      "writes": [
+        "owner"
+      ]
+    },
+    {
+      "function_id": 3,
+      "function_name": "withdrawTokens",
+      "reads": [
+        "owner"
+      ],
+      "writes": []
+    },
+    {
+      "function_id": 4,
+      "function_name": "withdrawEther",
+      "reads": [
+        "balance",
+        "owner"
+      ],
+      "writes": []
+    },
+    {
+      "function_id": 5,
+      "function_name": "getTokens",
+      "reads": [],
+      "writes": []
+    }
+  ],
+  "arg_domains": [
+    {
+      "function_id": 0,
+      "function_name": "transfer",
+      "param_index": 0,
+      "param_name": "_to",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        10,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 0,
+      "function_name": "transfer",
+      "param_index": 1,
+      "param_name": "_value",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        10,
+        100,
+        1000,
+        1000000,
+        1000000000000000000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 1,
+      "function_name": "balanceOf",
+      "param_index": 0,
+      "param_name": "_owner",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        10,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 3,
+      "function_name": "withdrawTokens",
+      "param_index": 0,
+      "param_name": "tokenContract",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        10,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 5,
+      "function_name": "getTokens",
+      "param_index": 0,
+      "param_name": "num",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        10,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 5,
+      "function_name": "getTokens",
+      "param_index": 1,
+      "param_name": "addr",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        10,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    }
+  ],
+  "address_roles": [
+    {
+      "role": "owner",
+      "indices": [
+        0
+      ],
+      "evidence": [
+        "state_var:owner"
+      ],
+      "target_functions": [
+        3,
+        4
+      ]
+    },
+    {
+      "role": "attacker",
+      "indices": [
+        1
+      ],
+      "evidence": [
+        "adversarial-role"
+      ],
+      "target_functions": [
+        0,
+        1,
+        3,
+        4,
+        5
+      ]
+    },
+    {
+      "role": "user",
+      "indices": [
+        2,
+        3,
+        4
+      ],
+      "evidence": [
+        "default-user-pool"
+      ],
+      "target_functions": [
+        0,
+        1,
+        3,
+        4,
+        5
+      ]
+    }
+  ]
+}

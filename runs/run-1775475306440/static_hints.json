@@ -1,0 +1,2283 @@
+{
+  "function_whitelist": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20,
+    21,
+    22,
+    23,
+    24,
+    25,
+    27,
+    33,
+    34,
+    35,
+    36,
+    37
+  ],
+  "function_blacklist": [
+    26,
+    28,
+    29,
+    30,
+    31,
+    32
+  ],
+  "hotspots": [
+    {
+      "function_id": 33,
+      "function_name": "Wallet",
+      "score": 17.4,
+      "reasons": [
+        "low_level_calls=1",
+        "unresolved_calls=7"
+      ]
+    },
+    {
+      "function_id": 11,
+      "function_name": "initMultiowned",
+      "score": 14.9,
+      "reasons": [
+        "storage_writes=5",
+        "tainted_calls=2",
+        "uses_source=true"
+      ]
+    },
+    {
+      "function_id": 34,
+      "function_name": null,
+      "score": 14.1,
+      "reasons": [
+        "external_calls=1",
+        "low_level_calls=1",
+        "unresolved_calls=1",
+        "tainted_calls=2",
+        "uses_source=true"
+      ]
+    },
+    {
+      "function_id": 25,
+      "function_name": "execute",
+      "score": 11.100000000000001,
+      "reasons": [
+        "storage_writes=3",
+        "unresolved_calls=1",
+        "tainted_calls=1",
+        "uses_source=true"
+      ]
+    },
+    {
+      "function_id": 26,
+      "function_name": "create",
+      "score": 10.0,
+      "reasons": [
+        "unresolved_calls=5"
+      ]
+    },
+    {
+      "function_id": 36,
+      "function_name": "hasConfirmed",
+      "score": 9.899999999999999,
+      "reasons": [
+        "external_calls=1",
+        "low_level_calls=1",
+        "tainted_calls=1",
+        "uses_source=true"
+      ]
+    },
+    {
+      "function_id": 37,
+      "function_name": "isOwner",
+      "score": 9.899999999999999,
+      "reasons": [
+        "external_calls=1",
+        "low_level_calls=1",
+        "tainted_calls=1",
+        "uses_source=true"
+      ]
+    },
+    {
+      "function_id": 10,
+      "function_name": null,
+      "score": 5.7,
+      "reasons": [
+        "unresolved_calls=1",
+        "tainted_calls=1",
+        "uses_source=true"
+      ]
+    },
+    {
+      "function_id": 28,
+      "function_name": "confirmAndCheck",
+      "score": 5.5,
+      "reasons": [
+        "storage_writes=1",
+        "tainted_calls=1",
+        "uses_source=true"
+      ]
+    },
+    {
+      "function_id": 13,
+      "function_name": "changeOwner",
+      "score": 5.4,
+      "reasons": [
+        "storage_writes=3"
+      ]
+    },
+    {
+      "function_id": 12,
+      "function_name": "revoke",
+      "score": 3.7,
+      "reasons": [
+        "tainted_calls=1",
+        "uses_source=true"
+      ]
+    },
+    {
+      "function_id": 14,
+      "function_name": "addOwner",
+      "score": 3.6,
+      "reasons": [
+        "storage_writes=2"
+      ]
+    },
+    {
+      "function_id": 15,
+      "function_name": "removeOwner",
+      "score": 3.6,
+      "reasons": [
+        "storage_writes=2"
+      ]
+    },
+    {
+      "function_id": 20,
+      "function_name": "initDaylimit",
+      "score": 3.6,
+      "reasons": [
+        "storage_writes=2"
+      ]
+    },
+    {
+      "function_id": 29,
+      "function_name": "reorganizeOwners",
+      "score": 3.6,
+      "reasons": [
+        "storage_writes=2"
+      ]
+    },
+    {
+      "function_id": 16,
+      "function_name": "changeRequirement",
+      "score": 1.8,
+      "reasons": [
+        "storage_writes=1"
+      ]
+    },
+    {
+      "function_id": 21,
+      "function_name": "setDailyLimit",
+      "score": 1.8,
+      "reasons": [
+        "storage_writes=1"
+      ]
+    },
+    {
+      "function_id": 22,
+      "function_name": "resetSpentToday",
+      "score": 1.8,
+      "reasons": [
+        "storage_writes=1"
+      ]
+    },
+    {
+      "function_id": 30,
+      "function_name": "underLimit",
+      "score": 1.8,
+      "reasons": [
+        "storage_writes=1"
+      ]
+    }
+  ],
+  "sinks": [
+    {
+      "function_id": 5,
+      "function_name": "isOwner",
+      "sink_kind": "default-visibility",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_1.sol",
+      "start": 2547,
+      "end": 2603
+    },
+    {
+      "function_id": 9,
+      "function_name": "confirm",
+      "sink_kind": "default-visibility",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_1.sol",
+      "start": 2961,
+      "end": 3015
+    },
+    {
+      "function_id": 11,
+      "function_name": "initMultiowned",
+      "sink_kind": "default-visibility",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_1.sol",
+      "start": 4160,
+      "end": 4512
+    },
+    {
+      "function_id": 18,
+      "function_name": "isOwner",
+      "sink_kind": "default-visibility",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_1.sol",
+      "start": 6677,
+      "end": 6780
+    },
+    {
+      "function_id": 20,
+      "function_name": "initDaylimit",
+      "sink_kind": "default-visibility",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_1.sol",
+      "start": 7276,
+      "end": 7368
+    },
+    {
+      "function_id": 23,
+      "function_name": "initWallet",
+      "sink_kind": "default-visibility",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_1.sol",
+      "start": 7913,
+      "end": 8058
+    },
+    {
+      "function_id": 27,
+      "function_name": "confirm",
+      "sink_kind": "default-visibility",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_1.sol",
+      "start": 9977,
+      "end": 10505
+    },
+    {
+      "function_id": 33,
+      "function_name": "Wallet",
+      "sink_kind": "default-visibility",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_1.sol",
+      "start": 14381,
+      "end": 15192
+    },
+    {
+      "function_id": 35,
+      "function_name": "getOwner",
+      "sink_kind": "default-visibility",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_1.sol",
+      "start": 15649,
+      "end": 15762
+    },
+    {
+      "function_id": 37,
+      "function_name": "isOwner",
+      "sink_kind": "default-visibility",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_1.sol",
+      "start": 15992,
+      "end": 16103
+    },
+    {
+      "function_id": 20,
+      "function_name": "initDaylimit",
+      "sink_kind": "uninit-permission-check",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_1.sol",
+      "start": 7276,
+      "end": 7368
+    },
+    {
+      "function_id": 23,
+      "function_name": "initWallet",
+      "sink_kind": "uninit-permission-check",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_1.sol",
+      "start": 7913,
+      "end": 8058
+    },
+    {
+      "function_id": 1,
+      "function_name": "changeOwner",
+      "sink_kind": "missing-input-validation",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_1.sol",
+      "start": 2329,
+      "end": 2387
+    },
+    {
+      "function_id": 1,
+      "function_name": "changeOwner",
+      "sink_kind": "missing-input-validation",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_1.sol",
+      "start": 2329,
+      "end": 2387
+    },
+    {
+      "function_id": 2,
+      "function_name": "addOwner",
+      "sink_kind": "missing-input-validation",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_1.sol",
+      "start": 2391,
+      "end": 2434
+    },
+    {
+      "function_id": 3,
+      "function_name": "removeOwner",
+      "sink_kind": "missing-input-validation",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_1.sol",
+      "start": 2438,
+      "end": 2484
+    },
+    {
+      "function_id": 6,
+      "function_name": "hasConfirmed",
+      "sink_kind": "missing-input-validation",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_1.sol",
+      "start": 2607,
+      "end": 2698
+    },
+    {
+      "function_id": 8,
+      "function_name": "execute",
+      "sink_kind": "missing-input-validation",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_1.sol",
+      "start": 2868,
+      "end": 2958
+    },
+    {
+      "function_id": 13,
+      "function_name": "changeOwner",
+      "sink_kind": "missing-input-validation",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_1.sol",
+      "start": 5044,
+      "end": 5416
+    },
+    {
+      "function_id": 13,
+      "function_name": "changeOwner",
+      "sink_kind": "missing-input-validation",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_1.sol",
+      "start": 5044,
+      "end": 5416
+    },
+    {
+      "function_id": 14,
+      "function_name": "addOwner",
+      "sink_kind": "missing-input-validation",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_1.sol",
+      "start": 5420,
+      "end": 5796
+    },
+    {
+      "function_id": 15,
+      "function_name": "removeOwner",
+      "sink_kind": "missing-input-validation",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_1.sol",
+      "start": 5800,
+      "end": 6247
+    },
+    {
+      "function_id": 17,
+      "function_name": "getOwner",
+      "sink_kind": "missing-input-validation",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_1.sol",
+      "start": 6551,
+      "end": 6673
+    },
+    {
+      "function_id": 19,
+      "function_name": "hasConfirmed",
+      "sink_kind": "missing-input-validation",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_1.sol",
+      "start": 6784,
+      "end": 7189
+    },
+    {
+      "function_id": 24,
+      "function_name": "kill",
+      "sink_kind": "missing-input-validation",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_1.sol",
+      "start": 8115,
+      "end": 8205
+    },
+    {
+      "function_id": 25,
+      "function_name": "execute",
+      "sink_kind": "missing-input-validation",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_1.sol",
+      "start": 8598,
+      "end": 9571
+    },
+    {
+      "function_id": 36,
+      "function_name": "hasConfirmed",
+      "sink_kind": "missing-input-validation",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_1.sol",
+      "start": 15842,
+      "end": 15988
+    },
+    {
+      "function_id": 34,
+      "function_name": null,
+      "sink_kind": "unsafe-delegatecall",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_1.sol",
+      "start": 15452,
+      "end": 15489
+    },
+    {
+      "function_id": 36,
+      "function_name": "hasConfirmed",
+      "sink_kind": "unsafe-delegatecall",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_1.sol",
+      "start": 15946,
+      "end": 15983
+    },
+    {
+      "function_id": 37,
+      "function_name": "isOwner",
+      "sink_kind": "unsafe-delegatecall",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_1.sol",
+      "start": 16061,
+      "end": 16098
+    },
+    {
+      "function_id": 33,
+      "function_name": "Wallet",
+      "sink_kind": "unused-return-value",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_1.sol",
+      "start": 15111,
+      "end": 15182
+    },
+    {
+      "function_id": 34,
+      "function_name": null,
+      "sink_kind": "unused-return-value",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_1.sol",
+      "start": 15452,
+      "end": 15490
+    },
+    {
+      "function_id": 36,
+      "function_name": "hasConfirmed",
+      "sink_kind": "unused-return-value",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_1.sol",
+      "start": 15842,
+      "end": 15988
+    },
+    {
+      "function_id": 37,
+      "function_name": "isOwner",
+      "sink_kind": "unused-return-value",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_1.sol",
+      "start": 15992,
+      "end": 16103
+    },
+    {
+      "function_id": 11,
+      "function_name": "initMultiowned",
+      "sink_kind": "integer-overflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_1.sol",
+      "start": 4239,
+      "end": 4257
+    },
+    {
+      "function_id": 11,
+      "function_name": "initMultiowned",
+      "sink_kind": "integer-overflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_1.sol",
+      "start": 4468,
+      "end": 4473
+    },
+    {
+      "function_id": 17,
+      "function_name": "getOwner",
+      "sink_kind": "integer-overflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_1.sol",
+      "start": 6652,
+      "end": 6666
+    },
+    {
+      "function_id": 33,
+      "function_name": "Wallet",
+      "sink_kind": "integer-overflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_1.sol",
+      "start": 14797,
+      "end": 14815
+    },
+    {
+      "function_id": 35,
+      "function_name": "getOwner",
+      "sink_kind": "integer-overflow",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_1.sol",
+      "start": 15741,
+      "end": 15755
+    },
+    {
+      "function_id": 25,
+      "function_name": "execute",
+      "sink_kind": "weak-prng",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_1.sol",
+      "start": 9188,
+      "end": 9216
+    },
+    {
+      "function_id": 4294967295,
+      "function_name": null,
+      "sink_kind": "locked-ether",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_1.sol",
+      "start": 3019,
+      "end": 14250
+    },
+    {
+      "function_id": 11,
+      "function_name": "initMultiowned",
+      "sink_kind": "dos-block-gas-limit",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_1.sol",
+      "start": 4160,
+      "end": 4512
+    },
+    {
+      "function_id": 32,
+      "function_name": "clearPending",
+      "sink_kind": "dos-block-gas-limit",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_1.sol",
+      "start": 13249,
+      "end": 13522
+    },
+    {
+      "function_id": 27,
+      "function_name": "confirm",
+      "sink_kind": "reentrancy-eth-transfer",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_1.sol",
+      "start": 9977,
+      "end": 10505
+    },
+    {
+      "function_id": 25,
+      "function_name": "execute",
+      "sink_kind": "bytes-variables-risk",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_1.sol",
+      "start": 9179,
+      "end": 9217
+    },
+    {
+      "function_id": 25,
+      "function_name": "execute",
+      "sink_kind": "bytes-variables-risk",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_1.sol",
+      "start": 9188,
+      "end": 9216
+    },
+    {
+      "function_id": 25,
+      "function_name": "execute",
+      "sink_kind": "bytes-variables-risk",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_1.sol",
+      "start": 9193,
+      "end": 9201
+    },
+    {
+      "function_id": 34,
+      "function_name": null,
+      "sink_kind": "bytes-variables-risk",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_1.sol",
+      "start": 15387,
+      "end": 15395
+    },
+    {
+      "function_id": 34,
+      "function_name": null,
+      "sink_kind": "bytes-variables-risk",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_1.sol",
+      "start": 15452,
+      "end": 15489
+    },
+    {
+      "function_id": 34,
+      "function_name": null,
+      "sink_kind": "bytes-variables-risk",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_1.sol",
+      "start": 15480,
+      "end": 15488
+    },
+    {
+      "function_id": 36,
+      "function_name": "hasConfirmed",
+      "sink_kind": "bytes-variables-risk",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_1.sol",
+      "start": 15946,
+      "end": 15983
+    },
+    {
+      "function_id": 36,
+      "function_name": "hasConfirmed",
+      "sink_kind": "bytes-variables-risk",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_1.sol",
+      "start": 15974,
+      "end": 15982
+    },
+    {
+      "function_id": 37,
+      "function_name": "isOwner",
+      "sink_kind": "bytes-variables-risk",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_1.sol",
+      "start": 16061,
+      "end": 16098
+    },
+    {
+      "function_id": 37,
+      "function_name": "isOwner",
+      "sink_kind": "bytes-variables-risk",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_1.sol",
+      "start": 16089,
+      "end": 16097
+    },
+    {
+      "function_id": 11,
+      "function_name": "initMultiowned",
+      "sink_kind": "storage-array-by-value",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_1.sol",
+      "start": 4485,
+      "end": 4508
+    },
+    {
+      "function_id": 16,
+      "function_name": "changeRequirement",
+      "sink_kind": "storage-array-by-value",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_1.sol",
+      "start": 6387,
+      "end": 6413
+    },
+    {
+      "function_id": 20,
+      "function_name": "initDaylimit",
+      "sink_kind": "storage-array-by-value",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_1.sol",
+      "start": 7317,
+      "end": 7339
+    },
+    {
+      "function_id": 21,
+      "function_name": "setDailyLimit",
+      "sink_kind": "storage-array-by-value",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_1.sol",
+      "start": 7570,
+      "end": 7595
+    },
+    {
+      "function_id": 28,
+      "function_name": "confirmAndCheck",
+      "sink_kind": "storage-array-by-value",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_1.sol",
+      "start": 11189,
+      "end": 11232
+    },
+    {
+      "function_id": 12,
+      "function_name": "revoke",
+      "sink_kind": "shadowing",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_1.sol",
+      "start": 4829,
+      "end": 4898
+    },
+    {
+      "function_id": 12,
+      "function_name": "revoke",
+      "sink_kind": "shadowing",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_1.sol",
+      "start": 4948,
+      "end": 4979
+    },
+    {
+      "function_id": 13,
+      "function_name": "changeOwner",
+      "sink_kind": "shadowing",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_1.sol",
+      "start": 5142,
+      "end": 5164
+    },
+    {
+      "function_id": 13,
+      "function_name": "changeOwner",
+      "sink_kind": "shadowing",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_1.sol",
+      "start": 5387,
+      "end": 5412
+    },
+    {
+      "function_id": 14,
+      "function_name": "addOwner",
+      "sink_kind": "shadowing",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_1.sol",
+      "start": 5503,
+      "end": 5528
+    },
+    {
+      "function_id": 14,
+      "function_name": "addOwner",
+      "sink_kind": "shadowing",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_1.sol",
+      "start": 5557,
+      "end": 5611
+    },
+    {
+      "function_id": 14,
+      "function_name": "addOwner",
+      "sink_kind": "shadowing",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_1.sol",
+      "start": 5619,
+      "end": 5661
+    },
+    {
+      "function_id": 14,
+      "function_name": "addOwner",
+      "sink_kind": "shadowing",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_1.sol",
+      "start": 5619,
+      "end": 5661
+    },
+    {
+      "function_id": 14,
+      "function_name": "addOwner",
+      "sink_kind": "shadowing",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_1.sol",
+      "start": 5773,
+      "end": 5792
+    },
+    {
+      "function_id": 15,
+      "function_name": "removeOwner",
+      "sink_kind": "shadowing",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_1.sol",
+      "start": 5969,
+      "end": 6007
+    },
+    {
+      "function_id": 15,
+      "function_name": "removeOwner",
+      "sink_kind": "shadowing",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_1.sol",
+      "start": 6222,
+      "end": 6243
+    },
+    {
+      "function_id": 16,
+      "function_name": "changeRequirement",
+      "sink_kind": "shadowing",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_1.sol",
+      "start": 6346,
+      "end": 6382
+    },
+    {
+      "function_id": 16,
+      "function_name": "changeRequirement",
+      "sink_kind": "shadowing",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_1.sol",
+      "start": 6438,
+      "end": 6471
+    },
+    {
+      "function_id": 23,
+      "function_name": "initWallet",
+      "sink_kind": "shadowing",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_1.sol",
+      "start": 7990,
+      "end": 8014
+    },
+    {
+      "function_id": 23,
+      "function_name": "initWallet",
+      "sink_kind": "shadowing",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_1.sol",
+      "start": 8019,
+      "end": 8054
+    },
+    {
+      "function_id": 24,
+      "function_name": "kill",
+      "sink_kind": "shadowing",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_1.sol",
+      "start": 8188,
+      "end": 8201
+    },
+    {
+      "function_id": 25,
+      "function_name": "execute",
+      "sink_kind": "shadowing",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_1.sol",
+      "start": 8785,
+      "end": 8910
+    },
+    {
+      "function_id": 27,
+      "function_name": "confirm",
+      "sink_kind": "shadowing",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_1.sol",
+      "start": 10366,
+      "end": 10452
+    },
+    {
+      "function_id": 27,
+      "function_name": "confirm",
+      "sink_kind": "shadowing",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_1.sol",
+      "start": 10459,
+      "end": 10476
+    },
+    {
+      "function_id": 28,
+      "function_name": "confirmAndCheck",
+      "sink_kind": "shadowing",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_1.sol",
+      "start": 11420,
+      "end": 11507
+    },
+    {
+      "function_id": 28,
+      "function_name": "confirmAndCheck",
+      "sink_kind": "shadowing",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_1.sol",
+      "start": 11721,
+      "end": 11750
+    },
+    {
+      "function_id": 29,
+      "function_name": "reorganizeOwners",
+      "sink_kind": "shadowing",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_1.sol",
+      "start": 12032,
+      "end": 12122
+    },
+    {
+      "function_id": 29,
+      "function_name": "reorganizeOwners",
+      "sink_kind": "shadowing",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_1.sol",
+      "start": 12135,
+      "end": 12197
+    },
+    {
+      "function_id": 29,
+      "function_name": "reorganizeOwners",
+      "sink_kind": "shadowing",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_1.sol",
+      "start": 12135,
+      "end": 12197
+    },
+    {
+      "function_id": 29,
+      "function_name": "reorganizeOwners",
+      "sink_kind": "shadowing",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_1.sol",
+      "start": 12207,
+      "end": 12336
+    },
+    {
+      "function_id": 30,
+      "function_name": "underLimit",
+      "sink_kind": "shadowing",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_1.sol",
+      "start": 12746,
+      "end": 12793
+    },
+    {
+      "function_id": 30,
+      "function_name": "underLimit",
+      "sink_kind": "shadowing",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_1.sol",
+      "start": 12978,
+      "end": 13090
+    },
+    {
+      "function_id": 32,
+      "function_name": "clearPending",
+      "sink_kind": "shadowing",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_1.sol",
+      "start": 13415,
+      "end": 13484
+    },
+    {
+      "function_id": 32,
+      "function_name": "clearPending",
+      "sink_kind": "shadowing",
+      "severity": "medium",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_1.sol",
+      "start": 13496,
+      "end": 13518
+    },
+    {
+      "function_id": 10,
+      "function_name": null,
+      "sink_kind": "tainted-call",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_1.sol",
+      "start": 3954,
+      "end": 3985
+    },
+    {
+      "function_id": 11,
+      "function_name": "initMultiowned",
+      "sink_kind": "tainted-call",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_1.sol",
+      "start": 4277,
+      "end": 4293
+    },
+    {
+      "function_id": 11,
+      "function_name": "initMultiowned",
+      "sink_kind": "tainted-call",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_1.sol",
+      "start": 4312,
+      "end": 4328
+    },
+    {
+      "function_id": 12,
+      "function_name": "revoke",
+      "sink_kind": "tainted-call",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_1.sol",
+      "start": 4655,
+      "end": 4671
+    },
+    {
+      "function_id": 25,
+      "function_name": "execute",
+      "sink_kind": "tainted-call",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_1.sol",
+      "start": 9188,
+      "end": 9216
+    },
+    {
+      "function_id": 28,
+      "function_name": "confirmAndCheck",
+      "sink_kind": "tainted-call",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_1.sol",
+      "start": 10689,
+      "end": 10705
+    },
+    {
+      "function_id": 34,
+      "function_name": null,
+      "sink_kind": "tainted-call",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_1.sol",
+      "start": 15342,
+      "end": 15373
+    },
+    {
+      "function_id": 34,
+      "function_name": null,
+      "sink_kind": "tainted-call",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_1.sol",
+      "start": 15452,
+      "end": 15490
+    },
+    {
+      "function_id": 36,
+      "function_name": "hasConfirmed",
+      "sink_kind": "tainted-call",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_1.sol",
+      "start": 15946,
+      "end": 15983
+    },
+    {
+      "function_id": 37,
+      "function_name": "isOwner",
+      "sink_kind": "tainted-call",
+      "severity": "high",
+      "file": "/home/klotfy/Projects/Hybrid-Smart-Contract-Analysis-Tool---GP/smartbugs-curated/dataset/access_control/parity_wallet_bug_1.sol",
+      "start": 16061,
+      "end": 16098
+    }
+  ],
+  "callgraph": {
+    "total_sites": 46,
+    "resolved": 10,
+    "ambiguous": 0,
+    "external": 3,
+    "unknown": 15
+  },
+  "taint": {
+    "source_functions": 8,
+    "tainted_functions": 8,
+    "tainted_vars": 1,
+    "tainted_calls": 10
+  },
+  "storage_rw_map": [
+    {
+      "function_id": 0,
+      "function_name": "revoke",
+      "reads": [],
+      "writes": []
+    },
+    {
+      "function_id": 1,
+      "function_name": "changeOwner",
+      "reads": [],
+      "writes": []
+    },
+    {
+      "function_id": 2,
+      "function_name": "addOwner",
+      "reads": [],
+      "writes": []
+    },
+    {
+      "function_id": 3,
+      "function_name": "removeOwner",
+      "reads": [],
+      "writes": []
+    },
+    {
+      "function_id": 4,
+      "function_name": "changeRequirement",
+      "reads": [],
+      "writes": []
+    },
+    {
+      "function_id": 5,
+      "function_name": "isOwner",
+      "reads": [],
+      "writes": []
+    },
+    {
+      "function_id": 6,
+      "function_name": "hasConfirmed",
+      "reads": [],
+      "writes": []
+    },
+    {
+      "function_id": 7,
+      "function_name": "setDailyLimit",
+      "reads": [],
+      "writes": []
+    },
+    {
+      "function_id": 8,
+      "function_name": "execute",
+      "reads": [],
+      "writes": []
+    },
+    {
+      "function_id": 9,
+      "function_name": "confirm",
+      "reads": [],
+      "writes": []
+    },
+    {
+      "function_id": 10,
+      "function_name": null,
+      "reads": [],
+      "writes": []
+    },
+    {
+      "function_id": 11,
+      "function_name": "initMultiowned",
+      "reads": [],
+      "writes": [
+        "m_numOwners",
+        "m_ownerIndex",
+        "m_owners",
+        "m_required"
+      ]
+    },
+    {
+      "function_id": 12,
+      "function_name": "revoke",
+      "reads": [
+        "m_ownerIndex",
+        "m_pending"
+      ],
+      "writes": []
+    },
+    {
+      "function_id": 13,
+      "function_name": "changeOwner",
+      "reads": [
+        "m_ownerIndex"
+      ],
+      "writes": [
+        "m_ownerIndex",
+        "m_owners"
+      ]
+    },
+    {
+      "function_id": 14,
+      "function_name": "addOwner",
+      "reads": [
+        "m_numOwners"
+      ],
+      "writes": [
+        "m_ownerIndex",
+        "m_owners"
+      ]
+    },
+    {
+      "function_id": 15,
+      "function_name": "removeOwner",
+      "reads": [
+        "m_ownerIndex"
+      ],
+      "writes": [
+        "m_ownerIndex",
+        "m_owners"
+      ]
+    },
+    {
+      "function_id": 16,
+      "function_name": "changeRequirement",
+      "reads": [],
+      "writes": [
+        "m_required"
+      ]
+    },
+    {
+      "function_id": 17,
+      "function_name": "getOwner",
+      "reads": [
+        "m_owners"
+      ],
+      "writes": []
+    },
+    {
+      "function_id": 18,
+      "function_name": "isOwner",
+      "reads": [
+        "m_ownerIndex"
+      ],
+      "writes": []
+    },
+    {
+      "function_id": 19,
+      "function_name": "hasConfirmed",
+      "reads": [
+        "m_ownerIndex",
+        "m_pending"
+      ],
+      "writes": []
+    },
+    {
+      "function_id": 20,
+      "function_name": "initDaylimit",
+      "reads": [],
+      "writes": [
+        "m_dailyLimit",
+        "m_lastDay"
+      ]
+    },
+    {
+      "function_id": 21,
+      "function_name": "setDailyLimit",
+      "reads": [],
+      "writes": [
+        "m_dailyLimit"
+      ]
+    },
+    {
+      "function_id": 22,
+      "function_name": "resetSpentToday",
+      "reads": [],
+      "writes": [
+        "m_spentToday"
+      ]
+    },
+    {
+      "function_id": 23,
+      "function_name": "initWallet",
+      "reads": [],
+      "writes": []
+    },
+    {
+      "function_id": 24,
+      "function_name": "kill",
+      "reads": [],
+      "writes": []
+    },
+    {
+      "function_id": 25,
+      "function_name": "execute",
+      "reads": [
+        "m_txs"
+      ],
+      "writes": [
+        "m_txs"
+      ]
+    },
+    {
+      "function_id": 26,
+      "function_name": "create",
+      "reads": [],
+      "writes": []
+    },
+    {
+      "function_id": 27,
+      "function_name": "confirm",
+      "reads": [
+        "m_txs"
+      ],
+      "writes": []
+    },
+    {
+      "function_id": 28,
+      "function_name": "confirmAndCheck",
+      "reads": [
+        "m_ownerIndex",
+        "m_pending",
+        "m_pendingIndex",
+        "m_required"
+      ],
+      "writes": [
+        "m_pendingIndex"
+      ]
+    },
+    {
+      "function_id": 29,
+      "function_name": "reorganizeOwners",
+      "reads": [
+        "m_owners"
+      ],
+      "writes": [
+        "m_ownerIndex",
+        "m_owners"
+      ]
+    },
+    {
+      "function_id": 30,
+      "function_name": "underLimit",
+      "reads": [],
+      "writes": []
+    },
+    {
+      "function_id": 31,
+      "function_name": "today",
+      "reads": [],
+      "writes": []
+    },
+    {
+      "function_id": 32,
+      "function_name": "clearPending",
+      "reads": [],
+      "writes": []
+    },
+    {
+      "function_id": 33,
+      "function_name": "Wallet",
+      "reads": [
+        "_walletLibrary"
+      ],
+      "writes": []
+    },
+    {
+      "function_id": 34,
+      "function_name": null,
+      "reads": [
+        "_walletLibrary"
+      ],
+      "writes": []
+    },
+    {
+      "function_id": 35,
+      "function_name": "getOwner",
+      "reads": [
+        "m_owners"
+      ],
+      "writes": []
+    },
+    {
+      "function_id": 36,
+      "function_name": "hasConfirmed",
+      "reads": [
+        "_walletLibrary"
+      ],
+      "writes": []
+    },
+    {
+      "function_id": 37,
+      "function_name": "isOwner",
+      "reads": [
+        "_walletLibrary"
+      ],
+      "writes": []
+    }
+  ],
+  "arg_domains": [
+    {
+      "function_id": 0,
+      "function_name": "revoke",
+      "param_index": 0,
+      "param_name": "_operation",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        10,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 1,
+      "function_name": "changeOwner",
+      "param_index": 0,
+      "param_name": "_from",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        10,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 1,
+      "function_name": "changeOwner",
+      "param_index": 1,
+      "param_name": "_to",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        10,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 2,
+      "function_name": "addOwner",
+      "param_index": 0,
+      "param_name": "_owner",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        10,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 3,
+      "function_name": "removeOwner",
+      "param_index": 0,
+      "param_name": "_owner",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        10,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 4,
+      "function_name": "changeRequirement",
+      "param_index": 0,
+      "param_name": "_newRequired",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        10,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 5,
+      "function_name": "isOwner",
+      "param_index": 0,
+      "param_name": "_addr",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        10,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 6,
+      "function_name": "hasConfirmed",
+      "param_index": 0,
+      "param_name": "_operation",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        10,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 6,
+      "function_name": "hasConfirmed",
+      "param_index": 1,
+      "param_name": "_owner",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        10,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 7,
+      "function_name": "setDailyLimit",
+      "param_index": 0,
+      "param_name": "_newLimit",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        10,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 8,
+      "function_name": "execute",
+      "param_index": 0,
+      "param_name": "_to",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        10,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 8,
+      "function_name": "execute",
+      "param_index": 1,
+      "param_name": "_value",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        10,
+        100,
+        1000,
+        1000000,
+        1000000000000000000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 8,
+      "function_name": "execute",
+      "param_index": 2,
+      "param_name": "_data",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        10,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 9,
+      "function_name": "confirm",
+      "param_index": 0,
+      "param_name": "_h",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        10,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 11,
+      "function_name": "initMultiowned",
+      "param_index": 0,
+      "param_name": "_owners",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        10,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 11,
+      "function_name": "initMultiowned",
+      "param_index": 1,
+      "param_name": "_required",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        3,
+        10,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 12,
+      "function_name": "revoke",
+      "param_index": 0,
+      "param_name": "_operation",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        10,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 13,
+      "function_name": "changeOwner",
+      "param_index": 0,
+      "param_name": "_from",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        10,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 13,
+      "function_name": "changeOwner",
+      "param_index": 1,
+      "param_name": "_to",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        10,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 14,
+      "function_name": "addOwner",
+      "param_index": 0,
+      "param_name": "_owner",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        10,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 15,
+      "function_name": "removeOwner",
+      "param_index": 0,
+      "param_name": "_owner",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        10,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 16,
+      "function_name": "changeRequirement",
+      "param_index": 0,
+      "param_name": "_newRequired",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        10,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 17,
+      "function_name": "getOwner",
+      "param_index": 0,
+      "param_name": "ownerIndex",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        8,
+        10,
+        16,
+        32,
+        42,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 18,
+      "function_name": "isOwner",
+      "param_index": 0,
+      "param_name": "_addr",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        10,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 19,
+      "function_name": "hasConfirmed",
+      "param_index": 0,
+      "param_name": "_operation",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        10,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 19,
+      "function_name": "hasConfirmed",
+      "param_index": 1,
+      "param_name": "_owner",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        10,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 20,
+      "function_name": "initDaylimit",
+      "param_index": 0,
+      "param_name": "_limit",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        10,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 21,
+      "function_name": "setDailyLimit",
+      "param_index": 0,
+      "param_name": "_newLimit",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        10,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 23,
+      "function_name": "initWallet",
+      "param_index": 0,
+      "param_name": "_owners",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        10,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 23,
+      "function_name": "initWallet",
+      "param_index": 1,
+      "param_name": "_required",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        10,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 23,
+      "function_name": "initWallet",
+      "param_index": 2,
+      "param_name": "_daylimit",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        10,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 24,
+      "function_name": "kill",
+      "param_index": 0,
+      "param_name": "_to",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        10,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 25,
+      "function_name": "execute",
+      "param_index": 0,
+      "param_name": "_to",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        10,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 25,
+      "function_name": "execute",
+      "param_index": 1,
+      "param_name": "_value",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        10,
+        100,
+        1000,
+        1000000,
+        1000000000000000000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 25,
+      "function_name": "execute",
+      "param_index": 2,
+      "param_name": "_data",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        10,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 27,
+      "function_name": "confirm",
+      "param_index": 0,
+      "param_name": "_h",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        10,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 33,
+      "function_name": "Wallet",
+      "param_index": 0,
+      "param_name": "_owners",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        10,
+        100,
+        1000,
+        9999,
+        10000,
+        10001,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 33,
+      "function_name": "Wallet",
+      "param_index": 1,
+      "param_name": "_required",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        3,
+        10,
+        100,
+        1000,
+        9999,
+        10000,
+        10001,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 33,
+      "function_name": "Wallet",
+      "param_index": 2,
+      "param_name": "_daylimit",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        3,
+        10,
+        100,
+        1000,
+        9999,
+        10000,
+        10001,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 35,
+      "function_name": "getOwner",
+      "param_index": 0,
+      "param_name": "ownerIndex",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        8,
+        10,
+        16,
+        32,
+        42,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 36,
+      "function_name": "hasConfirmed",
+      "param_index": 0,
+      "param_name": "_operation",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        10,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 36,
+      "function_name": "hasConfirmed",
+      "param_index": 1,
+      "param_name": "_owner",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        10,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    },
+    {
+      "function_id": 37,
+      "function_name": "isOwner",
+      "param_index": 0,
+      "param_name": "_addr",
+      "candidate_values": [
+        0,
+        1,
+        2,
+        10,
+        100,
+        1000,
+        340282366920938463463374607431768211454,
+        340282366920938463463374607431768211455
+      ]
+    }
+  ],
+  "address_roles": [
+    {
+      "role": "owner",
+      "indices": [
+        0
+      ],
+      "evidence": [
+        "state_var:m_numOwners",
+        "state_var:m_owners",
+        "state_var:c_maxOwners",
+        "state_var:m_ownerIndex",
+        "state_var:m_numOwners",
+        "state_var:m_owners"
+      ],
+      "target_functions": [
+        1,
+        2,
+        3,
+        5,
+        13,
+        14,
+        15,
+        17,
+        18,
+        29,
+        35,
+        37
+      ]
+    },
+    {
+      "role": "attacker",
+      "indices": [
+        1
+      ],
+      "evidence": [
+        "adversarial-role"
+      ],
+      "target_functions": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        27,
+        33,
+        34,
+        35,
+        36,
+        37
+      ]
+    },
+    {
+      "role": "user",
+      "indices": [
+        2,
+        3,
+        4
+      ],
+      "evidence": [
+        "default-user-pool"
+      ],
+      "target_functions": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        27,
+        33,
+        34,
+        35,
+        36,
+        37
+      ]
+    }
+  ]
+}
