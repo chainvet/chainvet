@@ -7,6 +7,8 @@ pub mod misc;
 pub mod reentrancy;
 pub mod storage_memory;
 
+use serde::Serialize;
+
 use crate::analysis::CallGraph;
 use crate::norm::{NormalizedAst, Span};
 
@@ -24,7 +26,7 @@ pub struct Finding {
 }
 
 /// Vulnerability category — groups related detectors together.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub enum Category {
     AccessControl,
     Arithmetic,
@@ -294,7 +296,7 @@ impl FindingKind {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub enum Severity {
     Low,
     Medium,
