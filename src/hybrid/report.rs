@@ -30,6 +30,9 @@ pub struct HybridRunSummary {
 pub struct HybridFindingRow {
     pub provenance: String,
     pub kind: String,
+    pub severity: Option<String>,
+    pub confidence: Option<String>,
+    pub category: Option<String>,
     pub message: String,
     pub function_id: Option<u32>,
     pub file: Option<String>,
@@ -58,6 +61,9 @@ impl HybridFindingRow {
             rows.push(Self {
                 provenance: "static".to_string(),
                 kind: target.kind.clone(),
+                severity: Some(target.severity.clone()),
+                confidence: None,
+                category: category_for_hybrid_kind(&target.kind).map(str::to_string),
                 message: target.target_reason.clone(),
                 function_id: target.function_id,
                 file: target.file.clone(),
@@ -70,6 +76,9 @@ impl HybridFindingRow {
             rows.push(Self {
                 provenance: "symbolic".to_string(),
                 kind: finding.kind.as_str().to_string(),
+                severity: Some(finding.severity.as_str().to_string()),
+                confidence: Some(finding.confidence.as_str().to_string()),
+                category: Some(finding.category().as_str().to_string()),
                 message: finding.message.clone(),
                 function_id: finding.function_id,
                 file: ast.files.get(finding.span.file as usize).map(|file| file.path.clone()),
@@ -89,6 +98,9 @@ impl HybridFindingRow {
             rows.push(Self {
                 provenance: provenance.to_string(),
                 kind: canonical,
+                severity: Some(finding.severity.as_str().to_string()),
+                confidence: Some(finding.kind.confidence().as_str().to_string()),
+                category: Some(finding.kind.category().to_string()),
                 message: finding.message.clone(),
                 function_id: extract_function_id_from_message(&finding.message),
                 file: None,
@@ -171,4 +183,23 @@ fn extract_function_id_from_message(message: &str) -> Option<u32> {
         .split(|ch: char| !ch.is_ascii_digit())
         .find(|part| !part.is_empty())?;
     digits.parse().ok()
+}
+
+fn category_for_hybrid_kind(kind: &str) -> Option<&'static str> {
+    match kind {
+        "reentrancy"
+        | "reentrancy-negative-events"
+        | "reentrancy-transfer"
+        | "reentrancy-same-effect"
+        | "reentrancy-eth-transfer"
+        | "reentrancy-no-eth-transfer" => Some("Reentrancy"),
+        "unsafe-delegatecall"
+        | "unprotected-ether-withdrawal"
+        | "unprotected-selfdestruct"
+        | "unused-return-value"
+        | "arbitrary-storage-write" => Some("Access Control"),
+        "delegatecall-in-loop" => Some("Storage and Memory"),
+        "dos-with-failed-call" => Some("Denial of Service"),
+        _ => None,
+    }
 }
