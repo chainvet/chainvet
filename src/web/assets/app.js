@@ -111,6 +111,8 @@ function modeLabel(mode) {
   switch (value) {
     case "fuzzing":
       return "Fuzzing Analysis";
+    case "symbolic":
+      return "Symbolic Analysis";
     case "static":
     default:
       return "Static Analysis";
