@@ -76,7 +76,7 @@ pub fn run(output: &FrontendOutput, format: OutputFormat) -> Result<()> {
         combined_coverage = result.coverage;
     }
 
-    print_se_report(&all_findings, &combined_coverage, total_states, format)
+    print_se_report(&all_findings, &combined_coverage, total_states, format, &output.ast.files)
 }
 
 #[cfg(test)]

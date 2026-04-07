@@ -148,6 +148,7 @@ struct AnalyzeResponse {
 enum WebMode {
     Static,
     Fuzzing,
+    Symbolic,
 }
 
 impl WebMode {
@@ -155,6 +156,7 @@ impl WebMode {
         match raw {
             "static" => Some(Self::Static),
             "fuzzing" => Some(Self::Fuzzing),
+            "symbolic" => Some(Self::Symbolic),
             _ => None,
         }
     }
@@ -163,6 +165,7 @@ impl WebMode {
         match self {
             Self::Static => "static",
             Self::Fuzzing => "fuzzing",
+            Self::Symbolic => "symbolic",
         }
     }
 
@@ -170,6 +173,7 @@ impl WebMode {
         match self {
             Self::Static => "--static",
             Self::Fuzzing => "--fuzzing",
+            Self::Symbolic => "--symbolic",
         }
     }
 }
@@ -833,6 +837,13 @@ fn report_finding_totals(mode: WebMode, report: &Value) -> (usize, usize) {
             json_usize(report, "suppressed_findings")
                 + json_usize(report, "suppressed_meta_findings"),
         ),
+        WebMode::Symbolic => (
+            report
+                .get("findings")
+                .and_then(Value::as_array)
+                .map_or(0, |a| a.len()),
+            0,
+        ),
     }
 }
 
@@ -918,6 +929,7 @@ fn extract_web_findings(mode: WebMode, report: &Value) -> ApiResult<Vec<WebFindi
     let mut findings = match mode {
         WebMode::Static => extract_static_findings(report),
         WebMode::Fuzzing => extract_surfaced_findings(report, "findings", "meta_findings"),
+        WebMode::Symbolic => extract_symbolic_findings(report),
     };
     findings.sort_by(|left, right| {
         (
@@ -964,6 +976,28 @@ fn extract_static_findings(report: &Value) -> Vec<WebFinding> {
                 .and_then(|span| span.get("end"))
                 .and_then(Value::as_u64)
                 .map(|value| value as u32),
+            message: json_string(finding, "message"),
+            evidence: None,
+        })
+        .collect()
+}
+
+fn extract_symbolic_findings(report: &Value) -> Vec<WebFinding> {
+    report
+        .get("findings")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .map(|finding| WebFinding {
+            kind: json_string(finding, "kind"),
+            layer: "symbolic".to_string(),
+            severity: json_string_opt(finding, "severity"),
+            confidence: json_string_opt(finding, "confidence"),
+            category: json_string_opt(finding, "category"),
+            function: None,
+            file: json_string_opt(finding, "file"),
+            start: json_u32_opt(finding, "start"),
+            end: json_u32_opt(finding, "end"),
             message: json_string(finding, "message"),
             evidence: None,
         })

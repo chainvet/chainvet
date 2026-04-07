@@ -4,3 +4,9 @@ Cargo.lock
 /smartbugs-curated
 benchmark_se_results.json
 benchmark_se.py
+runs/
+benchmark_hybrid_results.json
+benchmark_hybrid.py
+.codex
+.cache
+.claude

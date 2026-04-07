@@ -1,3 +1,4 @@
+use crate::norm::SourceFile;
 use crate::report::OutputFormat;
 use crate::symbolic::results::coverage::CoverageReport;
 use crate::symbolic::results::finding::SeFinding;
@@ -9,10 +10,11 @@ pub fn print_se_report(
     coverage: &CoverageReport,
     states_explored: usize,
     format: OutputFormat,
+    files: &[SourceFile],
 ) -> Result<()> {
     match format {
         OutputFormat::Text => print_se_text(findings, coverage, states_explored),
-        OutputFormat::Json => print_se_json(findings, coverage, states_explored),
+        OutputFormat::Json => print_se_json(findings, coverage, states_explored, files),
     }
 }
 
@@ -66,22 +68,67 @@ fn print_se_text(
     Ok(())
 }
 
+/// Resolve a numeric file ID to its path string.
+fn resolve_file(files: &[SourceFile], file_id: u32) -> Option<String> {
+    files
+        .get(file_id as usize)
+        .map(|f| f.path.clone())
+}
+
 /// Render results as a JSON object.
 ///
 /// Serializes a wrapper with `states_explored`, `coverage`, and `findings`
-/// as top-level keys, then pretty-prints to stdout.
+/// as top-level keys, then pretty-prints to stdout. Each finding's numeric
+/// `span.file` is resolved to the source file path.
 fn print_se_json(
     findings: &[SeFinding],
     coverage: &CoverageReport,
     states: usize,
+    files: &[SourceFile],
 ) -> Result<()> {
+    #[derive(serde::Serialize)]
+    struct ResolvedFinding<'a> {
+        kind: &'a str,
+        severity: &'a str,
+        confidence: &'a str,
+        category: &'a str,
+        message: &'a str,
+        file: Option<String>,
+        start: u32,
+        end: u32,
+        function_id: Option<u32>,
+        path_constraints: &'a [String],
+        witness: &'a Option<super::witness::Witness>,
+        state_id: u64,
+        path_depth: u32,
+    }
+
+    let resolved: Vec<ResolvedFinding> = findings
+        .iter()
+        .map(|f| ResolvedFinding {
+            kind: f.kind.as_str(),
+            severity: f.severity.as_str(),
+            confidence: f.confidence.as_str(),
+            category: f.category().as_str(),
+            message: &f.message,
+            file: resolve_file(files, f.span.file),
+            start: f.span.start,
+            end: f.span.end,
+            function_id: f.function_id,
+            path_constraints: &f.path_constraints,
+            witness: &f.witness,
+            state_id: f.state_id,
+            path_depth: f.path_depth,
+        })
+        .collect();
+
     #[derive(serde::Serialize)]
     struct SeReport<'a> {
         states_explored: usize,
         coverage: &'a CoverageReport,
-        findings: &'a [SeFinding],
+        findings: Vec<ResolvedFinding<'a>>,
     }
-    let report = SeReport { states_explored: states, coverage, findings };
+    let report = SeReport { states_explored: states, coverage, findings: resolved };
     let json =
         serde_json::to_string_pretty(&report).map_err(|e| Error::msg(e.to_string()))?;
     println!("{json}");
@@ -192,7 +239,7 @@ mod tests {
     #[test]
     fn test_print_se_report_text_empty_findings_returns_ok() {
         // With an empty findings slice and text format the function must succeed.
-        let result = print_se_report(&[], &sample_coverage(), 42, OutputFormat::Text);
+        let result = print_se_report(&[], &sample_coverage(), 42, OutputFormat::Text, &[]);
         assert!(result.is_ok());
     }
 
@@ -204,7 +251,7 @@ mod tests {
             Severity::High,
             Confidence::High,
         )];
-        let result = print_se_report(&findings, &sample_coverage(), 1, OutputFormat::Text);
+        let result = print_se_report(&findings, &sample_coverage(), 1, OutputFormat::Text, &[]);
         assert!(result.is_ok());
     }
 
@@ -212,7 +259,7 @@ mod tests {
     fn test_print_se_report_text_findings_with_constraints_returns_ok() {
         // Findings that carry path constraints must render the constraint lines without panic.
         let findings = vec![make_finding_with_constraints()];
-        let result = print_se_report(&findings, &sample_coverage(), 5, OutputFormat::Text);
+        let result = print_se_report(&findings, &sample_coverage(), 5, OutputFormat::Text, &[]);
         assert!(result.is_ok());
     }
 
@@ -220,7 +267,7 @@ mod tests {
     fn test_print_se_report_text_findings_with_witness_returns_ok() {
         // Findings with a concrete witness must render the hex msg_sender line without panic.
         let findings = vec![make_finding_with_witness()];
-        let result = print_se_report(&findings, &sample_coverage(), 10, OutputFormat::Text);
+        let result = print_se_report(&findings, &sample_coverage(), 10, OutputFormat::Text, &[]);
         assert!(result.is_ok());
     }
 
@@ -233,21 +280,21 @@ mod tests {
             make_finding_with_witness(),
             make_finding_bare(SeVulnKind::AssertionFailure, Severity::Low, Confidence::Low),
         ];
-        let result = print_se_report(&findings, &sample_coverage(), 100, OutputFormat::Text);
+        let result = print_se_report(&findings, &sample_coverage(), 100, OutputFormat::Text, &[]);
         assert!(result.is_ok());
     }
 
     #[test]
     fn test_print_se_report_text_zero_coverage_returns_ok() {
         // A zero-coverage report (all zeroes, 0.0 pct) must not cause any formatting panic.
-        let result = print_se_report(&[], &zero_coverage(), 0, OutputFormat::Text);
+        let result = print_se_report(&[], &zero_coverage(), 0, OutputFormat::Text, &[]);
         assert!(result.is_ok());
     }
 
     #[test]
     fn test_print_se_report_text_zero_states_explored_returns_ok() {
         // states_explored == 0 is a valid value that must display cleanly.
-        let result = print_se_report(&[], &sample_coverage(), 0, OutputFormat::Text);
+        let result = print_se_report(&[], &sample_coverage(), 0, OutputFormat::Text, &[]);
         assert!(result.is_ok());
     }
 
@@ -256,7 +303,7 @@ mod tests {
     #[test]
     fn test_print_se_report_json_empty_findings_returns_ok() {
         // JSON rendering with no findings must succeed.
-        let result = print_se_report(&[], &sample_coverage(), 10, OutputFormat::Json);
+        let result = print_se_report(&[], &sample_coverage(), 10, OutputFormat::Json, &[]);
         assert!(result.is_ok());
     }
 
@@ -267,7 +314,7 @@ mod tests {
             make_finding_bare(SeVulnKind::Reentrancy, Severity::High, Confidence::High),
             make_finding_with_witness(),
         ];
-        let result = print_se_report(&findings, &sample_coverage(), 20, OutputFormat::Json);
+        let result = print_se_report(&findings, &sample_coverage(), 20, OutputFormat::Json, &[]);
         assert!(result.is_ok());
     }
 
@@ -290,14 +337,14 @@ mod tests {
             .iter()
             .map(|&k| make_finding_bare(k, Severity::Medium, Confidence::Medium))
             .collect();
-        let result = print_se_report(&findings, &sample_coverage(), 99, OutputFormat::Json);
+        let result = print_se_report(&findings, &sample_coverage(), 99, OutputFormat::Json, &[]);
         assert!(result.is_ok());
     }
 
     #[test]
     fn test_print_se_report_json_zero_coverage_returns_ok() {
         // Zero coverage values must not cause serde serialization to fail.
-        let result = print_se_report(&[], &zero_coverage(), 0, OutputFormat::Json);
+        let result = print_se_report(&[], &zero_coverage(), 0, OutputFormat::Json, &[]);
         assert!(result.is_ok());
     }
 
