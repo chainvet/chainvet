@@ -48,6 +48,7 @@ pub fn run(output: &FrontendOutput, format: OutputFormat) -> Result<()> {
         &analysis.coverage,
         analysis.total_states,
         format,
+        &output.ast.files,
     )
 }
 
