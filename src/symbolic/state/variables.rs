@@ -48,6 +48,11 @@ impl VariableEnv {
     pub fn is_empty(&self) -> bool {
         self.bindings.is_empty()
     }
+
+    /// Iterate over all (variable, value) bindings.
+    pub fn iter(&self) -> impl Iterator<Item = (&IrVar, &SymbolicValue)> {
+        self.bindings.iter()
+    }
 }
 
 impl Default for VariableEnv {

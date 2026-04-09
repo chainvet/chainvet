@@ -2,7 +2,9 @@ use serde::Serialize;
 use z3::ast::BV;
 use z3::Model;
 
+use crate::ir::IrVar;
 use crate::symbolic::state::call_context::CallContext;
+use crate::symbolic::state::variables::VariableEnv;
 
 /// Concrete counterexample extracted from a Z3 model.
 ///
@@ -42,6 +44,21 @@ impl Witness {
             variables: Vec::new(),
         }
     }
+
+    /// Extract concrete values for all Named IR variables from the model
+    /// and append them to `self.variables`. This allows the hybrid seeder
+    /// to map witness values back to function parameter names.
+    pub fn populate_variables(&mut self, model: &Model, variables: &VariableEnv) {
+        for (var, sym_val) in variables.iter() {
+            if let IrVar::Named(name) = var {
+                if let Some(bv) = sym_val.as_bv() {
+                    let byte_count = (bv.get_size() as usize + 7) / 8;
+                    let bytes = eval_bv_bytes(model, bv, byte_count);
+                    self.variables.push((name.clone(), bytes));
+                }
+            }
+        }
+    }
 }
 
 /// Evaluate a BV in the model and extract as a fixed-size big-endian byte array.
@@ -72,7 +89,7 @@ fn eval_bv_u64(model: &Model, bv: &BV) -> u64 {
 /// Strategy: for BVs ≤ 64 bits wide, use `as_u64()` directly.
 /// For wider BVs, extract in 64-bit chunks from high bits to low bits,
 /// evaluate each chunk, and concatenate big-endian.
-fn eval_bv_bytes(model: &Model, bv: &BV, expected_bytes: usize) -> Vec<u8> {
+pub fn eval_bv_bytes(model: &Model, bv: &BV, expected_bytes: usize) -> Vec<u8> {
     let evaluated = match model.eval(bv, true) {
         Some(concrete) => concrete,
         None => return vec![0u8; expected_bytes],

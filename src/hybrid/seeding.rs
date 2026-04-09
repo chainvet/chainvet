@@ -46,7 +46,11 @@ fn to_seed(
     let args = function
         .params
         .iter()
-        .map(|_| FuzzValue::Uint(0))
+        .map(|param| {
+            witness
+                .and_then(|w| witness_var_to_fuzz_value(w, &param.name))
+                .unwrap_or(FuzzValue::Uint(0))
+        })
         .collect::<Vec<_>>();
     let sender = witness.map(address_index_from_witness).unwrap_or(1);
     let value = witness.map(|witness| u128_from_be_bytes(&witness.msg_value)).unwrap_or(0);
@@ -109,6 +113,21 @@ fn format_fuzz_value(value: &FuzzValue) -> String {
         FuzzValue::Bytes(value) => format!("0x{}", bytes_to_hex(value)),
         FuzzValue::StringVal(value) => value.clone(),
     }
+}
+
+/// Look up a function parameter name in the witness variables and convert
+/// the concrete bytes to a FuzzValue.  Falls back to None when the witness
+/// does not contain a matching variable (the caller defaults to Uint(0)).
+fn witness_var_to_fuzz_value(witness: &Witness, param_name: &str) -> Option<FuzzValue> {
+    let (_, bytes) = witness
+        .variables
+        .iter()
+        .find(|(name, _)| name == param_name)?;
+    // Convert big-endian bytes to u128. Pad/truncate to 16 bytes.
+    let mut buf = [0u8; 16];
+    let len = bytes.len().min(16);
+    buf[16 - len..].copy_from_slice(&bytes[bytes.len() - len..]);
+    Some(FuzzValue::Uint(u128::from_be_bytes(buf)))
 }
 
 fn address_index_from_witness(witness: &Witness) -> usize {

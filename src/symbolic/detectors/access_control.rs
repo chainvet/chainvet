@@ -494,9 +494,11 @@ fn check_reachable_and_emit(
     let assumptions = path_bools(state);
     match solver.check_sat_assuming(&assumptions) {
         SatResult::Sat => {
-            let witness = solver
-                .get_model()
-                .map(|m| Witness::from_model(&m, &state.call_context));
+            let witness = solver.get_model().map(|m| {
+                let mut w = Witness::from_model(&m, &state.call_context);
+                w.populate_variables(&m, &state.variables);
+                w
+            });
             vec![make_finding(kind, severity, confidence, message, span, state, witness)]
         }
         _ => vec![],

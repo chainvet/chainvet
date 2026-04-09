@@ -927,7 +927,11 @@ fn extract_witness(solver: &dyn SmtSolver, state: &SymbolicState) -> Option<Witn
         solver.assert_constraint(c);
     }
     let result = if solver.check_sat() == SatResult::Sat {
-        solver.get_model().map(|m| Witness::from_model(&m, &state.call_context))
+        solver.get_model().map(|m| {
+            let mut witness = Witness::from_model(&m, &state.call_context);
+            witness.populate_variables(&m, &state.variables);
+            witness
+        })
     } else {
         None
     };
