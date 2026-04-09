@@ -198,6 +198,18 @@ fn explore_function(
         initial_state.path_constraints.add(c, desc);
     }
     pre_populate_call_context(&mut initial_state);
+    // Bind function parameters as fresh symbolic variables so they are
+    // (a) consistent across reads within the function, and (b) extractable
+    // into the witness for hybrid seeding.
+    if let Some(func) = run_ctx.ast.functions.iter().find(|f| f.id == cfg_func.id) {
+        for param_name in &func.params {
+            let var = crate::ir::IrVar::Named(param_name.clone());
+            if initial_state.variables.get(&var).is_none() {
+                let fresh = crate::symbolic::types::fresh_bv(param_name, 256);
+                initial_state.variables.set(var, fresh);
+            }
+        }
+    }
     let mut strategy = make_strategy(exploration_strategy, all_cfgs);
     strategy.push(WorklistEntry {
         state: initial_state,
