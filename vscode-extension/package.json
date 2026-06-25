@@ -1,0 +1,287 @@
+{
+  "name": "chainvet",
+  "displayName": "ChainVet — Smart Contract Auditor",
+  "description": "Analyze Solidity smart contracts for security vulnerabilities directly inside VS Code.",
+  "version": "0.1.0",
+  "publisher": "chainvet",
+  "icon": "media/chainvet-icon.png",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Linters",
+    "Programming Languages",
+    "Other"
+  ],
+  "keywords": [
+    "solidity",
+    "smart contract",
+    "security",
+    "audit",
+    "static analysis",
+    "ethereum"
+  ],
+  "main": "./out/extension.js",
+  "activationEvents": [
+    "onLanguage:solidity",
+    "workspaceContains:**/*.sol"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "chainvet.analyzeFile",
+        "title": "ChainVet: Analyze Current File",
+        "icon": "$(play)"
+      },
+      {
+        "command": "chainvet.analyzeWorkspace",
+        "title": "ChainVet: Analyze Workspace",
+        "icon": "$(run-all)"
+      },
+      {
+        "command": "chainvet.analyzePath",
+        "title": "ChainVet: Analyze Selected File/Folder…",
+        "icon": "$(play)"
+      },
+      {
+        "command": "chainvet.cancel",
+        "title": "ChainVet: Cancel Running Analysis",
+        "icon": "$(stop-circle)"
+      },
+      {
+        "command": "chainvet.clearFindings",
+        "title": "ChainVet: Clear Findings",
+        "icon": "$(clear-all)"
+      },
+      {
+        "command": "chainvet.refreshFindings",
+        "title": "ChainVet: Refresh Findings View",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "chainvet.openSettings",
+        "title": "ChainVet: Open Settings",
+        "icon": "$(settings-gear)"
+      },
+      {
+        "command": "chainvet.openFindingDetail",
+        "title": "ChainVet: Show Finding Detail",
+        "icon": "$(eye)"
+      },
+      {
+        "command": "chainvet.generatePdfReport",
+        "title": "ChainVet: Generate PDF Report",
+        "icon": "$(file-pdf)"
+      },
+      {
+        "command": "chainvet.generateMarkdownReport",
+        "title": "ChainVet: Generate Markdown Report",
+        "icon": "$(markdown)"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "chainvetContainer",
+          "title": "ChainVet",
+          "icon": "media/chainvet-sidebar.png"
+        }
+      ]
+    },
+    "views": {
+      "chainvetContainer": [
+        {
+          "id": "chainvetSummary",
+          "name": "Summary",
+          "icon": "media/chainvet-sidebar.png"
+        },
+        {
+          "id": "chainvetFindings",
+          "name": "Findings",
+          "icon": "media/chainvet-sidebar.png",
+          "contextualTitle": "ChainVet findings"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "chainvetSummary",
+        "contents": "$(shield) **ChainVet** — Smart Contract Auditor\n\nAnalyze Solidity contracts and surface vulnerabilities right inside VS Code.\n\n[$(play) Analyze current file](command:chainvet.analyzeFile)\n[$(run-all) Analyze workspace](command:chainvet.analyzeWorkspace)\n[$(folder-opened) Pick a target…](command:chainvet.analyzePath)\n\n---\n\n[$(settings-gear) Settings](command:chainvet.openSettings)"
+      },
+      {
+        "view": "chainvetFindings",
+        "contents": "No findings yet.\n\nPick a Solidity file or folder, then run an analyzer:\n\n[$(play) Analyze current file](command:chainvet.analyzeFile)\n[$(run-all) Analyze workspace](command:chainvet.analyzeWorkspace)"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "chainvet.analyzeFile",
+          "when": "view == chainvetFindings || view == chainvetSummary",
+          "group": "navigation@1"
+        },
+        {
+          "command": "chainvet.analyzeWorkspace",
+          "when": "view == chainvetFindings || view == chainvetSummary",
+          "group": "navigation@2"
+        },
+        {
+          "command": "chainvet.refreshFindings",
+          "when": "view == chainvetFindings || view == chainvetSummary",
+          "group": "navigation@3"
+        },
+        {
+          "command": "chainvet.clearFindings",
+          "when": "view == chainvetFindings || view == chainvetSummary",
+          "group": "overflow@1"
+        },
+        {
+          "command": "chainvet.cancel",
+          "when": "view == chainvetFindings || view == chainvetSummary",
+          "group": "overflow@2"
+        },
+        {
+          "command": "chainvet.openSettings",
+          "when": "view == chainvetFindings || view == chainvetSummary",
+          "group": "overflow@3"
+        },
+        {
+          "command": "chainvet.generatePdfReport",
+          "when": "view == chainvetFindings || view == chainvetSummary",
+          "group": "overflow@4"
+        },
+        {
+          "command": "chainvet.generateMarkdownReport",
+          "when": "view == chainvetFindings || view == chainvetSummary",
+          "group": "overflow@5"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "chainvet.analyzePath",
+          "when": "resourceExtname == .sol || explorerResourceIsFolder",
+          "group": "chainvet@1"
+        },
+        {
+          "command": "chainvet.generatePdfReport",
+          "when": "resourceExtname == .sol || explorerResourceIsFolder",
+          "group": "chainvet@2"
+        },
+        {
+          "command": "chainvet.generateMarkdownReport",
+          "when": "resourceExtname == .sol || explorerResourceIsFolder",
+          "group": "chainvet@3"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "chainvet.analyzeFile",
+          "when": "resourceExtname == .sol",
+          "group": "chainvet@1"
+        },
+        {
+          "command": "chainvet.generatePdfReport",
+          "when": "resourceExtname == .sol",
+          "group": "chainvet@2"
+        },
+        {
+          "command": "chainvet.generateMarkdownReport",
+          "when": "resourceExtname == .sol",
+          "group": "chainvet@3"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "chainvet.analyzeFile",
+          "when": "resourceExtname == .sol",
+          "group": "navigation"
+        },
+        {
+          "command": "chainvet.generatePdfReport",
+          "when": "resourceExtname == .sol",
+          "group": "navigation@2"
+        },
+        {
+          "command": "chainvet.generateMarkdownReport",
+          "when": "resourceExtname == .sol",
+          "group": "navigation@3"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "ChainVet",
+      "properties": {
+        "chainvet.binaryPath": {
+          "type": "string",
+          "default": "",
+          "description": "Absolute path to the ChainVet analyzer binary. When empty, the extension searches `target/release/Static` and `target/debug/Static` relative to the workspace root, then falls back to `chainvet` on PATH."
+        },
+        "chainvet.mode": {
+          "type": "string",
+          "enum": ["hybrid", "static", "symbolic", "fuzzing"],
+          "default": "hybrid",
+          "description": "Analyzer mode to run. The hybrid pipeline combines static, symbolic, and fuzzing layers."
+        },
+        "chainvet.runOnSave": {
+          "type": "boolean",
+          "default": false,
+          "description": "Automatically re-analyze a Solidity file when it is saved."
+        },
+        "chainvet.showInformationFindings": {
+          "type": "boolean",
+          "default": true,
+          "description": "Surface low/info severity findings in the Problems panel (high/medium severities always appear)."
+        },
+        "chainvet.analysisTimeoutSeconds": {
+          "type": "number",
+          "default": 600,
+          "minimum": 30,
+          "description": "Maximum time (in seconds) the analyzer may run before being aborted."
+        },
+        "chainvet.aiReports.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Use a local Ollama model to validate/filter findings and improve PoC/remediation text when generating reports. If unavailable, ChainVet falls back to the normal report."
+        },
+        "chainvet.aiReports.model": {
+          "type": "string",
+          "default": "qwen2.5-coder:7b",
+          "description": "Ollama model used for AI-assisted report generation."
+        },
+        "chainvet.aiReports.endpoint": {
+          "type": "string",
+          "default": "http://127.0.0.1:11434",
+          "description": "Local Ollama HTTP endpoint used for AI-assisted report generation."
+        },
+        "chainvet.aiReports.timeoutMs": {
+          "type": "number",
+          "default": 60000,
+          "minimum": 1000,
+          "description": "Per-finding timeout, in milliseconds, for AI-assisted report review."
+        },
+        "chainvet.aiReports.maxFindings": {
+          "type": "number",
+          "default": 1000,
+          "minimum": 1,
+          "description": "Maximum number of surfaced findings the AI reviewer may inspect per report."
+        },
+        "chainvet.aiReports.maxTokens": {
+          "type": "number",
+          "default": 512,
+          "minimum": 128,
+          "description": "Maximum generated tokens per finding review."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.3.3"
+  }
+}

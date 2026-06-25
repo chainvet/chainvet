@@ -1545,6 +1545,59 @@ pub fn run(output: &FrontendOutput, format: OutputFormat) -> Result<()> {
             })?;
             println!("{payload}");
         }
+        OutputFormat::Markdown | OutputFormat::Pdf => {
+            let findings = crate::report::audit_findings_from_surfaced(
+                report.vulnerabilities.iter(),
+                report.meta_findings.iter(),
+            );
+            let audit_report = crate::report::AuditReport {
+                project_name: crate::report::project_name_from_path(
+                    output
+                        .ast
+                        .files
+                        .first()
+                        .map(|file| file.path.as_str())
+                        .unwrap_or("Protocol"),
+                ),
+                target: output
+                    .ast
+                    .files
+                    .first()
+                    .map(|file| file.path.clone())
+                    .unwrap_or_else(|| "Protocol".to_string()),
+                analysis_mode: "symbolic".to_string(),
+                raw_findings: report.vulnerability_count_raw + report.meta_finding_count_raw,
+                suppressed_findings: report.suppressed_vulnerabilities
+                    + report.suppressed_meta_findings,
+                metrics: vec![
+                    crate::report::AuditMetric::new("Files", report.files.to_string()),
+                    crate::report::AuditMetric::new("Functions", report.functions.to_string()),
+                    crate::report::AuditMetric::new(
+                        "Instructions",
+                        report.instructions.to_string(),
+                    ),
+                    crate::report::AuditMetric::new(
+                        "Explored states",
+                        report.explored_states.to_string(),
+                    ),
+                    crate::report::AuditMetric::new(
+                        "Terminal paths",
+                        report.terminal_paths.to_string(),
+                    ),
+                    crate::report::AuditMetric::new(
+                        "Truncated functions",
+                        report.truncated_functions.to_string(),
+                    ),
+                ],
+                findings,
+                review_summary: None,
+            };
+            match format {
+                OutputFormat::Markdown => crate::report::print_audit_markdown(&audit_report)?,
+                OutputFormat::Pdf => crate::report::print_audit_pdf(&audit_report)?,
+                _ => unreachable!(),
+            }
+        }
     }
 
     Ok(())

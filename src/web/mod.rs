@@ -20,6 +20,7 @@ const DEFAULT_PORT: u16 = 7878;
 const INDEX_HTML: &str = include_str!("assets/index.html");
 const APP_JS: &str = include_str!("assets/app.js");
 const STYLES_CSS: &str = include_str!("assets/styles.css");
+const LOGO_PNG: &[u8] = include_bytes!("assets/logo.png");
 
 struct AppState {
     root_dir: PathBuf,
@@ -101,7 +102,7 @@ struct SummaryCard {
     value: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 struct WebFinding {
     kind: String,
     layer: String,
@@ -142,6 +143,11 @@ struct AnalyzeResponse {
     warnings: Vec<WebWarning>,
     run_dir: Option<String>,
     artifacts: Vec<WebArtifact>,
+    report_markdown: String,
+    report_markdown_filename: String,
+    report_pdf_base64: String,
+    report_pdf_error: Option<String>,
+    report_filename: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -378,6 +384,7 @@ pub fn serve(root_dir: PathBuf) -> Result<()> {
             .route("/", get(index))
             .route("/app.js", get(app_js))
             .route("/styles.css", get(styles_css))
+            .route("/logo.png", get(logo_png))
             .route("/api/files", get(api_files))
             .route("/api/file", get(api_file))
             .route("/api/analyze", post(api_analyze))
@@ -406,6 +413,16 @@ async fn styles_css() -> impl IntoResponse {
     (
         [(header::CONTENT_TYPE, "text/css; charset=utf-8")],
         STYLES_CSS,
+    )
+}
+
+async fn logo_png() -> impl IntoResponse {
+    (
+        [
+            (header::CONTENT_TYPE, "image/png"),
+            (header::CACHE_CONTROL, "public, max-age=86400"),
+        ],
+        LOGO_PNG,
     )
 }
 
@@ -578,10 +595,21 @@ fn analyze_sync(state: &AppState, request: AnalyzeRequest) -> ApiResult<AnalyzeR
         let artifacts = collect_artifacts(&state.root_dir, command_result.run_dir.as_deref())?;
         let warnings = classify_warnings(command_result.warnings);
         let summary_cards = build_summary_cards(mode, &findings, &warnings);
+        let (raw_findings, suppressed_findings) =
+            report_finding_totals(mode, &command_result.raw_report);
+        let target_path = relative_display(&state.root_dir, &target);
+        let report = build_report_outputs(
+            &target_path,
+            mode,
+            &findings,
+            raw_findings,
+            suppressed_findings,
+            &summary_cards,
+        );
 
         Ok(AnalyzeResponse {
             root_dir: state.root_dir.display().to_string(),
-            target_path: relative_display(&state.root_dir, &target),
+            target_path,
             mode: mode.as_str().to_string(),
             summary_cards,
             findings,
@@ -593,6 +621,11 @@ fn analyze_sync(state: &AppState, request: AnalyzeRequest) -> ApiResult<AnalyzeR
                 .as_deref()
                 .map(|run_dir| relative_display(&state.root_dir, run_dir)),
             artifacts,
+            report_markdown: report.markdown,
+            report_markdown_filename: report.markdown_filename,
+            report_pdf_base64: report.pdf_base64,
+            report_pdf_error: report.pdf_error,
+            report_filename: report.pdf_filename,
         })
     } else {
         aggregate_directory_analysis(state, mode, &target, &targets, &job)
@@ -776,10 +809,19 @@ fn aggregate_directory_analysis(
     })?;
     let warnings = classify_warnings(warnings);
     let summary_cards = build_summary_cards(mode, &all_findings, &warnings);
+    let target_path = relative_display(&state.root_dir, target);
+    let report = build_report_outputs(
+        &target_path,
+        mode,
+        &all_findings,
+        raw_finding_count,
+        suppressed_count,
+        &summary_cards,
+    );
 
     Ok(AnalyzeResponse {
         root_dir: state.root_dir.display().to_string(),
-        target_path: relative_display(&state.root_dir, target),
+        target_path,
         mode: mode.as_str().to_string(),
         summary_cards,
         findings: all_findings,
@@ -788,6 +830,11 @@ fn aggregate_directory_analysis(
         warnings,
         run_dir: None,
         artifacts,
+        report_markdown: report.markdown,
+        report_markdown_filename: report.markdown_filename,
+        report_pdf_base64: report.pdf_base64,
+        report_pdf_error: report.pdf_error,
+        report_filename: report.pdf_filename,
     })
 }
 
@@ -840,6 +887,100 @@ fn build_summary_cards(
             value: warning_count.to_string(),
         },
     ]
+}
+
+struct ReportOutputs {
+    markdown: String,
+    markdown_filename: String,
+    pdf_base64: String,
+    pdf_error: Option<String>,
+    pdf_filename: String,
+}
+
+fn build_report_outputs(
+    target_path: &str,
+    mode: WebMode,
+    findings: &[WebFinding],
+    raw_findings: usize,
+    suppressed_findings: usize,
+    summary_cards: &[SummaryCard],
+) -> ReportOutputs {
+    let mut metrics = summary_cards
+        .iter()
+        .map(|card| crate::report::AuditMetric::new(card.label.clone(), card.value.clone()))
+        .collect::<Vec<_>>();
+    metrics.push(crate::report::AuditMetric::new(
+        "Generated from",
+        "ChainVet Web UI",
+    ));
+
+    let audit_report = crate::report::AuditReport {
+        project_name: crate::report::project_name_from_path(target_path),
+        target: target_path.to_string(),
+        analysis_mode: mode.as_str().to_string(),
+        raw_findings,
+        suppressed_findings,
+        metrics,
+        findings: findings.iter().map(web_finding_to_audit).collect(),
+        review_summary: None,
+    };
+    let audit_report = crate::ai_report::enhance_report_if_enabled(&audit_report);
+    let markdown = crate::report::render_audit_markdown(&audit_report);
+    let (pdf_base64, pdf_error) = match crate::report::render_audit_pdf_base64(&audit_report) {
+        Ok(pdf) => (pdf, None),
+        Err(err) => (String::new(), Some(err.to_string())),
+    };
+    ReportOutputs {
+        markdown,
+        markdown_filename: report_filename_for_target(target_path, mode, "md"),
+        pdf_base64,
+        pdf_error,
+        pdf_filename: report_filename_for_target(target_path, mode, "pdf"),
+    }
+}
+
+fn web_finding_to_audit(finding: &WebFinding) -> crate::report::AuditFinding {
+    crate::report::AuditFinding {
+        category: finding.category.clone().unwrap_or_else(|| {
+            crate::surfaced::default_category_for_kind(&finding.kind).to_string()
+        }),
+        kind: finding.kind.clone(),
+        severity: finding
+            .severity
+            .clone()
+            .unwrap_or_else(|| "informational".to_string()),
+        confidence: finding.confidence.clone(),
+        message: finding.message.clone(),
+        file: finding.file.clone(),
+        start: finding.start,
+        end: finding.end,
+        function_name: finding.function.clone(),
+        analysis_layer: finding.layer.clone(),
+        evidence_kind: finding.evidence.clone(),
+        ai_review: None,
+    }
+}
+
+fn report_filename_for_target(target_path: &str, mode: WebMode, extension: &str) -> String {
+    let base = crate::report::project_name_from_path(target_path);
+    let safe = base
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
+                ch.to_ascii_lowercase()
+            } else {
+                '-'
+            }
+        })
+        .collect::<String>()
+        .trim_matches('-')
+        .to_string();
+    let safe = if safe.is_empty() {
+        "chainvet-report".to_string()
+    } else {
+        safe
+    };
+    format!("{safe}-{}-chainvet-report.{extension}", mode.as_str())
 }
 
 fn report_finding_totals(mode: WebMode, report: &Value) -> (usize, usize) {

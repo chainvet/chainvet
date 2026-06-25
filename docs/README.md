@@ -18,6 +18,11 @@ Use this file as the entrypoint for project docs.
 ## Engine Improvement and Planning
 
 - Main improvement roadmap: `docs/engine_improvement_plan.md`
+- Static approach evolution: `docs/static_approach_evolution.md`
+- Symbolic execution approach evolution: `docs/symbolic_execution_approach_evolution.md`
+- Fuzzing approach evolution: `docs/fuzzing_approach_evolution.md`
+- Hybrid approach evolution: `docs/hybrid_approach_evolution.md`
+- Engine evolution and hybrid benchmark report: `docs/engine_evolution_and_hybrid_benchmark_report.md`
 - Reviewed-truth fix plan: `docs/reviewed_truth_fix_plan.md`
 - Web GUI implementation plan: `docs/web_gui_plan.md`
 
@@ -30,6 +35,7 @@ Use this file as the entrypoint for project docs.
 
 - Not-so-smart comparison summary: `docs/not_so_smart_comparison.md`
 - SmartBugs Curated comparison summary: `docs/smartbugs_curated_comparison.md`
+- Hybrid vs external tools detailed report: `docs/hybrid_vs_external_tools_detailed_report.md`
 - SmartBugs hybrid vs external tools: `docs/smartbugs_external_tools_comparison.md`
 - SmartBugs hybrid extra-family review queue: `docs/smartbugs_hybrid_extra_family_review_queue.md`
 - Reviewed ground truth for benchmark set: `docs/not_so_smart_reviewed_truth.md`

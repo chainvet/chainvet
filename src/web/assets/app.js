@@ -2,19 +2,24 @@ const state = {
   currentPath: "",
   selectedPath: "",
   selectedIsDir: true,
+  selectedFinding: null,
+  selectedFindingId: null,
   entries: [],
   directSubdirectories: 0,
   directSolidityFiles: 0,
   recursiveSolidityFiles: 0,
-  rawExpanded: false,
   showSuppressedWarnings: false,
+  reportMarkdown: "",
+  reportMarkdownFilename: "chainvet-report.md",
+  reportPdfBase64: "",
+  reportPdfError: "",
+  reportFilename: "chainvet-report.pdf",
 };
 
 const rootDirHeader = document.getElementById("rootDirHeader");
 const explorerStats = document.getElementById("explorerStats");
 const breadcrumbs = document.getElementById("breadcrumbs");
 const fileList = document.getElementById("fileList");
-const filePreview = document.getElementById("filePreview");
 const selectedTargetHero = document.getElementById("selectedTargetHero");
 const selectedTargetPath = document.getElementById("selectedTargetPath");
 const selectedTargetKind = document.getElementById("selectedTargetKind");
@@ -22,6 +27,8 @@ const modeSelect = document.getElementById("modeSelect");
 const activeModeLabel = document.getElementById("activeModeLabel");
 const runButton = document.getElementById("runButton");
 const cancelButton = document.getElementById("cancelButton");
+const markdownReportButton = document.getElementById("markdownReportButton");
+const pdfReportButton = document.getElementById("pdfReportButton");
 const statusLine = document.getElementById("statusLine");
 const progressPhase = document.getElementById("progressPhase");
 const progressElapsed = document.getElementById("progressElapsed");
@@ -34,15 +41,15 @@ const findingList = document.getElementById("findingList");
 const findingsCount = document.getElementById("findingsCount");
 const findingsFilterState = document.getElementById("findingsFilterState");
 const warningBox = document.getElementById("warningBox");
-const rawJson = document.getElementById("rawJson");
-const rawOutputToggle = document.getElementById("rawOutputToggle");
-const rawOutputPanel = document.getElementById("rawOutputPanel");
-const rawOutputMeta = document.getElementById("rawOutputMeta");
-const rawOutputChevron = document.getElementById("rawOutputChevron");
 const findingSearch = document.getElementById("findingSearch");
+const detailsPane = document.getElementById("detailsPane");
+const detailsTitle = document.getElementById("detailsTitle");
+const detailsSubtitle = document.getElementById("detailsSubtitle");
 
-const runButtonLabel = runButton.textContent;
-const cancelButtonLabel = cancelButton.textContent;
+const runButtonLabelEl = runButton.querySelector(".lc-rb-run-label") || runButton;
+const cancelButtonLabelEl = cancelButton.querySelector(".lc-rb-cancel-label") || cancelButton;
+const runButtonLabel = runButtonLabelEl.textContent;
+const cancelButtonLabel = cancelButtonLabelEl.textContent;
 
 let runStartedAt = null;
 let runTimerId = null;
@@ -87,15 +94,70 @@ function formatClockElapsed(ms) {
   return [hours, minutes, seconds].map((value) => String(value).padStart(2, "0")).join(":");
 }
 
-function formatBytes(length) {
-  const size = Number(length || 0);
-  if (size < 1024) {
-    return `${size} B`;
+function clearReportDownload() {
+  state.reportMarkdown = "";
+  state.reportMarkdownFilename = "chainvet-report.md";
+  state.reportPdfBase64 = "";
+  state.reportPdfError = "";
+  state.reportFilename = "chainvet-report.pdf";
+  if (markdownReportButton) {
+    markdownReportButton.disabled = true;
   }
-  if (size < 1024 * 1024) {
-    return `${(size / 1024).toFixed(1)} KB`;
+  if (pdfReportButton) {
+    pdfReportButton.disabled = true;
+    pdfReportButton.title = "";
   }
-  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function setReportDownload(markdown, markdownFilename, pdfBase64, pdfFilename, pdfError) {
+  state.reportMarkdown = String(markdown || "");
+  state.reportMarkdownFilename = String(markdownFilename || "chainvet-report.md");
+  state.reportPdfBase64 = String(pdfBase64 || "");
+  state.reportPdfError = String(pdfError || "");
+  state.reportFilename = String(pdfFilename || "chainvet-report.pdf");
+  if (markdownReportButton) {
+    markdownReportButton.disabled = !state.reportMarkdown;
+  }
+  if (pdfReportButton) {
+    pdfReportButton.disabled = !state.reportPdfBase64;
+    pdfReportButton.title = state.reportPdfError;
+  }
+}
+
+function downloadMarkdownReport() {
+  if (!state.reportMarkdown) {
+    setStatus("Run an analysis before exporting a Markdown report.");
+    return;
+  }
+  const blob = new Blob([state.reportMarkdown], { type: "text/markdown;charset=utf-8" });
+  downloadBlob(blob, state.reportMarkdownFilename);
+  setStatus(`Downloaded ${state.reportMarkdownFilename}.`);
+}
+
+function downloadPdfReport() {
+  if (!state.reportPdfBase64) {
+    setStatus(state.reportPdfError || "Run an analysis before exporting a PDF report.");
+    return;
+  }
+  const binary = atob(state.reportPdfBase64);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  const blob = new Blob([bytes], { type: "application/pdf" });
+  downloadBlob(blob, state.reportFilename);
+  setStatus(`Downloaded ${state.reportFilename}.`);
+}
+
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
 }
 
 function humanizeMode(mode) {
@@ -145,8 +207,8 @@ function setStatus(text) {
 
 function setProgressVisual(stateName, label, phaseText, elapsedMs, progressPercent = null, metaNote = null) {
   progressStateLabel.textContent = label;
-  progressStateLabel.className = `text-sm font-medium state-${stateName}`;
-  progressStateDot.className = `w-2 h-2 rounded-full dot-${stateName}`;
+  progressStateLabel.className = `lc-rb-status-name state-${stateName}`;
+  progressStateDot.className = `lc-rb-dot dot-${stateName}`;
   progressPhase.textContent = phaseText;
   progressPhase.title = phaseText;
   progressElapsed.textContent = formatClockElapsed(elapsedMs || 0);
@@ -160,14 +222,14 @@ function setProgressVisual(stateName, label, phaseText, elapsedMs, progressPerce
   progressMetaNote.textContent =
     metaNote ??
     (stateName === "running"
-      ? "Live analysis"
+      ? "live analysis"
       : stateName === "complete"
-        ? "Results ready"
+        ? "results ready"
         : stateName === "cancelled"
-          ? "Run cancelled"
+          ? "run cancelled"
           : stateName === "failed"
-            ? "Run failed"
-            : "Ready");
+            ? "run failed"
+            : "standby");
 }
 
 function buildProgressMetrics(status = {}) {
@@ -226,19 +288,11 @@ function syncTargetPresentation() {
   selectedTargetKind.textContent = state.selectedIsDir ? "Folder Target" : "File Target";
 }
 
-function updateRawOutputMeta(raw) {
-  rawOutputMeta.textContent = `analyzer_output.json (${formatBytes(raw.length)})`;
-}
-
-function toggleRawOutput(force = null) {
-  state.rawExpanded = force == null ? !state.rawExpanded : Boolean(force);
-  rawOutputPanel.classList.toggle("hidden", !state.rawExpanded);
-  rawOutputChevron.textContent = state.rawExpanded ? "keyboard_arrow_down" : "keyboard_arrow_up";
-}
-
 function setSelectedTarget(path, isDir) {
   state.selectedPath = path;
   state.selectedIsDir = isDir;
+  state.selectedFinding = null;
+  state.selectedFindingId = null;
   syncTargetPresentation();
   renderEntries();
   setStatus(
@@ -246,22 +300,195 @@ function setSelectedTarget(path, isDir) {
       ? `Directory target selected: ${path || "."}`
       : `Single Solidity file selected: ${path}`
   );
-  if (!isDir && path) {
-    loadPreview(path);
-  } else {
-    renderDirectoryPreview(path);
+  renderDetailsPane();
+}
+
+function findingId(finding, fallbackIndex = 0) {
+  if (!finding) return "";
+  return [
+    finding.kind || "",
+    finding.layer || "",
+    finding.file || "",
+    finding.function || "",
+    finding.start ?? "",
+    finding.end ?? "",
+    String(finding.message || "").slice(0, 32),
+    fallbackIndex,
+  ].join("|");
+}
+
+function setSelectedFinding(finding, id) {
+  state.selectedFinding = finding;
+  state.selectedFindingId = id;
+  renderDetailsPane();
+  if (findingList) {
+    findingList.querySelectorAll(".lc-finding").forEach((node) => {
+      node.dataset.selected = node.dataset.findingId === id ? "true" : "false";
+    });
   }
 }
 
-function renderDirectoryPreview(path) {
+function clearSelectedFinding() {
+  if (!state.selectedFinding) return;
+  state.selectedFinding = null;
+  state.selectedFindingId = null;
+  if (findingList) {
+    findingList.querySelectorAll('.lc-finding[data-selected="true"]').forEach((node) => {
+      node.dataset.selected = "false";
+    });
+  }
+  renderDetailsPane();
+}
+
+function renderDetailsPane() {
+  if (!detailsPane) return;
+  if (state.selectedFinding) {
+    renderDetailsFinding(state.selectedFinding);
+    return;
+  }
+  if (state.selectedPath && !state.selectedIsDir) {
+    renderDetailsFile(state.selectedPath);
+    return;
+  }
+  if (state.selectedPath || state.selectedIsDir) {
+    renderDetailsDirectory(state.selectedPath || "");
+    return;
+  }
+  renderDetailsEmpty();
+}
+
+function renderDetailsEmpty() {
+  detailsPane.dataset.mode = "empty";
+  if (detailsTitle) detailsTitle.textContent = "Details";
+  if (detailsSubtitle) detailsSubtitle.textContent = "selected finding or file preview";
+  detailsPane.innerHTML = `
+    <div class="lc-details-empty">
+      <p class="lc-empty-title">Nothing selected.</p>
+      <p class="lc-empty-sub">Click a finding to see its details, or pick a Solidity file in the workspace to preview the source.</p>
+    </div>
+  `;
+}
+
+function renderDetailsDirectory(path) {
+  detailsPane.dataset.mode = "directory";
   const displayPath = path || ".";
-  filePreview.innerHTML = `
-    <div class="preview-directory space-y-2">
-      <p><strong>Directory target:</strong> ${escapeHtml(displayPath)}</p>
-      <p><strong>Subdirectories (direct):</strong> ${state.directSubdirectories}</p>
-      <p><strong>Solidity files here:</strong> ${state.directSolidityFiles}</p>
-      <p><strong>Solidity files reachable:</strong> ${state.recursiveSolidityFiles}</p>
-      <p><strong>Run behavior:</strong> the selected mode will analyze every Solidity file reachable from this folder target.</p>
+  if (detailsTitle) detailsTitle.textContent = "Directory";
+  if (detailsSubtitle) detailsSubtitle.textContent = displayPath;
+  detailsPane.innerHTML = `
+    <div class="lc-detail-dir">
+      <div class="lc-detail-filepreview-head">
+        <span class="material-symbols-outlined">folder</span>
+        <span>${escapeHtml(displayPath)}</span>
+      </div>
+      <div class="lc-detail-dir-grid">
+        <div class="lc-detail-dir-cell">
+          <span class="lc-detail-dir-cell-label">subdirs</span>
+          <span class="lc-detail-dir-cell-value">${state.directSubdirectories}</span>
+        </div>
+        <div class="lc-detail-dir-cell">
+          <span class="lc-detail-dir-cell-label">.sol here</span>
+          <span class="lc-detail-dir-cell-value">${state.directSolidityFiles}</span>
+        </div>
+        <div class="lc-detail-dir-cell" style="grid-column: span 2;">
+          <span class="lc-detail-dir-cell-label">.sol reachable</span>
+          <span class="lc-detail-dir-cell-value">${state.recursiveSolidityFiles}</span>
+        </div>
+      </div>
+      <p class="lc-empty-sub" style="text-align:left; margin-top: 0.5rem;">
+        The selected analyzer will run against every Solidity file reachable from this folder.
+      </p>
+    </div>
+  `;
+}
+
+async function renderDetailsFile(path) {
+  detailsPane.dataset.mode = "file";
+  if (detailsTitle) detailsTitle.textContent = "File preview";
+  if (detailsSubtitle) detailsSubtitle.textContent = path;
+  detailsPane.innerHTML = `
+    <div class="lc-detail-filepreview">
+      <div class="lc-detail-filepreview-head">
+        <span class="material-symbols-outlined">description</span>
+        <span>${escapeHtml(path)}</span>
+      </div>
+      <pre class="lc-detail-code">Loading…</pre>
+    </div>
+  `;
+  const codeEl = detailsPane.querySelector(".lc-detail-code");
+  try {
+    const response = await fetch(`/api/file?path=${encodeURIComponent(path)}`);
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(payload.error || "Failed to load file preview");
+    }
+    if (state.selectedFinding || state.selectedPath !== path) return;
+    if (codeEl) codeEl.textContent = payload.content;
+  } catch (error) {
+    if (codeEl) codeEl.textContent = `Preview unavailable: ${error.message}`;
+  }
+}
+
+function renderDetailsFinding(finding) {
+  detailsPane.dataset.mode = "finding";
+  const heading = finding.kind ? titleCaseToken(finding.kind) : "Finding";
+  if (detailsTitle) detailsTitle.textContent = heading;
+  const loc = [
+    finding.file ? basename(finding.file) : null,
+    finding.function ? `${finding.function}()` : null,
+  ].filter(Boolean).join(" :: ");
+  if (detailsSubtitle) detailsSubtitle.textContent = loc || "selected finding";
+
+  const tone = severityTone(finding.severity);
+  const tags = [
+    `<span class="lc-tag lc-tag-sev-${tone.tag}">${escapeHtml(String(finding.severity || "unspecified").toLowerCase())}</span>`,
+  ];
+  if (finding.confidence) {
+    tags.push(`<span class="lc-tag lc-tag-neutral">conf · ${escapeHtml(String(finding.confidence).toLowerCase())}</span>`);
+  }
+
+  const rows = [];
+  if (finding.file) {
+    rows.push(`<div class="lc-detail-row"><span class="lc-detail-row-label">file</span><span class="lc-detail-row-value">${escapeHtml(finding.file)}</span></div>`);
+  }
+  if (finding.function) {
+    rows.push(`<div class="lc-detail-row"><span class="lc-detail-row-label">function</span><span class="lc-detail-row-value lc-detail-row-value-accent">${escapeHtml(finding.function)}()</span></div>`);
+  }
+  if (finding.start != null) {
+    const span = finding.end != null && finding.end !== finding.start
+      ? `${finding.start} – ${finding.end}`
+      : `${finding.start}`;
+    rows.push(`<div class="lc-detail-row"><span class="lc-detail-row-label">span</span><span class="lc-detail-row-value">${escapeHtml(span)}</span></div>`);
+  }
+  if (finding.layer) {
+    rows.push(`<div class="lc-detail-row"><span class="lc-detail-row-label">layer</span><span class="lc-detail-row-value">${escapeHtml(finding.layer)}</span></div>`);
+  }
+  if (finding.category) {
+    rows.push(`<div class="lc-detail-row"><span class="lc-detail-row-label">category</span><span class="lc-detail-row-value">${escapeHtml(finding.category)}</span></div>`);
+  }
+  if (finding.evidence) {
+    rows.push(`<div class="lc-detail-row"><span class="lc-detail-row-label">evidence</span><span class="lc-detail-row-value">${escapeHtml(finding.evidence)}</span></div>`);
+  }
+
+  detailsPane.innerHTML = `
+    <div class="lc-detail-finding">
+      <header class="lc-detail-head">
+        <h3 class="lc-detail-kind">${escapeHtml(heading)}</h3>
+        <div class="lc-detail-tags">${tags.join("")}</div>
+      </header>
+
+      ${rows.length ? `
+        <section class="lc-detail-section">
+          <span class="lc-detail-section-label">Location &amp; metadata</span>
+          ${rows.join("")}
+        </section>
+      ` : ""}
+
+      ${finding.message ? `
+        <section class="lc-detail-section">
+          <span class="lc-detail-section-label">Message</span>
+          <p class="lc-detail-message">${escapeHtml(finding.message)}</p>
+        </section>
+      ` : ""}
     </div>
   `;
 }
@@ -278,12 +505,12 @@ function renderBreadcrumbs() {
   breadcrumbs.innerHTML = crumbs
     .map(({ label, path }, index) => {
       const separator =
-        index === 0 ? "" : `<span class="browser-crumb-separator" aria-hidden="true">/</span>`;
-      return `${separator}<button class="browser-crumb" data-path="${escapeHtml(path)}" type="button">${escapeHtml(label)}</button>`;
+        index === 0 ? "" : `<span class="lc-crumb-separator" aria-hidden="true">/</span>`;
+      return `${separator}<button class="lc-crumb" data-path="${escapeHtml(path)}" type="button">${escapeHtml(label)}</button>`;
     })
     .join("");
 
-  breadcrumbs.querySelectorAll(".browser-crumb").forEach((button) => {
+  breadcrumbs.querySelectorAll(".lc-crumb").forEach((button) => {
     button.addEventListener("click", () => {
       loadFiles(button.dataset.path || "");
     });
@@ -292,38 +519,30 @@ function renderBreadcrumbs() {
 
 function renderEntries() {
   if (!state.entries.length) {
-    fileList.innerHTML = `<div class="results-empty">No Solidity files or subdirectories were found here.</div>`;
+    fileList.innerHTML = `<div class="lc-empty-block"><p class="lc-empty-title">Empty directory.</p><p class="lc-empty-sub">No Solidity files or subdirectories were found here.</p></div>`;
     return;
   }
 
   const directories = state.entries.filter((entry) => entry.is_dir);
   const files = state.entries.filter((entry) => !entry.is_dir);
-  const renderSection = (title, items, kindLabel, iconName, extraClass) => {
+  const renderSection = (title, items, iconName, extraClass) => {
     if (!items.length) {
       return "";
     }
     return `
-      <section class="browser-section">
-        <div class="browser-section-header">
-          <span class="browser-section-title">${escapeHtml(title)}</span>
-          <span class="browser-section-count">${items.length}</span>
+      <section class="lc-filelist-section">
+        <div class="lc-filelist-header">
+          <span class="lc-filelist-eyebrow">${escapeHtml(title)}</span>
+          <span class="lc-filelist-count">${items.length}</span>
         </div>
         ${items
           .map((entry) => {
             const active = entry.relative_path === state.selectedPath;
-            const meta = entry.is_dir ? "Open folder" : "Analyze this file";
             return `
-              <button class="browser-entry ${extraClass}" data-active="${active}" data-path="${escapeHtml(entry.relative_path)}" data-dir="${entry.is_dir}" type="button">
-                <div class="browser-entry-row">
-                  <span class="material-symbols-outlined browser-entry-icon">${iconName}</span>
-                  <div class="min-w-0 flex-1">
-                    <div class="browser-entry-title">
-                      <div class="browser-entry-name truncate">${escapeHtml(entry.name)}</div>
-                      <span class="browser-entry-badge">${escapeHtml(kindLabel)}</span>
-                    </div>
-                    <div class="browser-entry-meta">${escapeHtml(meta)}</div>
-                  </div>
-                </div>
+              <button class="lc-fileitem ${extraClass}" data-active="${active}" data-path="${escapeHtml(entry.relative_path)}" data-dir="${entry.is_dir}" type="button">
+                <span class="material-symbols-outlined lc-fileitem-icon">${iconName}</span>
+                <span class="lc-fileitem-name">${escapeHtml(entry.name)}</span>
+                <span class="lc-fileitem-meta">${entry.is_dir ? "›" : ".sol"}</span>
               </button>
             `;
           })
@@ -333,13 +552,13 @@ function renderEntries() {
   };
 
   fileList.innerHTML = [
-    renderSection("Folders", directories, "dir", "folder", "browser-entry-dir"),
-    renderSection("Solidity Files", files, "sol", "description", "browser-entry-file"),
+    renderSection("Folders", directories, "folder", "lc-fileitem-dir"),
+    renderSection("Solidity files", files, "description", "lc-fileitem-file"),
   ]
     .filter(Boolean)
     .join("");
 
-  fileList.querySelectorAll(".browser-entry").forEach((button) => {
+  fileList.querySelectorAll(".lc-fileitem").forEach((button) => {
     button.addEventListener("click", () => {
       const path = button.dataset.path || "";
       const isDir = button.dataset.dir === "true";
@@ -391,17 +610,28 @@ async function loadPreview(path) {
   }
 }
 
-function summaryAccent(label, index) {
-  void index;
-  const toneByLabel = {
-    Mode: "summary-card summary-card-info",
-    "Displayed Findings": "summary-card summary-card-good",
-    "Unique Kinds": "summary-card summary-card-info",
-    "High Severity": "summary-card summary-card-error",
-    "High Confidence": "summary-card summary-card-good",
-    Warnings: "summary-card summary-card-warn",
-  };
-  return toneByLabel[label] || "summary-card";
+function summaryChipTone(label) {
+  switch (label) {
+    case "Mode":              return "lc-chip lc-chip-accent";
+    case "Displayed Findings":return "lc-chip";
+    case "Unique Kinds":      return "lc-chip lc-chip-info";
+    case "High Severity":     return "lc-chip lc-chip-error";
+    case "High Confidence":   return "lc-chip lc-chip-good";
+    case "Warnings":          return "lc-chip lc-chip-warn";
+    default:                  return "lc-chip";
+  }
+}
+
+function summaryChipShortLabel(label) {
+  switch (label) {
+    case "Displayed Findings":return "findings";
+    case "Unique Kinds":      return "kinds";
+    case "High Severity":     return "high";
+    case "High Confidence":   return "conf high";
+    case "Warnings":          return "warnings";
+    case "Mode":              return "mode";
+    default: return String(label || "").toLowerCase();
+  }
 }
 
 function renderSummary(cards) {
@@ -420,23 +650,17 @@ function renderSummary(cards) {
   });
 
   if (!cards.length) {
-    summaryGrid.innerHTML = `
-      <div class="summary-card summary-card-muted">
-        <span class="text-[10px] uppercase font-bold text-on-surface-variant tracking-tighter">No Summary Yet</span>
-      </div>
-    `;
+    summaryGrid.innerHTML = `<span class="lc-chip lc-chip-muted">awaiting run</span>`;
     return;
   }
 
   summaryGrid.innerHTML = orderedCards
-    .map(
-      (card, index) => `
-        <div class="${summaryAccent(card.label, index)}">
-          <span class="text-[10px] uppercase font-bold text-on-surface-variant tracking-tighter">${escapeHtml(card.label)}</span>
-          <span class="mt-2 text-xl font-headline font-bold">${escapeHtml(card.value)}</span>
-        </div>
-      `
-    )
+    .map((card) => `
+      <span class="${summaryChipTone(card.label)}">
+        ${escapeHtml(summaryChipShortLabel(card.label))}
+        <span class="lc-chip-value">${escapeHtml(card.value)}</span>
+      </span>
+    `)
     .join("");
 }
 
@@ -459,7 +683,7 @@ function renderWarnings(warnings) {
   });
 
   if (!latestWarnings.length) {
-    warningBox.innerHTML = `<p class="empty-box">Analyzer warnings will appear here when available.</p>`;
+    warningBox.innerHTML = `<p class="lc-empty-text">Analyzer warnings will appear here when available.</p>`;
     return;
   }
 
@@ -471,12 +695,12 @@ function renderWarnings(warnings) {
   const hiddenSummary =
     suppressedWarnings.length > 0
       ? `
-        <div class="warning-summary-box">
-          <div class="warning-summary-copy">
-            <span class="warning-summary-title">Expected benchmark compatibility warnings are hidden by default.</span>
-            <span class="warning-summary-meta">${suppressedWarnings.length} hidden</span>
+        <div class="lc-warning-summary">
+          <div class="lc-warning-summary-copy">
+            <span class="lc-warning-summary-title">Expected benchmark compatibility warnings are hidden.</span>
+            <span class="lc-warning-summary-meta">${suppressedWarnings.length} suppressed</span>
           </div>
-          <button id="warningToggle" class="warning-toggle" type="button">
+          <button id="warningToggle" class="lc-warning-toggle" type="button">
             ${state.showSuppressedWarnings ? "Hide" : "Show"}
           </button>
         </div>
@@ -487,16 +711,16 @@ function renderWarnings(warnings) {
     ? visibleWarnings
         .map((warning) => {
           const quietClass =
-            warning.category === "compatibility" ? "warning-box warning-box-quiet" : "warning-box";
+            warning.category === "compatibility" ? "lc-warning lc-warning-quiet" : "lc-warning";
           return `
             <div class="${quietClass}">
-              <div class="warning-box-title">${escapeHtml(warning.title)}</div>
-              <pre class="warning-box-message">${escapeHtml(warning.message)}</pre>
+              <div class="lc-warning-title">${escapeHtml(warning.title)}</div>
+              <pre class="lc-warning-message">${escapeHtml(warning.message)}</pre>
             </div>
           `;
         })
         .join("")
-    : `<p class="empty-box">No actionable warnings are currently visible.</p>`;
+    : `<p class="lc-empty-text">No actionable warnings.</p>`;
 
   warningBox.innerHTML = `${hiddenSummary}${visibleMarkup}`;
   warningBox.querySelector("#warningToggle")?.addEventListener("click", () => {
@@ -511,7 +735,7 @@ function renderArtifacts(runDir, artifacts) {
 }
 
 function groupedSeverityOrder(groups) {
-  const preferred = ["high", "medium", "low", "unknown"];
+  const preferred = ["high", "medium", "low", "info", "unknown"];
   return [
     ...preferred.filter((value) => groups.has(value)),
     ...Array.from(groups.keys()).filter((value) => !preferred.includes(value)).sort(),
@@ -521,72 +745,37 @@ function groupedSeverityOrder(groups) {
 function severityTone(severity) {
   const normalized = String(severity || "unknown").toLowerCase();
   if (normalized.includes("high") || normalized.includes("critical")) {
-    return {
-      key: "high",
-      chip: "bg-error/10 text-error",
-      card:
-        "bg-surface-container p-5 rounded-2xl border-l-4 border-error hover:scale-[1.02] transition-transform duration-200",
-      countChip: "bg-error/10 text-error",
-      label: "High Severity Findings",
-      badgePrefix: "CRITICAL_THREATS",
-    };
+    return { key: "high", label: "High severity", tag: "high" };
   }
-  if (normalized.includes("medium")) {
-    return {
-      key: "medium",
-      chip: "bg-orange-400/10 text-orange-400",
-      card:
-        "bg-surface-container-low p-5 rounded-xl border border-outline-variant/10 hover:bg-surface-container transition-colors",
-      countChip: "bg-orange-400/10 text-orange-400",
-      label: "Medium Severity Findings",
-      badgePrefix: "MODERATE_RISKS",
-    };
+  if (normalized.includes("medium") || normalized.includes("moderate")) {
+    return { key: "medium", label: "Medium severity", tag: "medium" };
   }
   if (normalized.includes("low")) {
-    return {
-      key: "low",
-      chip: "bg-secondary/10 text-secondary",
-      card:
-        "bg-surface-container-low p-5 rounded-xl border border-outline-variant/10 hover:bg-surface-container transition-colors",
-      countChip: "bg-secondary/10 text-secondary",
-      label: "Low Severity Findings",
-      badgePrefix: "LOW_RISKS",
-    };
+    return { key: "low", label: "Low severity", tag: "low" };
   }
-  return {
-    key: "unknown",
-    chip: "bg-surface-container-highest text-on-surface-variant",
-    card:
-      "bg-surface-container-low p-5 rounded-xl border border-outline-variant/10 hover:bg-surface-container transition-colors",
-    countChip: "bg-surface-container-highest text-on-surface-variant",
-    label: "Unspecified Findings",
-    badgePrefix: "UNCATEGORIZED",
-  };
+  if (normalized.includes("info")) {
+    return { key: "info", label: "Informational", tag: "info" };
+  }
+  return { key: "unknown", label: "Unspecified", tag: "unknown" };
 }
 
 function renderFindings(findings) {
   const query = String(findingSearch?.value || "").trim();
   const totalCount = allFindings.length;
   findingsCount.textContent = query
-    ? `SURFACED: ${padCount(findings.length)} / ${padCount(totalCount)}`
-    : `SURFACED: ${padCount(findings.length)}`;
+    ? `surfaced · ${padCount(findings.length)} / ${padCount(totalCount)}`
+    : `surfaced · ${padCount(findings.length)}`;
   findingsFilterState.textContent = query
     ? `filter: ${query}`
     : totalCount
-      ? "all surfaced findings"
+      ? `${totalCount} total`
       : "";
 
   if (!findings.length) {
     findingList.innerHTML = `
-      <div class="results-empty">
-        <p class="text-sm font-medium text-on-surface">${
-          query ? "No findings matched the current filter." : "No surfaced findings were returned for this run."
-        }</p>
-        <p class="text-xs text-on-surface-variant mt-2">${
-          query
-            ? "Try a broader search term or clear the findings filter."
-            : "Try another mode, a narrower target, or inspect the raw output for suppressed and auxiliary details."
-        }</p>
+      <div class="lc-empty-block">
+        <p class="lc-empty-title">${escapeHtml(query ? "No findings matched the current filter." : "No findings surfaced.")}</p>
+        <p class="lc-empty-sub">${escapeHtml(query ? "Try a broader search or clear the filter." : "Try a different analyzer or target, or open the raw output for suppressed and auxiliary details.")}</p>
       </div>
     `;
     return;
@@ -601,71 +790,64 @@ function renderFindings(findings) {
     grouped.get(tone.key).items.push(finding);
   }
 
+  const findingIndexByNode = new Map();
+  let globalIndex = 0;
+
   const sections = groupedSeverityOrder(grouped).map((severityKey) => {
     const { tone, items } = grouped.get(severityKey);
     const cards = items
       .map((finding, index) => {
-        const confidence = confidenceLabel(finding.confidence);
+        const fid = findingId(finding, globalIndex++);
+        findingIndexByNode.set(fid, finding);
+
         const heading = finding.kind ? titleCaseToken(finding.kind) : "Finding";
-        const locationText = finding.function || basename(finding.file) || "No location metadata";
-        const layerText = [
-          finding.layer ? `${finding.layer}` : null,
-          finding.category ? `${finding.category}` : null,
-          finding.evidence ? `${finding.evidence}` : null,
-        ].filter(Boolean).join(" · ");
-        const spanText = [
-          finding.file ? basename(finding.file) : null,
-          finding.start != null ? `start ${finding.start}` : null,
-          finding.end != null ? `end ${finding.end}` : null,
-        ].filter(Boolean).join(" · ");
+        const functionName = finding.function ? finding.function : null;
+        const fileName = finding.file ? basename(finding.file) : null;
+        const confidence = finding.confidence
+          ? `<span class="lc-tag lc-tag-neutral">conf · ${escapeHtml(String(finding.confidence).toLowerCase())}</span>`
+          : "";
+        const sevTag = `<span class="lc-tag lc-tag-sev-${tone.tag}">${escapeHtml(String(finding.severity || "unspecified").toLowerCase())}</span>`;
+
+        const locParts = [];
+        if (fileName) {
+          locParts.push(`<span>${escapeHtml(fileName)}</span>`);
+        }
+        if (functionName) {
+          if (locParts.length) {
+            locParts.push(`<span class="lc-finding-loc-sep">::</span>`);
+          }
+          locParts.push(`<span class="lc-finding-loc-func">${escapeHtml(functionName)}()</span>`);
+        }
+        const locationLine = locParts.length
+          ? `<div class="lc-finding-loc"><span class="material-symbols-outlined" style="font-size:13px;color:var(--text-3);">code</span>${locParts.join("")}</div>`
+          : "";
+
+        const isSelected = fid === state.selectedFindingId;
 
         return `
-          <div class="${tone.card}">
-            <div class="flex justify-between items-start mb-4 gap-3">
-              <span class="px-2 py-1 ${tone.chip} rounded text-[10px] font-bold uppercase">${escapeHtml(titleCaseToken(finding.kind))}</span>
-              ${
-                confidence
-                  ? `
-                    <div class="flex items-center gap-1 bg-tertiary/10 text-tertiary px-2 py-1 rounded text-[10px]">
-                      <span class="material-symbols-outlined text-[10px]" style="font-variation-settings: 'FILL' 1;">analytics</span>
-                      ${escapeHtml(confidence)}
-                    </div>
-                  `
-                  : ""
-              }
-            </div>
-            <h4 class="font-bold text-on-surface mb-2">${escapeHtml(heading)}</h4>
-            <div class="text-xs text-on-surface-variant space-y-3">
-              <div class="finding-card-detail font-mono">
-                <span class="material-symbols-outlined text-xs">function</span>
-                ${escapeHtml(locationText)}
+          <button class="lc-finding" type="button" data-finding-id="${escapeHtml(fid)}" data-selected="${isSelected ? "true" : "false"}">
+            <div class="lc-finding-bar lc-finding-bar-${tone.tag}"></div>
+            <div class="lc-finding-body">
+              <div class="lc-finding-head">
+                <h4 class="lc-finding-kind">${escapeHtml(heading)}</h4>
+                <div class="lc-finding-tags">${sevTag}${confidence}</div>
               </div>
-              ${layerText ? `
-                <div class="finding-card-detail">
-                  <span class="material-symbols-outlined text-xs">layers</span>
-                  ${escapeHtml(layerText)}
-                </div>
-              ` : ""}
-              ${spanText ? `
-                <div class="finding-card-detail font-mono">
-                  <span class="material-symbols-outlined text-xs">pin_drop</span>
-                  ${escapeHtml(spanText)}
-                </div>
-              ` : ""}
-              <p class="text-[11px] leading-relaxed opacity-80">${escapeHtml(finding.message || `Finding ${index + 1} in this severity group.`)}</p>
+              ${locationLine}
+              <p class="lc-finding-message">${escapeHtml(finding.message || `Finding ${index + 1} in this severity group.`)}</p>
             </div>
-          </div>
+          </button>
         `;
       })
       .join("");
 
     return `
-      <div>
-        <div class="flex items-center gap-4 mb-6">
-          <h3 class="font-headline text-lg font-bold">${escapeHtml(tone.label)}</h3>
-          <span class="${tone.countChip} px-2 py-0.5 rounded text-xs font-bold font-mono">${escapeHtml(`${tone.badgePrefix}: ${String(items.length).padStart(2, "0")}`)}</span>
-        </div>
-        <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+      <div class="lc-finding-group">
+        <header class="lc-finding-group-header">
+          <span class="lc-sev-dot lc-sev-dot-${tone.tag}"></span>
+          <span class="lc-finding-group-name">${escapeHtml(tone.label)}</span>
+          <span class="lc-finding-group-count">${padCount(items.length)}</span>
+        </header>
+        <div class="lc-finding-stack" style="display:flex; flex-direction:column; gap:0.55rem;">
           ${cards}
         </div>
       </div>
@@ -673,6 +855,19 @@ function renderFindings(findings) {
   });
 
   findingList.innerHTML = sections.join("");
+
+  findingList.querySelectorAll(".lc-finding").forEach((button) => {
+    button.addEventListener("click", () => {
+      const fid = button.dataset.findingId || "";
+      const finding = findingIndexByNode.get(fid);
+      if (!finding) return;
+      if (state.selectedFindingId === fid) {
+        clearSelectedFinding();
+      } else {
+        setSelectedFinding(finding, fid);
+      }
+    });
+  });
 }
 
 function applyFindingFilter() {
@@ -788,9 +983,9 @@ async function syncAnalysisStatus() {
     if (runStartedAt == null && payload.elapsed_ms != null) {
       runStartedAt = Date.now() - payload.elapsed_ms;
       runButton.disabled = true;
-      runButton.textContent = "Running...";
+      runButtonLabelEl.textContent = "Running...";
       cancelButton.disabled = Boolean(payload.cancel_requested);
-      cancelButton.textContent = payload.cancel_requested ? "Cancelling..." : cancelButtonLabel;
+      cancelButtonLabelEl.textContent = payload.cancel_requested ? "Cancelling..." : cancelButtonLabel;
     }
 
     if (payload.phase === "preparing" || payload.phase === "starting" || payload.phase === "finalizing") {
@@ -827,8 +1022,8 @@ function startRunTimer(mode, targetPath) {
   };
   runButton.disabled = true;
   cancelButton.disabled = false;
-  runButton.textContent = "Running...";
-  cancelButton.textContent = cancelButtonLabel;
+  runButtonLabelEl.textContent = "Running...";
+  cancelButtonLabelEl.textContent = cancelButtonLabel;
   updatePhaseStatus(mode, targetPath, 0, "preparing", latestStatusSnapshot);
 
   runTimerId = window.setInterval(() => {
@@ -870,9 +1065,9 @@ function stopRunTimer() {
   runStartedAt = null;
   cancelRequested = false;
   latestStatusSnapshot = null;
-  runButton.textContent = runButtonLabel;
+  runButtonLabelEl.textContent = runButtonLabel;
   runButton.disabled = false;
-  cancelButton.textContent = cancelButtonLabel;
+  cancelButtonLabelEl.textContent = cancelButtonLabel;
   cancelButton.disabled = true;
 }
 
@@ -883,7 +1078,7 @@ async function cancelAnalysis() {
 
   cancelRequested = true;
   cancelButton.disabled = true;
-  cancelButton.textContent = "Cancelling...";
+  cancelButtonLabelEl.textContent = "Cancelling...";
   const cancellationSnapshot = latestStatusSnapshot
     ? { ...latestStatusSnapshot, cancel_requested: true }
     : {
@@ -915,7 +1110,7 @@ async function cancelAnalysis() {
   } catch (error) {
     cancelRequested = false;
     cancelButton.disabled = false;
-    cancelButton.textContent = cancelButtonLabel;
+    cancelButtonLabelEl.textContent = cancelButtonLabel;
     setStatus(`Cancellation failed: ${error.message}`);
   }
 }
@@ -927,6 +1122,7 @@ async function runAnalysis() {
     return;
   }
 
+  clearReportDownload();
   startRunTimer(modeSelect.value, targetPath || ".");
 
   try {
@@ -945,12 +1141,20 @@ async function runAnalysis() {
 
     renderSummary(payload.summary_cards || []);
     allFindings = payload.findings || [];
+    state.selectedFinding = null;
+    state.selectedFindingId = null;
     renderFindings(allFindings);
     applyFindingFilter();
     renderWarnings(payload.warnings || []);
     renderArtifacts(payload.run_dir, payload.artifacts || []);
-    rawJson.textContent = payload.raw_json || "";
-    updateRawOutputMeta(payload.raw_json || "");
+    renderDetailsPane();
+    setReportDownload(
+      payload.report_markdown,
+      payload.report_markdown_filename,
+      payload.report_pdf_base64,
+      payload.report_filename,
+      payload.report_pdf_error
+    );
 
     const elapsedMs = Date.now() - runStartedAt;
     const processedTargets = Number(payload.raw_report?.target_count || 1);
@@ -980,11 +1184,13 @@ async function runAnalysis() {
     } else {
       renderSummary([]);
       allFindings = [];
+      state.selectedFinding = null;
+      state.selectedFindingId = null;
       renderFindings([]);
       renderWarnings([error.message]);
       renderArtifacts(null, []);
-      rawJson.textContent = "";
-      updateRawOutputMeta("");
+      renderDetailsPane();
+      clearReportDownload();
       setProgressVisual(
         "failed",
         "Analysis Failed",
@@ -1001,16 +1207,17 @@ async function runAnalysis() {
 
 runButton.addEventListener("click", runAnalysis);
 cancelButton.addEventListener("click", cancelAnalysis);
+markdownReportButton?.addEventListener("click", downloadMarkdownReport);
+pdfReportButton?.addEventListener("click", downloadPdfReport);
 modeSelect.addEventListener("change", syncModePresentation);
-rawOutputToggle.addEventListener("click", () => toggleRawOutput());
 findingSearch?.addEventListener("input", applyFindingFilter);
 
 syncModePresentation();
-toggleRawOutput(false);
 setProgressVisual("idle", "Idle", "Ready to analyze the selected target.", 0);
+renderDetailsPane();
 
 syncAnalysisStatus();
 loadFiles().catch((error) => {
   setStatus(error.message);
-  fileList.innerHTML = `<div class="results-empty">${escapeHtml(error.message)}</div>`;
+  fileList.innerHTML = `<div class="lc-empty-block"><p class="lc-empty-title">Workspace unavailable.</p><p class="lc-empty-sub">${escapeHtml(error.message)}</p></div>`;
 });

@@ -23,6 +23,8 @@ pub fn run_fuzzer(
     match format {
         OutputFormat::Text => runner::print_report(&report),
         OutputFormat::Json => runner::print_report_json(&report)?,
+        OutputFormat::Markdown => runner::print_report_markdown(&report)?,
+        OutputFormat::Pdf => runner::print_report_pdf(&report)?,
     }
     Ok(())
 }

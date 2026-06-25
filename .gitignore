@@ -7,6 +7,11 @@ Cargo.lock
 results/
 runs/
 scripts/__pycache__/
+reports/
+*.vsix
+.codex
+vscode-extension/node_modules/
+vscode-extension/out/
 
 # Local benchmark mirrors not versioned with the repo snapshot
 Benchmarks/DAppSCAN/

@@ -1094,6 +1094,50 @@ pub fn print_report_json(report: &FuzzReport) -> Result<()> {
     Ok(())
 }
 
+pub fn print_report_markdown(report: &FuzzReport) -> Result<()> {
+    crate::report::print_audit_markdown(&audit_report(report))
+}
+
+pub fn print_report_pdf(report: &FuzzReport) -> Result<()> {
+    crate::report::print_audit_pdf(&audit_report(report))
+}
+
+fn audit_report(report: &FuzzReport) -> crate::report::AuditReport {
+    let surfaced = surfaced::surface_findings(
+        report.findings.iter().map(fuzz_runtime_candidate).collect(),
+        report
+            .meta_findings
+            .iter()
+            .map(fuzz_meta_candidate)
+            .collect(),
+    );
+    crate::report::AuditReport {
+        project_name: "Fuzzing Target".to_string(),
+        target: "fuzzing target".to_string(),
+        analysis_mode: "fuzzing".to_string(),
+        raw_findings: report.findings.len() + report.meta_findings.len(),
+        suppressed_findings: surfaced.suppressed_runtime_findings
+            + surfaced.suppressed_meta_findings,
+        metrics: vec![
+            crate::report::AuditMetric::new("Iterations", report.iterations.to_string()),
+            crate::report::AuditMetric::new("Corpus size", report.corpus_size.to_string()),
+            crate::report::AuditMetric::new(
+                "Coverage",
+                format!(
+                    "{}/{} blocks ({:.1}%)",
+                    report.covered_blocks, report.total_blocks, report.coverage_pct
+                ),
+            ),
+            crate::report::AuditMetric::new("Elapsed", format!("{}ms", report.elapsed_ms)),
+        ],
+        findings: crate::report::audit_findings_from_surfaced(
+            surfaced.runtime_findings.iter(),
+            surfaced.meta_findings.iter(),
+        ),
+        review_summary: None,
+    }
+}
+
 fn json_report(report: &FuzzReport) -> JsonFuzzReport {
     let surfaced = surfaced::surface_findings(
         report.findings.iter().map(fuzz_runtime_candidate).collect(),

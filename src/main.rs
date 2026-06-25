@@ -1,3 +1,4 @@
+mod ai_report;
 mod analysis;
 mod cfg;
 mod core;
@@ -36,6 +37,15 @@ impl AnalysisMode {
             _ => None,
         }
     }
+
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Static => "static",
+            Self::Symbolic => "symbolic",
+            Self::Fuzzing => "fuzzing",
+            Self::Hybrid => "hybrid",
+        }
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -61,7 +71,7 @@ fn main() {
 
 fn print_usage() {
     eprintln!(
-        "usage: static-analyzer --web | [--static|--symbolic|--fuzzing|--hybrid] <path> [--json|--text|--format <json|text>] [--dump-ir <text|json|tuple>]"
+        "usage: static-analyzer --web | [--static|--symbolic|--fuzzing|--hybrid] <path> [--json|--text|--markdown|--pdf|--format <json|text|markdown|pdf>] [--dump-ir <text|json|tuple>] | --report-from-json <path> --report-target <path> [--report-mode <mode>] --format <markdown|pdf>"
     );
 }
 
@@ -72,6 +82,9 @@ fn run() -> Result<()> {
     let mut mode = AnalysisMode::Static;
     let mut mode_flag = None::<&'static str>;
     let mut web_mode = false;
+    let mut report_from_json = None;
+    let mut report_target = None;
+    let mut report_mode = None;
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         if let Some(next_mode) = AnalysisMode::from_flag(&arg) {
@@ -95,8 +108,33 @@ fn run() -> Result<()> {
 
         match arg.as_str() {
             "--web" => web_mode = true,
+            "--report-from-json" => {
+                let Some(value) = args.next() else {
+                    return Err(Error::msg("missing value for --report-from-json"));
+                };
+                report_from_json = Some(value);
+            }
+            "--report-target" => {
+                let Some(value) = args.next() else {
+                    return Err(Error::msg("missing value for --report-target"));
+                };
+                report_target = Some(value);
+            }
+            "--report-mode" => {
+                let Some(value) = args.next() else {
+                    return Err(Error::msg("missing value for --report-mode"));
+                };
+                match value.as_str() {
+                    "static" | "symbolic" | "fuzzing" | "hybrid" => {
+                        report_mode = Some(value);
+                    }
+                    _ => return Err(Error::msg(format!("unknown report mode: {value}"))),
+                }
+            }
             "--json" => format = report::OutputFormat::Json,
             "--text" => format = report::OutputFormat::Text,
+            "--markdown" | "--md" => format = report::OutputFormat::Markdown,
+            "--pdf" => format = report::OutputFormat::Pdf,
             "--help" | "-h" => {
                 print_usage();
                 return Ok(());
@@ -108,6 +146,8 @@ fn run() -> Result<()> {
                 match value.as_str() {
                     "json" => format = report::OutputFormat::Json,
                     "text" => format = report::OutputFormat::Text,
+                    "markdown" | "md" => format = report::OutputFormat::Markdown,
+                    "pdf" => format = report::OutputFormat::Pdf,
                     _ => return Err(Error::msg(format!("unknown format: {value}"))),
                 }
             }
@@ -149,12 +189,47 @@ fn run() -> Result<()> {
     }
 
     if web_mode {
-        if input.is_some() || mode_flag.is_some() || dump_ir.is_some() {
+        if input.is_some()
+            || mode_flag.is_some()
+            || dump_ir.is_some()
+            || report_from_json.is_some()
+            || report_target.is_some()
+            || report_mode.is_some()
+        {
             return Err(Error::msg(
-                "--web cannot be combined with an input path, analysis mode, or --dump-ir",
+                "--web cannot be combined with an input path, analysis mode, --dump-ir, or report rendering flags",
             ));
         }
         return web::serve(std::env::current_dir()?);
+    }
+
+    if let Some(json_path) = report_from_json {
+        if dump_ir.is_some() {
+            return Err(Error::msg(
+                "--dump-ir cannot be combined with --report-from-json",
+            ));
+        }
+        if matches!(
+            format,
+            report::OutputFormat::Json | report::OutputFormat::Text
+        ) {
+            return Err(Error::msg(
+                "--report-from-json requires --format markdown or --format pdf",
+            ));
+        }
+        let target = report_target.unwrap_or_else(|| {
+            input
+                .clone()
+                .unwrap_or_else(|| "cached ChainVet analysis".to_string())
+        });
+        let mode_label = report_mode.unwrap_or_else(|| mode.as_str().to_string());
+        let audit_report = report::audit_report_from_json_file(&json_path, &target, &mode_label)?;
+        match format {
+            report::OutputFormat::Markdown => report::print_audit_markdown(&audit_report)?,
+            report::OutputFormat::Pdf => report::print_audit_pdf(&audit_report)?,
+            _ => unreachable!(),
+        }
+        return Ok(());
     }
 
     let Some(input) = input else {
@@ -284,6 +359,53 @@ fn run() -> Result<()> {
                         Error::msg(format!("failed to encode hybrid JSON report: {err}"))
                     })?;
                     println!("{payload}");
+                }
+                report::OutputFormat::Markdown | report::OutputFormat::Pdf => {
+                    let findings = report::audit_findings_from_surfaced(
+                        surfaced.runtime_findings.iter(),
+                        surfaced.meta_findings.iter(),
+                    );
+                    let audit_report = report::AuditReport {
+                        project_name: report::project_name_from_path(&input),
+                        target: input.clone(),
+                        analysis_mode: "hybrid".to_string(),
+                        raw_findings: runtime_findings_raw.len() + meta_findings_raw.len(),
+                        suppressed_findings: surfaced.suppressed_runtime_findings
+                            + surfaced.suppressed_meta_findings,
+                        metrics: vec![
+                            report::AuditMetric::new("Run ID", output.run_id),
+                            report::AuditMetric::new("Run directory", output.run_dir),
+                            report::AuditMetric::new(
+                                "Runtime",
+                                format!("{}ms", output.report.runtime_ms),
+                            ),
+                            report::AuditMetric::new(
+                                "Epochs",
+                                output.report.total_epochs.to_string(),
+                            ),
+                            report::AuditMetric::new(
+                                "Unique findings",
+                                output.report.findings_unique.to_string(),
+                            ),
+                            report::AuditMetric::new(
+                                "SE assists",
+                                output.report.se_assists.to_string(),
+                            ),
+                            report::AuditMetric::new(
+                                "SE seeds injected",
+                                output.report.seeds_injected_by_se.to_string(),
+                            ),
+                        ],
+                        findings,
+                        review_summary: None,
+                    };
+                    match format {
+                        report::OutputFormat::Markdown => {
+                            report::print_audit_markdown(&audit_report)?
+                        }
+                        report::OutputFormat::Pdf => report::print_audit_pdf(&audit_report)?,
+                        _ => unreachable!(),
+                    }
                 }
             }
         }
