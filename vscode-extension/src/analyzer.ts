@@ -103,7 +103,7 @@ export class Analyzer {
           if (!trimmed) continue;
           this.output.appendLine(`  · ${trimmed}`);
           if (options.progress) {
-            options.progress.report({ message: truncate(trimmed, 120) });
+            options.progress.report({ message: progressMessageForStderr(trimmed) });
           }
         }
       });
@@ -203,7 +203,7 @@ export class Analyzer {
           if (!trimmed) continue;
           this.output.appendLine(`  · ${trimmed}`);
           if (options.progress) {
-            options.progress.report({ message: truncate(trimmed, 120) });
+            options.progress.report({ message: progressMessageForStderr(trimmed) });
           }
         }
       });
@@ -284,7 +284,7 @@ export class Analyzer {
           if (!trimmed) continue;
           this.output.appendLine(`  · ${trimmed}`);
           if (options.progress) {
-            options.progress.report({ message: truncate(trimmed, 120) });
+            options.progress.report({ message: progressMessageForStderr(trimmed) });
           }
         }
       });
@@ -387,7 +387,7 @@ export class Analyzer {
           if (!trimmed) continue;
           this.output.appendLine(`  · ${trimmed}`);
           if (options.progress) {
-            options.progress.report({ message: truncate(trimmed, 120) });
+            options.progress.report({ message: progressMessageForStderr(trimmed) });
           }
         }
       });
@@ -453,15 +453,18 @@ export class Analyzer {
     }
 
     const folders = vscode.workspace.workspaceFolders ?? [];
-    const exeName = process.platform === "win32" ? "Static.exe" : "Static";
+    const exeName = process.platform === "win32" ? "ChainVet.exe" : "ChainVet";
+    const legacyExeName = process.platform === "win32" ? "Static.exe" : "Static";
     const candidates: string[] = [];
     for (const folder of folders) {
       candidates.push(
         path.join(folder.uri.fsPath, "target", "release", exeName),
         path.join(folder.uri.fsPath, "target", "debug", exeName),
+        path.join(folder.uri.fsPath, "target", "release", legacyExeName),
+        path.join(folder.uri.fsPath, "target", "debug", legacyExeName),
       );
     }
-    candidates.push(...searchPath("chainvet"), ...searchPath(exeName));
+    candidates.push(...searchPath("chainvet"), ...searchPath(exeName), ...searchPath(legacyExeName));
 
     for (const candidate of candidates) {
       try {
@@ -593,11 +596,26 @@ function extractWarningBlocks(stderr: string): string[] {
 
 function startsNewWarning(line: string): boolean {
   return (
+    line.startsWith("solc frontend unavailable; using tree-sitter fallback:") ||
+    /^\[[^\]]+\]\s+solc frontend unavailable; using tree-sitter fallback:/.test(line) ||
     line.startsWith("solc frontend failed:") ||
     /^\[[^\]]+\]\s+solc frontend failed:/.test(line) ||
     line.startsWith("analysis command failed:") ||
     line.startsWith("analysis cancelled:")
   );
+}
+
+function progressMessageForStderr(line: string): string {
+  if (
+    line.startsWith("solc frontend unavailable; using tree-sitter fallback:") ||
+    /^\[[^\]]+\]\s+solc frontend unavailable; using tree-sitter fallback:/.test(line) ||
+    line.startsWith("solc frontend failed: no solc releases available") ||
+    line.startsWith("solc frontend failed: solc release index is empty") ||
+    line.startsWith("solc frontend failed: no solc release matches pragma requirements")
+  ) {
+    return "using tree-sitter fallback parser (solc unavailable)";
+  }
+  return truncate(line, 120);
 }
 
 // ─── Utilities ───────────────────────────────────────────────────────
@@ -638,9 +656,25 @@ function workspaceCwd(targetPath: string): string {
 
 function analyzerEnv(forReport: boolean): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...process.env };
+  const config = vscode.workspace.getConfiguration("chainvet");
+
+  if (config.get<boolean>("aiFallbackParser.enabled", false)) {
+    env.CHAINVET_AI_FALLBACK_PARSER = "1";
+    env.CHAINVET_AI_MODEL = config.get<string>("aiReports.model", "qwen2.5-coder:7b");
+    env.CHAINVET_AI_ENDPOINT = config.get<string>("aiReports.endpoint", "http://127.0.0.1:11434");
+    env.CHAINVET_AI_FALLBACK_TIMEOUT_MS = String(config.get<number>("aiFallbackParser.timeoutMs", 60000));
+    env.CHAINVET_AI_FALLBACK_NUM_PREDICT = String(config.get<number>("aiFallbackParser.maxTokens", 1536));
+    env.CHAINVET_AI_FALLBACK_MAX_SOURCE_BYTES = String(
+      config.get<number>("aiFallbackParser.maxSourceBytes", 24000),
+    );
+    env.CHAINVET_AI_FALLBACK_CHUNK_BYTES = String(config.get<number>("aiFallbackParser.chunkBytes", 18000));
+    env.CHAINVET_AI_FALLBACK_MAX_CHUNKS = String(config.get<number>("aiFallbackParser.maxChunksPerFile", 24));
+  } else {
+    delete env.CHAINVET_AI_FALLBACK_PARSER;
+  }
+
   if (!forReport) return env;
 
-  const config = vscode.workspace.getConfiguration("chainvet");
   const enabled = config.get<boolean>("aiReports.enabled", true);
   if (!enabled) {
     delete env.CHAINVET_AI_REPORT;

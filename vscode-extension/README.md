@@ -17,10 +17,10 @@ Run the ChainVet smart-contract security analyzer directly inside VS Code. Findi
 1. Build the ChainVet analyzer (the Rust binary) from the repo root:
 
    ```bash
-   cargo build --release   # produces target/release/Static
+   cargo build --release   # produces target/release/ChainVet
    ```
 
-   The extension auto-discovers the binary at `<workspace>/target/release/Static`, then `target/debug/Static`, then `chainvet` / `Static` on `PATH`. To override, set `chainvet.binaryPath` in your settings.
+   The extension auto-discovers the binary at `<workspace>/target/release/ChainVet`, then `target/debug/ChainVet`, then `chainvet` / `ChainVet` on `PATH`. It also accepts the older `Static` binary name during migration. To override, set `chainvet.binaryPath` in your settings.
 
 2. Node.js 18+ and `npm`.
 

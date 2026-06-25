@@ -14,9 +14,12 @@ use crate::util::error::{Error, Result};
 
 const SOLC_LIST_BASE: &str = "https://binaries.soliditylang.org";
 const SOLC_PATH_ENV: &str = "SOLC_PATH";
-const SOLC_CACHE_ENV: &str = "STATIC_SOLC_DIR";
-const SOLC_OFFLINE_ENV: &str = "STATIC_SOLC_OFFLINE";
-const SOLC_SEARCH_PATHS_ENV: &str = "STATIC_SOLC_SEARCH_PATHS";
+const SOLC_CACHE_ENV: &str = "CHAINVET_SOLC_DIR";
+const LEGACY_SOLC_CACHE_ENV: &str = "STATIC_SOLC_DIR";
+const SOLC_OFFLINE_ENV: &str = "CHAINVET_SOLC_OFFLINE";
+const LEGACY_SOLC_OFFLINE_ENV: &str = "STATIC_SOLC_OFFLINE";
+const SOLC_SEARCH_PATHS_ENV: &str = "CHAINVET_SOLC_SEARCH_PATHS";
+const LEGACY_SOLC_SEARCH_PATHS_ENV: &str = "STATIC_SOLC_SEARCH_PATHS";
 const LIST_TTL_SECS: u64 = 60 * 60 * 24;
 
 pub struct SolcManager {
@@ -405,10 +408,28 @@ struct SolcList {
 }
 
 fn select_version(reqs: &[VersionReq], list: &SolcList) -> Result<SolcVersion> {
-    let versions = matching_versions(reqs, list);
+    let mut available_versions: Vec<SolcVersion> = list
+        .releases
+        .keys()
+        .filter_map(|value| SolcVersion::parse(value))
+        .collect();
+    available_versions.sort();
+
+    if available_versions.is_empty() {
+        return Err(Error::msg("solc release index is empty"));
+    }
+
+    let versions = if reqs.is_empty() {
+        available_versions
+    } else {
+        available_versions
+            .into_iter()
+            .filter(|version| reqs.iter().all(|req| req.matches(version)))
+            .collect::<Vec<_>>()
+    };
 
     if versions.is_empty() {
-        return Err(Error::msg("no solc releases available"));
+        return Err(Error::msg("no solc release matches pragma requirements"));
     }
 
     if reqs.is_empty() {
@@ -628,23 +649,34 @@ fn cache_dir_candidates() -> Vec<PathBuf> {
     if let Ok(value) = env::var(SOLC_CACHE_ENV) {
         candidates.push(PathBuf::from(value));
     }
+    if let Ok(value) = env::var(LEGACY_SOLC_CACHE_ENV) {
+        candidates.push(PathBuf::from(value));
+    }
 
     if let Ok(value) = env::var("XDG_CACHE_HOME") {
-        candidates.push(PathBuf::from(value).join("static/solc"));
+        let root = PathBuf::from(value);
+        candidates.push(root.join("chainvet/solc"));
+        candidates.push(root.join("static/solc"));
     }
 
     if let Ok(value) = env::var("HOME") {
-        candidates.push(PathBuf::from(value).join(".cache/static/solc"));
+        let home = PathBuf::from(value);
+        candidates.push(home.join(".cache/chainvet/solc"));
+        candidates.push(home.join(".cache/static/solc"));
     }
 
     if let Ok(value) = env::var("USERPROFILE") {
-        candidates.push(PathBuf::from(value).join(".cache/static/solc"));
+        let profile = PathBuf::from(value);
+        candidates.push(profile.join(".cache/chainvet/solc"));
+        candidates.push(profile.join(".cache/static/solc"));
     }
 
     if let Ok(cwd) = env::current_dir() {
+        candidates.push(cwd.join(".cache/chainvet/solc"));
         candidates.push(cwd.join(".cache/static/solc"));
     }
 
+    candidates.push(env::temp_dir().join("chainvet-solc-cache"));
     candidates.push(env::temp_dir().join("static-solc-cache"));
     candidates
 }
@@ -660,10 +692,12 @@ fn ensure_writable_dir(path: &Path) -> Result<()> {
 }
 
 fn is_offline_mode() -> bool {
-    match env::var(SOLC_OFFLINE_ENV) {
-        Ok(value) => matches!(value.trim(), "1" | "true" | "TRUE" | "yes" | "YES"),
-        Err(_) => false,
+    for key in [SOLC_OFFLINE_ENV, LEGACY_SOLC_OFFLINE_ENV] {
+        if let Ok(value) = env::var(key) {
+            return matches!(value.trim(), "1" | "true" | "TRUE" | "yes" | "YES");
+        }
     }
+    false
 }
 
 fn is_fresh(meta: &fs::Metadata, ttl: Duration) -> bool {
@@ -764,9 +798,11 @@ fn local_solc_search_roots(platform: SolcPlatform, preferred_cache: Option<&Path
         roots.push(cache.to_path_buf());
     }
 
-    if let Ok(value) = env::var(SOLC_SEARCH_PATHS_ENV) {
-        for path in env::split_paths(&value) {
-            roots.push(path);
+    for key in [SOLC_SEARCH_PATHS_ENV, LEGACY_SOLC_SEARCH_PATHS_ENV] {
+        if let Ok(value) = env::var(key) {
+            for path in env::split_paths(&value) {
+                roots.push(path);
+            }
         }
     }
 
@@ -776,6 +812,7 @@ fn local_solc_search_roots(platform: SolcPlatform, preferred_cache: Option<&Path
 
     if let Ok(home) = env::var("HOME") {
         let home = PathBuf::from(home);
+        roots.push(home.join(".cache/chainvet/solc"));
         roots.push(home.join(".cache/static/solc"));
         roots.push(home.join(".cache/hardhat-nodejs/compilers-v2"));
         roots.push(home.join(".local/share/svm"));
@@ -784,6 +821,7 @@ fn local_solc_search_roots(platform: SolcPlatform, preferred_cache: Option<&Path
 
     if let Ok(userprofile) = env::var("USERPROFILE") {
         let profile = PathBuf::from(userprofile);
+        roots.push(profile.join(".cache/chainvet/solc"));
         roots.push(profile.join(".cache/static/solc"));
     }
 

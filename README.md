@@ -1,4 +1,4 @@
-# Solidity Multi-Modal Analysis Platform
+# ChainVet
 
 This project analyzes Solidity smart contracts using four modes over a shared frontend + IR/CFG/SSA pipeline:
 

@@ -1033,7 +1033,10 @@ fn extract_warning_blocks(stderr: &str) -> Vec<String> {
 
 fn starts_new_warning_block(line: &str) -> bool {
     let trimmed = line.trim_start();
-    trimmed.starts_with("solc frontend failed:")
+    trimmed.starts_with("solc frontend unavailable; using tree-sitter fallback:")
+        || trimmed.starts_with("solc frontend failed:")
+        || (trimmed.starts_with('[')
+            && trimmed.contains("] solc frontend unavailable; using tree-sitter fallback:"))
         || (trimmed.starts_with('[') && trimmed.contains("] solc frontend failed:"))
         || trimmed.starts_with("analysis command failed:")
         || trimmed.starts_with("analysis cancelled:")
@@ -1053,9 +1056,11 @@ fn classify_warning(warning: String) -> WebWarning {
         };
     }
 
-    if warning.contains("solc frontend failed:") {
+    if warning.contains("solc frontend unavailable; using tree-sitter fallback:")
+        || warning.contains("solc frontend failed:")
+    {
         return WebWarning {
-            title: "Compatibility Warning".to_string(),
+            title: "Compiler Fallback".to_string(),
             message: warning,
             category: "compatibility".to_string(),
             suppressed_by_default: false,

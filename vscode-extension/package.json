@@ -214,7 +214,7 @@
         "chainvet.binaryPath": {
           "type": "string",
           "default": "",
-          "description": "Absolute path to the ChainVet analyzer binary. When empty, the extension searches `target/release/Static` and `target/debug/Static` relative to the workspace root, then falls back to `chainvet` on PATH."
+          "description": "Absolute path to the ChainVet analyzer binary. When empty, the extension searches `target/release/ChainVet` and `target/debug/ChainVet` relative to the workspace root, then falls back to `chainvet` or legacy `Static` on PATH."
         },
         "chainvet.mode": {
           "type": "string",
@@ -270,6 +270,41 @@
           "default": 512,
           "minimum": 128,
           "description": "Maximum generated tokens per finding review."
+        },
+        "chainvet.aiFallbackParser.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Use a local Ollama model to enrich the tree-sitter fallback parser when solc fails. The normal fallback parser is used if the model is unavailable."
+        },
+        "chainvet.aiFallbackParser.timeoutMs": {
+          "type": "number",
+          "default": 60000,
+          "minimum": 1000,
+          "description": "Per-file timeout, in milliseconds, for AI-assisted fallback parser enrichment."
+        },
+        "chainvet.aiFallbackParser.maxTokens": {
+          "type": "number",
+          "default": 1536,
+          "minimum": 256,
+          "description": "Maximum generated tokens per AI fallback parser response."
+        },
+        "chainvet.aiFallbackParser.maxSourceBytes": {
+          "type": "number",
+          "default": 24000,
+          "minimum": 1000,
+          "description": "Maximum Solidity source size, in bytes, sent to the AI fallback parser in a single full-file prompt before chunking is used."
+        },
+        "chainvet.aiFallbackParser.chunkBytes": {
+          "type": "number",
+          "default": 18000,
+          "minimum": 4000,
+          "description": "Approximate Solidity source bytes per AI fallback parser chunk for files larger than the full-file prompt limit."
+        },
+        "chainvet.aiFallbackParser.maxChunksPerFile": {
+          "type": "number",
+          "default": 24,
+          "minimum": 1,
+          "description": "Maximum number of chunks the AI fallback parser may inspect per Solidity file."
         }
       }
     }

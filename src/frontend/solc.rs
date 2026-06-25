@@ -236,8 +236,10 @@ fn should_retry_without_path_flags(output: &Output) -> bool {
 fn load_remappings(root: &Path) -> Result<Vec<String>> {
     let mut remappings = Vec::new();
 
-    if let Ok(value) = env::var("STATIC_SOLC_REMAPPINGS") {
-        remappings.extend(split_remapping_list(&value));
+    for key in ["CHAINVET_SOLC_REMAPPINGS", "STATIC_SOLC_REMAPPINGS"] {
+        if let Ok(value) = env::var(key) {
+            remappings.extend(split_remapping_list(&value));
+        }
     }
 
     let remap_path = root.join("remappings.txt");
