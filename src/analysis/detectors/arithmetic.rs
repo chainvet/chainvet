@@ -127,20 +127,23 @@ fn parse_first_version(s: &str) -> Option<(u8, u8, u8)> {
     Some((major, minor, patch))
 }
 
-/// Returns `true` when every source file in the AST targets Solidity ≥ 0.8.0.
-/// When no pragma is found, we conservatively assume < 0.8 (i.e., unsafe).
-fn all_files_are_0_8_plus(ast: &NormalizedAst) -> bool {
-    if ast.files.is_empty() {
-        return false;
-    }
-    ast.files.iter().all(|f| {
-        match extract_solidity_version(&f.source) {
-            // Solidity 0.8.0+ has built-in overflow/underflow checks
-            Some((major, minor, _)) => major > 0 || minor >= 8,
-            // No pragma found — be conservative, assume pre-0.8
-            None => false,
+/// Returns `true` when the project targets Solidity ≥ 0.8.0 (built-in overflow
+/// checks). True iff at least one file declares a ≥ 0.8 pragma and no file
+/// declares a < 0.8 pragma. Files with no parseable pragma are treated as
+/// neutral rather than pre-0.8: the frontend stores imported files with empty
+/// `source`, so the old "every file must parse ≥ 0.8" rule wrongly reported
+/// multi-file 0.8 projects (e.g. OpenZeppelin) as pre-0.8.
+pub(crate) fn all_files_are_0_8_plus(ast: &NormalizedAst) -> bool {
+    let mut saw_0_8_plus = false;
+    for f in &ast.files {
+        if let Some((major, minor, _)) = extract_solidity_version(&f.source) {
+            if major == 0 && minor < 8 {
+                return false; // a file explicitly targets < 0.8
+            }
+            saw_0_8_plus = true;
         }
-    })
+    }
+    saw_0_8_plus
 }
 
 /// Walk every expression reachable from a statement tree, calling `cb` for each.

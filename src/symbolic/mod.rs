@@ -131,11 +131,42 @@ pub fn analyze_with_options(
         combined_coverage = result.coverage;
     }
 
+    // In Solidity >= 0.8 the compiler inserts overflow/underflow checks (a
+    // violation reverts), so the engine's wrapping-bitvector overflow findings
+    // are false positives. The engine models arithmetic without this guard, so
+    // filter at the results boundary (confirmed on audited 0.8 code in the clean
+    // precision set). Use the resolved compiler version (authoritative) rather
+    // than per-file pragma parsing, which fails when a resolved import lacks a
+    // clean 0.8 pragma. No effect on pre-0.8 code (e.g. SolidiFI's 0.5.x corpus).
+    if crate::analysis::detectors::arithmetic::all_files_are_0_8_plus(&output.ast)
+        || compiler_is_0_8_plus(output.compiler.compiler_version.as_deref())
+    {
+        all_findings.retain(|finding| {
+            !matches!(
+                finding.kind,
+                crate::symbolic::results::SeVulnKind::IntegerOverflow
+                    | crate::symbolic::results::SeVulnKind::IntegerUnderflow
+            )
+        });
+    }
+
     Ok(SymbolicAnalysis {
         findings: all_findings,
         coverage: combined_coverage,
         total_states,
     })
+}
+
+/// True when the resolved compiler version is Solidity >= 0.8 (checked
+/// arithmetic). Parses the leading `major.minor` of e.g. "0.8.20".
+fn compiler_is_0_8_plus(version: Option<&str>) -> bool {
+    let Some(version) = version else { return false };
+    let mut parts = version
+        .trim_start_matches(['^', '>', '=', 'v', ' '])
+        .split('.');
+    let major: u32 = parts.next().and_then(|s| s.parse().ok()).unwrap_or(0);
+    let minor: u32 = parts.next().and_then(|s| s.parse().ok()).unwrap_or(0);
+    (major, minor) >= (0, 8)
 }
 
 #[cfg(test)]

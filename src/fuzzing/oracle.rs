@@ -18,8 +18,16 @@ pub fn check_all(
     findings.extend(check_timestamp_dependency(trace, tx_sequence));
     findings.extend(check_unchecked_call(trace, tx_sequence, ast));
     findings.extend(check_exception_disorder(trace, tx_sequence, ast));
-    findings.extend(check_integer_overflow(trace, tx_sequence));
-    findings.extend(check_integer_underflow(trace, tx_sequence));
+    // In Solidity >= 0.8 arithmetic is checked: an overflow reverts instead of
+    // wrapping, so the wrapping-based overflow/underflow oracles would be false
+    // positives (confirmed on audited 0.8 code in the clean precision set).
+    let arithmetic_unchecked = ast
+        .map(|a| !crate::analysis::detectors::arithmetic::all_files_are_0_8_plus(a))
+        .unwrap_or(true);
+    if arithmetic_unchecked {
+        findings.extend(check_integer_overflow(trace, tx_sequence));
+        findings.extend(check_integer_underflow(trace, tx_sequence));
+    }
     findings.extend(check_access_control(trace, tx_sequence, ast));
     findings.extend(check_arbitrary_write(trace, tx_sequence, ast));
     findings.extend(check_wrong_constructor_name(trace, tx_sequence));
