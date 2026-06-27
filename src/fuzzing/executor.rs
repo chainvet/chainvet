@@ -1042,6 +1042,17 @@ fn execute_instr(
                 });
             }
 
+            // A tracked low-level call result passed as an argument to any
+            // function (e.g. OpenZeppelin's `verifyCallResult(success, ret)`) is
+            // consumed, not silently dropped — mark it checked. Genuinely
+            // unchecked calls drop the result (no arg/condition use), so SolidiFI
+            // recall is unaffected.
+            for arg in args.iter() {
+                if let Some(call_id) = tracked_call_by_var.get(&value_key(arg)).copied() {
+                    checked_calls.insert(call_id);
+                }
+            }
+
             // Detect require(cond) — marks that the function checks conditions
             // If 1st arg is derived from a comparison with msg.sender, emit SenderChecked
             if callee_name == "require" || callee_name == "assert" {
