@@ -330,7 +330,7 @@ pub fn run_detectors(
     findings.extend(access_control::detect_all(ast, call_graph, taint_summaries));
 
     // ── Arithmetic category (4 rules) ────────────────────────────────────
-    findings.extend(arithmetic::detect_all(ast));
+    findings.extend(arithmetic::detect_all(ast, taint_summaries));
 
     // ── Block Manipulation category (3 rules) ────────────────────────────
     findings.extend(block_manipulation::detect_all(ast));

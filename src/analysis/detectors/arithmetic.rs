@@ -2,6 +2,9 @@
 //! 4 vulnerability detectors covering integer division before multiplication,
 //! integer overflow, integer underflow, unsafe array length assignment.
 
+use std::collections::{HashMap, HashSet};
+
+use crate::analysis::taint::TaintSummary;
 use crate::norm::{CallOption, CallTarget, ExprKind, NormalizedAst, Span, StmtKind};
 
 use super::{Finding, FindingKind, Severity};
@@ -9,15 +12,45 @@ use super::{Finding, FindingKind, Severity};
 // ── Entry point ──────────────────────────────────────────────────────────────
 
 /// Run all 4 Arithmetic detectors and return their findings.
-pub fn detect_all(ast: &NormalizedAst) -> Vec<Finding> {
+pub fn detect_all(ast: &NormalizedAst, taint: &[TaintSummary]) -> Vec<Finding> {
     let mut findings = Vec::new();
 
     findings.extend(detect_division_before_multiplication(ast)); // AR-01
-    findings.extend(detect_integer_overflow(ast)); // AR-02
-    findings.extend(detect_integer_underflow(ast)); // AR-03
+    findings.extend(detect_integer_overflow(ast, taint)); // AR-02
+    findings.extend(detect_integer_underflow(ast, taint)); // AR-03
     findings.extend(detect_unsafe_array_length_assignment(ast)); // AR-04
 
     findings
+}
+
+/// Build a function_id → tainted variable-name set lookup from taint summaries.
+fn taint_by_function(taint: &[TaintSummary]) -> HashMap<u32, HashSet<&str>> {
+    taint
+        .iter()
+        .map(|summary| {
+            (
+                summary.function_id,
+                summary.tainted_vars.iter().map(String::as_str).collect(),
+            )
+        })
+        .collect()
+}
+
+/// True when any identifier in the expression subtree is a tainted variable —
+/// i.e. the arithmetic operates on attacker-influenceable input.
+fn expr_touches_tainted(ast: &NormalizedAst, expr_id: u32, tainted: &HashSet<&str>) -> bool {
+    if tainted.is_empty() {
+        return false;
+    }
+    let mut hit = false;
+    for_each_expr(ast, expr_id, &mut |_id, expr| {
+        if let ExprKind::Ident(name) = &expr.kind {
+            if tainted.contains(name.as_str()) {
+                hit = true;
+            }
+        }
+    });
+    hit
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -363,16 +396,19 @@ fn detect_division_before_multiplication(ast: &NormalizedAst) -> Vec<Finding> {
 //   - We do not track variable types (could be signed vs. unsigned).
 //   - We look for SafeMath usage by call-target name.
 
-fn detect_integer_overflow(ast: &NormalizedAst) -> Vec<Finding> {
+fn detect_integer_overflow(ast: &NormalizedAst, taint: &[TaintSummary]) -> Vec<Finding> {
     let mut findings = Vec::new();
 
     // If all files are 0.8+, only flag unchecked blocks
     let is_0_8_plus = all_files_are_0_8_plus(ast);
+    let taint_map = taint_by_function(taint);
+    let empty: HashSet<&str> = HashSet::new();
 
     for func in &ast.functions {
         let Some(body) = func.body else { continue };
+        let tainted = taint_map.get(&func.id).unwrap_or(&empty);
 
-        for_each_expr_in_stmt(ast, body, &mut |_eid, expr| {
+        for_each_expr_in_stmt(ast, body, &mut |eid, expr| {
             // Look for addition or multiplication operators
             if let ExprKind::Binary { op, .. } = &expr.kind {
                 if op != "+" && op != "*" {
@@ -393,13 +429,14 @@ fn detect_integer_overflow(ast: &NormalizedAst) -> Vec<Finding> {
                             function: Some(func.id),
                         });
                     }
-                } else {
-                    // Pre-0.8: every addition/multiplication is potentially unsafe
+                } else if expr_touches_tainted(ast, eid, tainted) {
+                    // Pre-0.8: flag arithmetic on attacker-influenceable input only,
+                    // not every `+`/`*` (which floods FPs across the codebase).
                     findings.push(Finding {
                         kind: FindingKind::IntegerOverflow,
                         severity: Severity::High,
                         message: format!(
-                            "arithmetic `{op}` in Solidity < 0.8 — \
+                            "arithmetic `{op}` on untrusted input in Solidity < 0.8 — \
                             no automatic overflow protection; consider using SafeMath"
                         ),
                         span: expr.span,
@@ -422,15 +459,18 @@ fn detect_integer_overflow(ast: &NormalizedAst) -> Vec<Finding> {
 //   Symmetric to AR-02 — flag subtraction in pre-0.8 unconditionally, and
 //   in 0.8+ only inside `unchecked` blocks.
 
-fn detect_integer_underflow(ast: &NormalizedAst) -> Vec<Finding> {
+fn detect_integer_underflow(ast: &NormalizedAst, taint: &[TaintSummary]) -> Vec<Finding> {
     let mut findings = Vec::new();
 
     let is_0_8_plus = all_files_are_0_8_plus(ast);
+    let taint_map = taint_by_function(taint);
+    let empty: HashSet<&str> = HashSet::new();
 
     for func in &ast.functions {
         let Some(body) = func.body else { continue };
+        let tainted = taint_map.get(&func.id).unwrap_or(&empty);
 
-        for_each_expr_in_stmt(ast, body, &mut |_eid, expr| {
+        for_each_expr_in_stmt(ast, body, &mut |eid, expr| {
             // Look for subtraction operators ( `-` or `-=` handled as Assign)
             let is_sub = match &expr.kind {
                 ExprKind::Binary { op, .. } => op == "-",
@@ -453,12 +493,12 @@ fn detect_integer_underflow(ast: &NormalizedAst) -> Vec<Finding> {
                         function: Some(func.id),
                     });
                 }
-            } else {
-                // Pre-0.8: every subtraction is potentially unsafe
+            } else if expr_touches_tainted(ast, eid, tainted) {
+                // Pre-0.8: flag subtraction on attacker-influenceable input only.
                 findings.push(Finding {
                     kind: FindingKind::IntegerUnderflow,
                     severity: Severity::High,
-                    message: "subtraction in Solidity < 0.8 — \
+                    message: "subtraction on untrusted input in Solidity < 0.8 — \
                             no automatic underflow protection; consider using SafeMath"
                         .into(),
                     span: expr.span,

@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use crate::analysis::{ResolvedCallGraph, ResolvedTarget};
 use crate::cfg::{Block, CfgFunction};
 use crate::ir::{IrCallOption, IrInstr, IrPlace, IrValue, IrVar};
-use crate::norm::{CallOption, ExprKind, Function, NormalizedAst, Span, StmtKind};
+use crate::norm::{CallOption, ExprKind, Function, NormalizedAst, Span, StmtKind, Visibility};
 
 #[derive(Debug, Clone)]
 pub struct TaintSummary {
@@ -178,6 +178,16 @@ fn analyze_function(ast: &NormalizedAst, cfg: &CfgFunction, func: &Function) -> 
         }
     }
 
+    // Externally-reachable parameters are attacker-controlled, so treat them as
+    // untrusted sources. The msg.*/tx.*/block.* source set alone misses this,
+    // which left e.g. `function f(uint p) { x -= p; }` looking untainted.
+    let params_untrusted = matches!(func.visibility, Visibility::Public | Visibility::External);
+    if params_untrusted {
+        for param in &func.params {
+            names.add(param);
+        }
+    }
+
     let mut tainted_calls = HashSet::new();
     let mut temp_taint: HashMap<u32, bool> = HashMap::new();
     if names.names.is_empty() || cfg.blocks.is_empty() {
@@ -194,8 +204,22 @@ fn analyze_function(ast: &NormalizedAst, cfg: &CfgFunction, func: &Function) -> 
     let mut worklist: VecDeque<usize> = (0..cfg.blocks.len()).collect();
     let mut uses_source = false;
 
+    // Seed externally-reachable parameters as tainted at function entry.
+    let mut entry_taint = BitSet::new(names.names.len());
+    if params_untrusted {
+        for param in &func.params {
+            if let Some(idx) = names.idx(param) {
+                entry_taint.set(idx);
+            }
+        }
+    }
+
     while let Some(block_idx) = worklist.pop_front() {
-        let mut in_set = BitSet::new(names.names.len());
+        let mut in_set = if preds[block_idx].is_empty() {
+            entry_taint.clone()
+        } else {
+            BitSet::new(names.names.len())
+        };
         for pred in &preds[block_idx] {
             in_set.union_from(&out_sets[*pred]);
         }
