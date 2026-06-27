@@ -79,7 +79,7 @@ impl CoverageTracker {
 }
 
 /// Immutable coverage snapshot for reporting.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Default, Serialize)]
 pub struct CoverageReport {
     pub blocks_visited: usize,
     pub blocks_total: usize,

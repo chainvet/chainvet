@@ -2,11 +2,12 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 
 use serde::Serialize;
 
+use crate::analysis::detectors::Finding;
 use crate::core::artifacts::HybridReport;
 use crate::fuzzing::types::{FuzzFinding, FuzzHybridStats};
 use crate::norm::NormalizedAst;
 use crate::report::OutputFormat;
-use crate::symbolic::results::{coverage::CoverageReport, SeFinding};
+use crate::symbolic::results::{SeFinding, coverage::CoverageReport};
 use crate::util::error::{Error, Result};
 
 use super::seeding::HybridSeed;
@@ -44,33 +45,38 @@ pub struct HybridFindingRow {
 impl HybridFindingRow {
     pub fn collect(
         ast: &NormalizedAst,
-        targets: &[HybridTarget],
+        static_findings: &[Finding],
         se_findings: &[SeFinding],
         fuzz_findings: &[FuzzFinding],
     ) -> Vec<Self> {
         let mut rows = Vec::new();
-        let static_kinds = targets
+        let static_kinds = static_findings
             .iter()
-            .map(|target| target.kind.clone())
+            .map(|finding| finding.kind.as_str().to_string())
             .collect::<HashSet<_>>();
         let symbolic_kinds = se_findings
             .iter()
             .map(|finding| finding.kind.as_str().to_string())
             .collect::<HashSet<_>>();
 
-        for target in targets {
+        // Surface the full static detector output (not just the high-signal SE
+        // targets) so static-only detections — TOD especially — reach the report.
+        for finding in static_findings {
             rows.push(Self {
                 provenance: "static".to_string(),
                 provenances: vec!["static".to_string()],
-                kind: target.kind.clone(),
-                severity: Some(target.severity.clone()),
+                kind: finding.kind.as_str().to_string(),
+                severity: Some(finding.severity.as_str().to_string()),
                 confidence: None,
-                category: category_for_hybrid_kind(&target.kind).map(str::to_string),
-                message: target.target_reason.clone(),
-                function_id: target.function_id,
-                file: target.file.clone(),
-                start: Some(target.span.start),
-                end: Some(target.span.end),
+                category: Some(finding.kind.category().as_str().to_string()),
+                message: finding.message.clone(),
+                function_id: finding.function,
+                file: ast
+                    .files
+                    .get(finding.span.file as usize)
+                    .map(|file| file.path.clone()),
+                start: Some(finding.span.start),
+                end: Some(finding.span.end),
             });
         }
 
@@ -84,7 +90,10 @@ impl HybridFindingRow {
                 category: Some(finding.category().as_str().to_string()),
                 message: finding.message.clone(),
                 function_id: finding.function_id,
-                file: ast.files.get(finding.span.file as usize).map(|file| file.path.clone()),
+                file: ast
+                    .files
+                    .get(finding.span.file as usize)
+                    .map(|file| file.path.clone()),
                 start: Some(finding.span.start),
                 end: Some(finding.span.end),
             });
@@ -92,12 +101,19 @@ impl HybridFindingRow {
 
         for finding in fuzz_findings {
             let canonical = finding.kind.canonical_str().to_string();
-            let provenance = if static_kinds.contains(&canonical) || symbolic_kinds.contains(&canonical)
-            {
-                "hybrid-confirmed"
-            } else {
-                "fuzz"
-            };
+            let provenance =
+                if static_kinds.contains(&canonical) || symbolic_kinds.contains(&canonical) {
+                    "hybrid-confirmed"
+                } else {
+                    "fuzz"
+                };
+            // Fuzz findings carry no precise span, but they know their function.
+            // Resolve the owning function's span so every finding reports a
+            // (function-granular) location instead of nothing.
+            let function_id = extract_function_id_from_message(&finding.message);
+            let function_span = function_id
+                .and_then(|id| ast.functions.get(id as usize))
+                .map(|function| function.span);
             rows.push(Self {
                 provenance: provenance.to_string(),
                 provenances: vec![provenance.to_string()],
@@ -106,10 +122,12 @@ impl HybridFindingRow {
                 confidence: Some(finding.kind.confidence().as_str().to_string()),
                 category: Some(finding.kind.category().to_string()),
                 message: finding.message.clone(),
-                function_id: extract_function_id_from_message(&finding.message),
-                file: None,
-                start: None,
-                end: None,
+                function_id,
+                file: function_span
+                    .and_then(|span| ast.files.get(span.file as usize))
+                    .map(|file| file.path.clone()),
+                start: function_span.map(|span| span.start),
+                end: function_span.map(|span| span.end),
             });
         }
 

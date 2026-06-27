@@ -47,8 +47,18 @@ fn main() {
 
 fn print_usage() {
     eprintln!(
-        "usage: static-analyzer --web | [--static|--symbolic|--fuzzing|--hybrid] <path> [--json|--text|--format <json|text>] [--dump-ir <text|json|tuple>]"
+        "usage: static-analyzer --web | [--static|--symbolic|--fuzzing|--hybrid] <path> [--json|--text|--format <json|text>] [--dump-ir <text|json|tuple>]\n\
+         hybrid budget overrides: [--max-epochs N] [--total-runtime-ms N] [--fuzz-iters N] [--fuzz-epoch-ms N] [--se-timeout-ms N] [--se-max-depth N] [--max-se-assists N] [--fuzz-seed N]"
     );
+}
+
+fn parse_next<T>(value: Option<String>, flag: &str) -> Result<T>
+where
+    T: std::str::FromStr,
+{
+    let raw = value.ok_or_else(|| Error::msg(format!("missing value for {flag}")))?;
+    raw.parse::<T>()
+        .map_err(|_| Error::msg(format!("invalid value for {flag}: {raw}")))
 }
 
 fn run() -> Result<()> {
@@ -58,6 +68,7 @@ fn run() -> Result<()> {
     let mut mode = AnalysisMode::Static;
     let mut mode_flag = None::<&'static str>;
     let mut web_mode = false;
+    let mut hybrid_budget = hybrid::HybridBudget::default();
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         if let Some(next_mode) = AnalysisMode::from_flag(&arg) {
@@ -121,6 +132,26 @@ fn run() -> Result<()> {
                     mode_flag = Some("--fuzz");
                 }
             }
+            "--max-epochs" => hybrid_budget.max_epochs = parse_next(args.next(), "--max-epochs")?,
+            "--total-runtime-ms" => {
+                hybrid_budget.total_runtime_ms = parse_next(args.next(), "--total-runtime-ms")?
+            }
+            "--fuzz-iters" => {
+                hybrid_budget.fuzz_iters_per_epoch = parse_next(args.next(), "--fuzz-iters")?
+            }
+            "--fuzz-epoch-ms" => {
+                hybrid_budget.fuzz_epoch_ms = parse_next(args.next(), "--fuzz-epoch-ms")?
+            }
+            "--se-timeout-ms" => {
+                hybrid_budget.se_timeout_ms = parse_next(args.next(), "--se-timeout-ms")?
+            }
+            "--se-max-depth" => {
+                hybrid_budget.se_max_depth = parse_next(args.next(), "--se-max-depth")?
+            }
+            "--max-se-assists" => {
+                hybrid_budget.max_se_assists = parse_next(args.next(), "--max-se-assists")?
+            }
+            "--fuzz-seed" => hybrid_budget.fuzz_seed = parse_next(args.next(), "--fuzz-seed")?,
             _ => {
                 if arg.starts_with('-') {
                     return Err(Error::msg(format!("unknown flag: {arg}")));
@@ -174,7 +205,7 @@ fn run() -> Result<()> {
         }
         AnalysisMode::Hybrid => {
             let output = frontend::load_project(&input)?;
-            hybrid::run(&output, format)?;
+            hybrid::run_with_budget(&output, &hybrid_budget, format)?;
         }
     }
 
