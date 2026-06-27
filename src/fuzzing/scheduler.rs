@@ -69,15 +69,30 @@ impl CoverageMap {
 
 /// Update the corpus with a new individual if it provides new coverage.
 /// Returns true if the individual was added.
+///
+/// Admission is gated on a genuinely **new edge** (first time seen), not on a
+/// hit-count bucket change. Admitting on every bucket change (count 1→2→3…)
+/// lets the corpus explode to tens of thousands of entries, which makes the
+/// O(n) selection / O(n²) minimization dominate and starves the fuzz loop of
+/// effective iterations. The hit-count buckets are still maintained (via
+/// `coverage.update`) so `assign_energy` keeps its rare-edge weighting.
 pub fn update_corpus(
     corpus: &mut Corpus,
     individual: &Individual,
     trace: &ExecutionTrace,
     coverage: &mut CoverageMap,
 ) -> bool {
-    let new_signals = coverage.update(trace);
+    // Count edges never seen before, *before* folding this trace into the map.
+    let new_edges = trace
+        .coverage
+        .iter()
+        .filter(|edge| !coverage.buckets.contains_key(*edge))
+        .count();
 
-    if new_signals > 0 || corpus.entries.is_empty() {
+    // Keep hit-count buckets current for energy assignment regardless.
+    coverage.update(trace);
+
+    if new_edges > 0 || corpus.entries.is_empty() {
         corpus.entries.push(CorpusEntry {
             individual: individual.clone(),
             coverage: trace.coverage.clone(),
@@ -257,10 +272,12 @@ mod tests {
         assert!(added);
         assert_eq!(corpus.entries.len(), 1);
 
-        // Same coverage — bucket change on second hit means it IS added
-        // (This is an improvement: hit-count based coverage is more sensitive)
-        let _added = update_corpus(&mut corpus, &ind, &trace, &mut coverage);
-        // The bucket changes from 1→2. So it should be added.
+        // Same coverage — no NEW edge, so it is NOT admitted again (admission is
+        // gated on first-seen edges to keep the corpus bounded; the hit-count
+        // bucket still increments internally for energy weighting).
+        let added_again = update_corpus(&mut corpus, &ind, &trace, &mut coverage);
+        assert!(!added_again);
+        assert_eq!(corpus.entries.len(), 1);
     }
 
     #[test]
