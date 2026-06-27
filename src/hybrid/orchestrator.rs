@@ -82,7 +82,11 @@ pub fn run(output: &FrontendOutput, budget: &HybridBudget, format: OutputFormat)
     let mut fuzz_ms_spent: u64 = 0;
     for epoch in 1..=budget.max_epochs {
         epochs_run = epoch;
-        if fuzz_ms_spent >= budget.total_runtime_ms {
+        // Stop if the fuzz budget is spent or the overall hard wall-clock ceiling
+        // is hit (bounds pathological accumulation under machine load).
+        if fuzz_ms_spent >= budget.total_runtime_ms
+            || run_start.elapsed().as_millis() as u64 >= budget.hard_cap_ms
+        {
             break;
         }
         let epoch_ms = budget
@@ -113,7 +117,12 @@ pub fn run(output: &FrontendOutput, budget: &HybridBudget, format: OutputFormat)
 
         let stalled = stall_run >= budget.stall_epochs_threshold;
 
-        if stalled && se_assists < budget.max_se_assists && !unmet_unsolved.is_empty() {
+        let within_hard_cap = (run_start.elapsed().as_millis() as u64) < budget.hard_cap_ms;
+        if stalled
+            && se_assists < budget.max_se_assists
+            && !unmet_unsolved.is_empty()
+            && within_hard_cap
+        {
             let analysis = run_se_assist(output, budget, &unmet_unsolved)?;
             total_states += analysis.total_states;
             let seeds = build_hybrid_seeds(ast, &abis, &analysis.findings);

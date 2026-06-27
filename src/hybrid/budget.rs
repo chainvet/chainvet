@@ -19,8 +19,14 @@ pub const HYBRID_FUZZ_SEED: u64 = 0x5EED_C0DE_5EED_C0DE;
 pub struct HybridBudget {
     /// Maximum number of fuzz epochs in the control loop.
     pub max_epochs: u32,
-    /// Hard wall-clock cap for the whole hybrid run (fuzz + SE assists).
+    /// Wall-clock budget for fuzzing specifically (SE time does not count against
+    /// it, so a long SE pass cannot starve the fuzzer).
     pub total_runtime_ms: u64,
+    /// Hard overall wall-clock ceiling for the whole hybrid run. Checked between
+    /// epochs and before each SE assist so no contract can run unbounded if the
+    /// machine is under load (the per-call SE/fuzz timeouts handle the steady
+    /// state; this bounds pathological accumulation).
+    pub hard_cap_ms: u64,
     /// Upper bound on fuzz iterations per epoch (time may cut it short).
     pub fuzz_iters_per_epoch: usize,
     /// Per-epoch wall-clock cap for a fuzz slice.
@@ -49,6 +55,7 @@ impl Default for HybridBudget {
         Self {
             max_epochs: 10,
             total_runtime_ms: 20_000,
+            hard_cap_ms: 120_000,
             fuzz_iters_per_epoch: 6_000,
             fuzz_epoch_ms: 2_000,
 

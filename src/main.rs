@@ -48,7 +48,7 @@ fn main() {
 fn print_usage() {
     eprintln!(
         "usage: static-analyzer --web | [--static|--symbolic|--fuzzing|--hybrid] <path> [--json|--text|--format <json|text>] [--dump-ir <text|json|tuple>]\n\
-         hybrid budget overrides: [--max-epochs N] [--total-runtime-ms N] [--fuzz-iters N] [--fuzz-epoch-ms N] [--se-timeout-ms N] [--se-max-depth N] [--max-se-assists N] [--fuzz-seed N]"
+         hybrid budget overrides: [--max-epochs N] [--total-runtime-ms N] [--hard-cap-ms N] [--fuzz-iters N] [--fuzz-epoch-ms N] [--se-timeout-ms N] [--se-max-depth N] [--max-se-assists N] [--fuzz-seed N]"
     );
 }
 
@@ -135,6 +135,9 @@ fn run() -> Result<()> {
             "--max-epochs" => hybrid_budget.max_epochs = parse_next(args.next(), "--max-epochs")?,
             "--total-runtime-ms" => {
                 hybrid_budget.total_runtime_ms = parse_next(args.next(), "--total-runtime-ms")?
+            }
+            "--hard-cap-ms" => {
+                hybrid_budget.hard_cap_ms = parse_next(args.next(), "--hard-cap-ms")?
             }
             "--fuzz-iters" => {
                 hybrid_budget.fuzz_iters_per_epoch = parse_next(args.next(), "--fuzz-iters")?
