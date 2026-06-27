@@ -127,23 +127,23 @@ fn parse_first_version(s: &str) -> Option<(u8, u8, u8)> {
     Some((major, minor, patch))
 }
 
-/// Returns `true` when the project targets Solidity ≥ 0.8.0 (built-in overflow
-/// checks). True iff at least one file declares a ≥ 0.8 pragma and no file
-/// declares a < 0.8 pragma. Files with no parseable pragma are treated as
-/// neutral rather than pre-0.8: the frontend stores imported files with empty
-/// `source`, so the old "every file must parse ≥ 0.8" rule wrongly reported
-/// multi-file 0.8 projects (e.g. OpenZeppelin) as pre-0.8.
+/// Returns `true` when the project resolves to Solidity ≥ 0.8.0 (built-in
+/// overflow checks). The resolved compiler version is the *highest* lower-bound
+/// across files: solc must satisfy every file's `^`/`>=` constraint, so a mix of
+/// `>=0.4.16` (an interface) and `^0.8.20` (the contract) compiles as 0.8.x.
+/// Taking the max — not the min — is what makes range pragmas (e.g. OpenZeppelin)
+/// report correctly; the old per-file rule wrongly saw `>=0.4.16` as pre-0.8.
 pub(crate) fn all_files_are_0_8_plus(ast: &NormalizedAst) -> bool {
-    let mut saw_0_8_plus = false;
+    let mut resolved: Option<(u8, u8, u8)> = None;
     for f in &ast.files {
-        if let Some((major, minor, _)) = extract_solidity_version(&f.source) {
-            if major == 0 && minor < 8 {
-                return false; // a file explicitly targets < 0.8
-            }
-            saw_0_8_plus = true;
+        if let Some(version) = extract_solidity_version(&f.source) {
+            resolved = Some(match resolved {
+                Some(current) if current >= version => current,
+                _ => version,
+            });
         }
     }
-    saw_0_8_plus
+    matches!(resolved, Some((major, minor, _)) if major > 0 || minor >= 8)
 }
 
 /// Walk every expression reachable from a statement tree, calling `cb` for each.

@@ -371,11 +371,15 @@ fn is_solidity_file(path: &Path) -> bool {
 }
 
 fn infer_compiler_info(files: &[SourceFile]) -> CompilerInfo {
+    // The resolved compiler version is the *highest* lower-bound across files:
+    // solc must satisfy every file's `^`/`>=` constraint. Taking the max (not the
+    // min) handles range pragmas — e.g. a project mixing an interface's
+    // `>=0.4.16` with a contract's `^0.8.20` resolves to 0.8.x, not 0.4.x.
     let mut best_version = None::<(u64, u64, u64)>;
     for file in files {
         if let Some(version) = first_pragma_version(&file.source) {
             best_version = Some(match best_version {
-                Some(existing) if existing <= version => existing,
+                Some(existing) if existing >= version => existing,
                 _ => version,
             });
         }
