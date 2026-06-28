@@ -42,6 +42,15 @@ pub fn run(output: &FrontendOutput, budget: &HybridBudget, format: OutputFormat)
         .collect();
 
     let abis = fuzzing::types::extract_abis(ast, &output.compiler);
+    let all_callable: HashSet<u32> = abis
+        .iter()
+        .flat_map(|abi| {
+            abi.functions
+                .iter()
+                .filter(|f| f.is_fuzz_callable())
+                .map(|f| f.id)
+        })
+        .collect();
     let mut session = FuzzSession::new(output, budget.fuzz_config(Vec::new()));
 
     let run_start = Instant::now();
@@ -68,22 +77,36 @@ pub fn run(output: &FrontendOutput, budget: &HybridBudget, format: OutputFormat)
         pending_seeds = seeds.iter().map(|s| s.individual.clone()).collect();
         all_seeds.extend(seeds);
         all_se_findings.extend(analysis.findings);
-        se_done_functions.extend(target_function_ids.iter().copied());
+        // If the upfront pass was untargeted (no high-signal sinks), it already
+        // explored every function, so there is nothing left for the on-stall
+        // assists. If it was targeted, only those sinks are done — leaving the
+        // uncovered functions for the fuzzer-stall assists to crack.
+        if target_function_ids.is_empty() {
+            se_done_functions.extend(all_callable.iter().copied());
+        } else {
+            se_done_functions.extend(target_function_ids.iter().copied());
+        }
         se_assists += 1;
     }
 
-    // --- Fuzz epochs with on-stall SE assists ---
-    // `total_runtime_ms` budgets the FUZZ loop specifically: we accumulate only
-    // the time spent fuzzing, so a long upfront/on-stall SE pass can never starve
-    // the fuzzer of its iterations (the bug that left some contracts with whole
-    // functions unfuzzed). SE time is bounded separately by se_timeout_ms ×
-    // max_se_assists.
+    // --- Adaptive ("smart") fuzz epochs ---
+    // The epoch count is decided per contract, not fixed. Each slice returns its
+    // new-edge delta: while the fuzzer keeps gaining coverage we keep running
+    // (up to max_epochs / the time budget); when it plateaus we stop. On a stall
+    // we try one SE assist over the still-uncovered functions, but if the epoch
+    // right after an assist still makes no progress, SE isn't unlocking this
+    // contract (e.g. deep code gated by multi-transaction state), so we stop
+    // spending assists and end the loop. Empirically this converges in ~1-3
+    // epochs on contracts that saturate or are stuck, while leaving headroom for
+    // contracts that genuinely keep progressing. `total_runtime_ms` budgets fuzz
+    // time only; `hard_cap_ms` is the overall wall-clock ceiling; `max_epochs`
+    // (CLI-overridable) is the hard cap on epoch count.
     let mut stall_run: u32 = 0;
     let mut fuzz_ms_spent: u64 = 0;
+    let mut just_assisted = false;
+    let mut assists_useful = true;
     for epoch in 1..=budget.max_epochs {
         epochs_run = epoch;
-        // Stop if the fuzz budget is spent or the overall hard wall-clock ceiling
-        // is hit (bounds pathological accumulation under machine load).
         if fuzz_ms_spent >= budget.total_runtime_ms
             || run_start.elapsed().as_millis() as u64 >= budget.hard_cap_ms
         {
@@ -101,39 +124,49 @@ pub fn run(output: &FrontendOutput, budget: &HybridBudget, format: OutputFormat)
             time_to_first_finding_ms = Some(run_start.elapsed().as_millis());
         }
 
-        if stats.delta_edges >= budget.min_coverage_delta {
+        let progressed = stats.delta_edges >= budget.min_coverage_delta;
+        if progressed {
             stall_run = 0;
         } else {
             stall_run += 1;
         }
+        // If the epoch right after an SE assist still didn't progress, the
+        // injected witnesses didn't unlock coverage here — stop spending assists.
+        if just_assisted && !progressed {
+            assists_useful = false;
+        }
+        just_assisted = false;
 
-        // Which selected targets are still uncovered and not yet SE'd?
+        // Still making progress — keep going (this is what makes the count adaptive).
+        if stall_run < budget.stall_epochs_threshold {
+            continue;
+        }
+
+        // Plateaued. Try one SE assist over the uncovered frontier, but only while
+        // assists are still paying off; otherwise the loop has converged — stop.
         let covered = session.covered_function_ids();
-        let unmet_unsolved: HashSet<u32> = target_function_ids
+        let uncovered: HashSet<u32> = all_callable
             .iter()
             .filter(|id| !covered.contains(id) && !se_done_functions.contains(id))
             .copied()
             .collect();
-
-        let stalled = stall_run >= budget.stall_epochs_threshold;
-
         let within_hard_cap = (run_start.elapsed().as_millis() as u64) < budget.hard_cap_ms;
-        if stalled
+        if assists_useful
             && se_assists < budget.max_se_assists
-            && !unmet_unsolved.is_empty()
+            && !uncovered.is_empty()
             && within_hard_cap
         {
-            let analysis = run_se_assist(output, budget, &unmet_unsolved)?;
+            let analysis = run_se_assist(output, budget, &uncovered)?;
             total_states += analysis.total_states;
             let seeds = build_hybrid_seeds(ast, &abis, &analysis.findings);
             pending_seeds = seeds.iter().map(|s| s.individual.clone()).collect();
             all_seeds.extend(seeds);
             all_se_findings.extend(analysis.findings);
-            se_done_functions.extend(unmet_unsolved);
+            se_done_functions.extend(uncovered);
             se_assists += 1;
+            just_assisted = true;
             stall_run = 0; // let the injected seeds breathe
-        } else if stalled && unmet_unsolved.is_empty() {
-            // Stalled with nothing left for SE to unlock — stop early.
+        } else {
             break;
         }
     }

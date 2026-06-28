@@ -41,7 +41,9 @@ pub struct HybridBudget {
 
     /// Safety cap on SE assists; the real gate is remaining `total_runtime_ms`.
     pub max_se_assists: u32,
-    /// Number of low-progress epochs before the loop is considered stalled.
+    /// Consecutive low-progress epochs before the adaptive loop treats the
+    /// contract as plateaued (1 = stop as soon as an epoch adds no new coverage;
+    /// a genuinely-progressing contract keeps the counter at 0 and runs on).
     pub stall_epochs_threshold: u32,
     /// Minimum new-edge delta for an epoch to count as progress.
     pub min_coverage_delta: usize,
@@ -66,7 +68,7 @@ impl Default for HybridBudget {
             se_max_loop_unrolling: 2,
 
             max_se_assists: 6,
-            stall_epochs_threshold: 2,
+            stall_epochs_threshold: 1,
             min_coverage_delta: 1,
 
             fuzz_seed: HYBRID_FUZZ_SEED,
