@@ -174,24 +174,6 @@ impl<'a> FuzzSession<'a> {
         self.global_coverage.count()
     }
 
-    /// Per-function (function_id, covered_blocks, total_blocks). Diagnostic:
-    /// lets us tell whether a missed bug's function was under-covered (unreached
-    /// blocks) vs. fully covered (reached but undetected).
-    pub fn function_block_coverage(&self) -> Vec<(u32, usize, usize)> {
-        let mut covered: std::collections::HashMap<u32, std::collections::HashSet<u32>> =
-            std::collections::HashMap::new();
-        for (function_id, block) in self.global_coverage.visited_set() {
-            covered.entry(function_id).or_default().insert(block);
-        }
-        self.cfgs
-            .iter()
-            .map(|cfg| {
-                let cov = covered.get(&cfg.id).map(|s| s.len()).unwrap_or(0);
-                (cfg.id, cov, cfg.blocks.len())
-            })
-            .collect()
-    }
-
     /// Run one slice: optionally inject `extra_seeds`, then run up to
     /// `max_iterations` per contract continuing from the carried state.
     /// Returns the coverage delta for stall detection.

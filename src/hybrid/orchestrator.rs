@@ -138,21 +138,6 @@ pub fn run(output: &FrontendOutput, budget: &HybridBudget, format: OutputFormat)
         }
     }
 
-    // Diagnostic (env-gated): dump per-function block coverage + function spans
-    // so we can tell whether missed bugs are unreached vs. reached-but-undetected.
-    if std::env::var("CHAINVET_DUMP_COV").is_ok() {
-        let fbc = session.function_block_coverage();
-        let spans: Vec<(u32, u32, u32)> = ast
-            .functions
-            .iter()
-            .map(|f| (f.id, f.span.start, f.span.end))
-            .collect();
-        eprintln!(
-            "COVDUMP {}",
-            serde_json::json!({ "fbc": fbc, "spans": spans })
-        );
-    }
-
     let fuzz_report = session.finalize();
     dedup_se_findings(&mut all_se_findings);
 
