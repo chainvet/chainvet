@@ -76,6 +76,11 @@ pub struct FuzzSession<'a> {
     /// force-added to the corpus when it triggers a *novel* finding (otherwise a
     /// constantly-firing oracle, e.g. tx-origin, would explode the corpus).
     seen_finding_hashes: std::collections::HashSet<String>,
+    /// Concrete values observed during execution (storage values + mapping keys
+    /// like a `proposalId`), fed back into the value pool so later transactions
+    /// can use them as arguments — the standard fix for the stateful-fuzzing wall
+    /// where `f(runtimeId)` reverts because the fuzzer can't guess `runtimeId`.
+    harvested: std::collections::HashSet<u128>,
     contract_states: Vec<ContractFuzzState>,
     seeded_inputs_executed: usize,
 }
@@ -149,6 +154,7 @@ impl<'a> FuzzSession<'a> {
             global_coverage: CoverageMap::new(),
             all_findings: Vec::new(),
             seen_finding_hashes: std::collections::HashSet::new(),
+            harvested: std::collections::HashSet::new(),
             contract_states,
             seeded_inputs_executed: 0,
         }
@@ -268,6 +274,26 @@ impl<'a> FuzzSession<'a> {
             &self.abis[abi_index],
             &self.deps,
         );
+
+        // Value feedback: harvest concrete runtime values (mapping keys like a
+        // proposalId, and stored values) into the value pool so later txs can use
+        // them as arguments. Capped to keep generation cheap.
+        if self.dictionary.values.len() < 1024 {
+            for (key, val) in &trace.final_state {
+                if let Some(index) = key.split('#').nth(1) {
+                    if let Ok(v) = index.parse::<u128>() {
+                        if v != 0 && self.harvested.insert(v) {
+                            self.dictionary.values.push(v);
+                        }
+                    }
+                }
+                let stored = val.as_uint();
+                if stored != 0 && self.harvested.insert(stored) {
+                    self.dictionary.values.push(stored);
+                }
+            }
+        }
+
         let mut findings = oracle::check_all(&trace, &ind.transactions, Some(&self.output.ast));
         findings.retain(|finding| keep_locked_ether_finding(finding, locked_ether_candidate));
 
