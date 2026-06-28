@@ -466,7 +466,12 @@ fn execute_instr(
                         is_wrong_constructor_runtime_candidate(function_id, ast, &output.compiler);
                     let sender_derived = value_is_sender_derived(src, temp_origins)
                         || value_name(src).contains("sender");
-                    state.insert(name.clone(), val);
+                    // Key mapping writes by resolved runtime index so per-account
+                    // balances are tracked separately (enables the conservation
+                    // oracle). Scalars fall back to their plain name.
+                    let store_key = runtime_place_key(dest, state, locals, contract_name)
+                        .unwrap_or_else(|| name.clone());
+                    state.insert(store_key, val);
                     trace.events.push(TraceEvent {
                         function_id,
                         kind: TraceEventKind::StorageWrite {
@@ -520,8 +525,12 @@ fn execute_instr(
                     .entry(dest_key.clone())
                     .or_default()
                     .insert(TempOrigin::StorageDerived);
+                // Read mapping entries by resolved runtime index (consistent with
+                // the Store path) so per-account balances read back faithfully.
+                let read_key = runtime_place_key(src, state, locals, contract_name)
+                    .unwrap_or_else(|| src_place_name.clone());
                 state
-                    .get(&src_place_name)
+                    .get(&read_key)
                     .cloned()
                     .unwrap_or(FuzzValue::Uint(0))
             } else {
@@ -1813,6 +1822,52 @@ fn var_key(var: &IrVar) -> String {
         IrVar::Named(name) => name.clone(),
         IrVar::Temp(id) => format!("$t{}", id),
     }
+}
+
+/// Stable string for a resolved mapping index, so `balances[0]` and
+/// `balances[1]` get distinct storage keys (per-account state).
+fn fuzz_index_key(value: &FuzzValue) -> String {
+    match value {
+        FuzzValue::Uint(v) => v.to_string(),
+        FuzzValue::Int(v) => v.to_string(),
+        FuzzValue::Bool(b) => b.to_string(),
+        FuzzValue::Address(a) => format!("a{a}"),
+        FuzzValue::Bytes(b) => format!("0x{}", hex_lower(b)),
+        FuzzValue::StringVal(s) => s.clone(),
+    }
+}
+
+/// Storage key that distinguishes mapping entries by their *resolved runtime
+/// index* (`balances#<key>`), instead of collapsing the whole mapping to its
+/// root name. Scalar places fall back to their plain name, so existing state
+/// keying is unchanged for non-mapping vars.
+fn runtime_place_key(
+    place: &IrPlace,
+    state: &SimState,
+    locals: &HashMap<String, FuzzValue>,
+    contract_name: Option<&str>,
+) -> Option<String> {
+    match place {
+        IrPlace::Index {
+            base, index, root, ..
+        } => {
+            let var = root.clone().unwrap_or_else(|| value_name(base));
+            let key = match index {
+                Some(idx) => fuzz_index_key(&resolve_value(idx, state, locals)),
+                None => "_".to_string(),
+            };
+            Some(format!("{var}#{key}"))
+        }
+        _ => place_name(place, contract_name),
+    }
+}
+
+fn hex_lower(bytes: &[u8]) -> String {
+    let mut s = String::with_capacity(bytes.len() * 2);
+    for b in bytes {
+        s.push_str(&format!("{b:02x}"));
+    }
+    s
 }
 
 fn value_name(value: &IrValue) -> String {

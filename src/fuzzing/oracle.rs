@@ -46,7 +46,72 @@ pub fn check_all(
     findings.extend(check_cryptographic(trace, tx_sequence));
     findings.extend(check_unprotected_ether_withdrawal(trace, tx_sequence, ast));
     findings.extend(check_locked_ether(trace, tx_sequence));
+    findings.extend(check_supply_conservation(trace, tx_sequence, ast));
     findings
+}
+
+/// ERC-20 supply conservation invariant: the sum of per-account balances must
+/// equal `totalSupply` after any sequence of transactions. A divergence means a
+/// transaction created or destroyed tokens outside supply accounting (e.g. a
+/// `transfer` that credits the receiver without debiting the sender). Relies on
+/// the executor keying mapping state by resolved runtime index.
+fn check_supply_conservation(
+    trace: &ExecutionTrace,
+    tx_sequence: &[Transaction],
+    ast: Option<&NormalizedAst>,
+) -> Vec<FuzzFinding> {
+    let Some(ast) = ast else {
+        return Vec::new();
+    };
+    let balance_var = ast.state_vars.iter().find(|v| {
+        v.name.to_ascii_lowercase().contains("balance")
+            && v.type_string
+                .as_deref()
+                .map(|t| t.contains("mapping"))
+                .unwrap_or(false)
+    });
+    let supply_var = ast
+        .state_vars
+        .iter()
+        .find(|v| v.name.to_ascii_lowercase().contains("totalsupply"));
+    let (Some(balance_var), Some(supply_var)) = (balance_var, supply_var) else {
+        return Vec::new();
+    };
+
+    let prefix = format!("{}#", balance_var.name);
+    let sum: u128 = trace
+        .final_state
+        .iter()
+        .filter(|(k, _)| k.starts_with(&prefix))
+        .map(|(_, v)| v.as_uint())
+        .sum();
+    let total = trace
+        .final_state
+        .get(&supply_var.name)
+        .map(|v| v.as_uint())
+        .unwrap_or(0);
+
+    // Only flag the inflation direction: more tokens in balances than the total
+    // supply (tokens created in an account without supply accounting — the
+    // classic mint-without-bookkeeping bug). The opposite direction (sum < total)
+    // is mostly the abstract executor under-modeling balances on complex real
+    // contracts, so flagging it produces false positives. Also require a
+    // non-reverted trace so partial state from a reverted sequence isn't judged.
+    if sum > total && !trace.reverted {
+        let hash = hash_finding("supply-conservation", 0, &format!("{sum}:{total}"));
+        return vec![FuzzFinding {
+            kind: FuzzFindingKind::InvariantViolation,
+            severity: FuzzSeverity::High,
+            message: format!(
+                "ERC-20 supply conservation violated: sum of `{}` ({}) exceeds `{}` ({}); \
+                a transaction creates tokens outside supply accounting",
+                balance_var.name, sum, supply_var.name, total
+            ),
+            tx_sequence: tx_sequence.to_vec(),
+            trace_hash: hash,
+        }];
+    }
+    Vec::new()
 }
 
 /// Reentrancy: callback-capable external call followed by a storage write in the same function.
