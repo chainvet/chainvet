@@ -12,8 +12,8 @@ use crate::fuzzing::mutator;
 use crate::fuzzing::oracle;
 use crate::fuzzing::scheduler::{self, CoverageMap};
 use crate::fuzzing::types::{
-    ContractAbi, Corpus, DependencyMap, Dictionary, FuzzConfig, FuzzFinding, FuzzFindingKind,
-    FuzzHybridStats, FuzzReport, FuzzSeverity, build_dependency_map, extract_abis,
+    build_dependency_map, extract_abis, ContractAbi, Corpus, DependencyMap, Dictionary, FuzzConfig,
+    FuzzFinding, FuzzFindingKind, FuzzHybridStats, FuzzReport, FuzzSeverity,
 };
 use crate::norm::{FunctionKind, Mutability, NormalizedAst, Span};
 use crate::surfaced;
@@ -489,6 +489,7 @@ fn promoted_runtime_meta_findings(
                 _ => return None,
             };
             Some(FuzzFinding {
+                span: None,
                 kind,
                 severity: match finding.severity.as_str() {
                     "high" => FuzzSeverity::High,
@@ -545,6 +546,7 @@ fn detect_shadowing_findings(ast: &NormalizedAst) -> Vec<FuzzFinding> {
                     .unwrap_or("<anonymous>");
                 let detail = format!("{}:{}", function.id, param);
                 findings.push(FuzzFinding {
+                    span: None,
                     kind: FuzzFindingKind::Shadowing,
                     severity: FuzzSeverity::Medium,
                     message: format!(
@@ -581,6 +583,7 @@ fn detect_public_mint_burn_findings(
         }
         let detail = format!("{}:{}", function.id, lower);
         findings.push(FuzzFinding {
+            span: None,
             kind: FuzzFindingKind::PublicMintBurn,
             severity: FuzzSeverity::High,
             message: format!(
@@ -684,6 +687,7 @@ fn inject_static_runtime_backstops(
             .and_then(|f| f.name.as_deref())
             .unwrap_or("<unknown>");
         out.push(FuzzFinding {
+                    span: None,
             kind: FuzzFindingKind::ReentrancyHeuristic,
             severity: FuzzSeverity::Low,
             message: format!(
@@ -713,6 +717,7 @@ fn inject_static_runtime_backstops(
             .and_then(|f| f.name.as_deref())
             .unwrap_or("<unknown>");
         out.push(FuzzFinding {
+                    span: None,
             kind: FuzzFindingKind::DosWithFailedCall,
             severity: FuzzSeverity::Low,
             message: format!(
@@ -749,6 +754,7 @@ fn inject_static_runtime_backstops(
             .and_then(|f| f.name.as_deref())
             .unwrap_or("<unknown>");
         out.push(FuzzFinding {
+                    span: None,
             kind: FuzzFindingKind::DosBlockGasLimit,
             severity: FuzzSeverity::Low,
             message: format!(
@@ -778,6 +784,7 @@ fn inject_static_runtime_backstops(
             && injected.insert(("timestamp-dependency", function_id))
         {
             out.push(FuzzFinding {
+                    span: None,
                 kind: FuzzFindingKind::TimestampDependency,
                 severity: FuzzSeverity::Low,
                 message: format!(
@@ -797,6 +804,7 @@ fn inject_static_runtime_backstops(
             continue;
         }
         out.push(FuzzFinding {
+                    span: None,
             kind: FuzzFindingKind::WeakPRNG,
             severity: FuzzSeverity::Low,
             message: format!(
@@ -827,6 +835,7 @@ fn inject_static_runtime_backstops(
             .and_then(|f| f.name.as_deref())
             .unwrap_or("<unknown>");
         out.push(FuzzFinding {
+                    span: None,
             kind: FuzzFindingKind::LockedEther,
             severity: FuzzSeverity::Low,
             message: format!(
@@ -855,6 +864,7 @@ fn inject_static_runtime_backstops(
             .and_then(|f| f.name.as_deref())
             .unwrap_or("<unknown>");
         out.push(FuzzFinding {
+                    span: None,
             kind: FuzzFindingKind::UncheckedCall,
             severity: FuzzSeverity::Low,
             message: format!(
@@ -881,6 +891,7 @@ fn inject_static_runtime_backstops(
             .and_then(|f| f.name.as_deref())
             .unwrap_or("<unknown>");
         out.push(FuzzFinding {
+                    span: None,
             kind: FuzzFindingKind::AccessControl,
             severity: FuzzSeverity::Low,
             message: format!(
@@ -1512,6 +1523,7 @@ mod tests {
 
     fn finding(kind: FuzzFindingKind, message: &str) -> FuzzFinding {
         FuzzFinding {
+            span: None,
             kind,
             severity: FuzzSeverity::Medium,
             message: message.to_string(),
@@ -1584,21 +1596,15 @@ mod tests {
 
         let filtered = apply_static_fp_guards(findings, &tod_allowed, &sig_mall_allowed);
         assert_eq!(filtered.len(), 2);
-        assert!(
-            filtered
-                .iter()
-                .any(|f| matches!(f.kind, FuzzFindingKind::TransactionOrderDependency))
-        );
-        assert!(
-            filtered
-                .iter()
-                .any(|f| matches!(f.kind, FuzzFindingKind::UncheckedCall))
-        );
-        assert!(
-            !filtered
-                .iter()
-                .any(|f| matches!(f.kind, FuzzFindingKind::SignatureMalleability))
-        );
+        assert!(filtered
+            .iter()
+            .any(|f| matches!(f.kind, FuzzFindingKind::TransactionOrderDependency)));
+        assert!(filtered
+            .iter()
+            .any(|f| matches!(f.kind, FuzzFindingKind::UncheckedCall)));
+        assert!(!filtered
+            .iter()
+            .any(|f| matches!(f.kind, FuzzFindingKind::SignatureMalleability)));
     }
 
     #[test]
@@ -1795,16 +1801,12 @@ mod tests {
 
         let injected = inject_static_runtime_backstops(&[], &static_findings, &ast);
         assert!(injected.iter().any(|f| f.kind == FuzzFindingKind::WeakPRNG));
-        assert!(
-            injected
-                .iter()
-                .any(|f| f.kind == FuzzFindingKind::LockedEther)
-        );
-        assert!(
-            injected
-                .iter()
-                .any(|f| f.kind == FuzzFindingKind::UncheckedCall)
-        );
+        assert!(injected
+            .iter()
+            .any(|f| f.kind == FuzzFindingKind::LockedEther));
+        assert!(injected
+            .iter()
+            .any(|f| f.kind == FuzzFindingKind::UncheckedCall));
     }
 
     #[test]
@@ -1823,11 +1825,9 @@ mod tests {
         }];
 
         let injected = inject_static_runtime_backstops(&[], &static_findings, &ast);
-        assert!(
-            injected
-                .iter()
-                .any(|f| f.kind == FuzzFindingKind::LockedEther)
-        );
+        assert!(injected
+            .iter()
+            .any(|f| f.kind == FuzzFindingKind::LockedEther));
     }
 
     #[test]
@@ -1889,11 +1889,9 @@ mod tests {
         }];
 
         let injected = inject_static_runtime_backstops(&runtime_findings, &static_findings, &ast);
-        assert!(
-            injected
-                .iter()
-                .any(|finding| finding.kind == FuzzFindingKind::DosBlockGasLimit)
-        );
+        assert!(injected
+            .iter()
+            .any(|finding| finding.kind == FuzzFindingKind::DosBlockGasLimit));
     }
 
     #[test]
@@ -2005,11 +2003,9 @@ mod tests {
             finding.kind == FuzzFindingKind::TimestampDependency
                 && finding.message.contains("block.timestamp/now")
         }));
-        assert!(
-            injected
-                .iter()
-                .any(|finding| finding.kind == FuzzFindingKind::WeakPRNG)
-        );
+        assert!(injected
+            .iter()
+            .any(|finding| finding.kind == FuzzFindingKind::WeakPRNG));
     }
 
     #[test]

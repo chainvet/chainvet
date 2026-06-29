@@ -7,7 +7,7 @@ use crate::core::artifacts::HybridReport;
 use crate::fuzzing::types::{FuzzFinding, FuzzHybridStats};
 use crate::norm::NormalizedAst;
 use crate::report::OutputFormat;
-use crate::symbolic::results::{SeFinding, coverage::CoverageReport};
+use crate::symbolic::results::{coverage::CoverageReport, SeFinding};
 use crate::util::error::{Error, Result};
 
 use super::seeding::HybridSeed;
@@ -107,13 +107,14 @@ impl HybridFindingRow {
                 } else {
                     "fuzz"
                 };
-            // Fuzz findings carry no precise span, but they know their function.
-            // Resolve the owning function's span so every finding reports a
-            // (function-granular) location instead of nothing.
+            // Prefer the exact operation span the oracle attributed to this
+            // finding; fall back to the owning function's span when it has none
+            // (e.g. aggregate findings like reentrancy).
             let function_id = extract_function_id_from_message(&finding.message);
             let function_span = function_id
                 .and_then(|id| ast.functions.get(id as usize))
                 .map(|function| function.span);
+            let loc = finding.span.or(function_span);
             rows.push(Self {
                 provenance: provenance.to_string(),
                 provenances: vec![provenance.to_string()],
@@ -123,11 +124,11 @@ impl HybridFindingRow {
                 category: Some(finding.kind.category().to_string()),
                 message: finding.message.clone(),
                 function_id,
-                file: function_span
+                file: loc
                     .and_then(|span| ast.files.get(span.file as usize))
                     .map(|file| file.path.clone()),
-                start: function_span.map(|span| span.start),
-                end: function_span.map(|span| span.end),
+                start: loc.map(|span| span.start),
+                end: loc.map(|span| span.end),
             });
         }
 

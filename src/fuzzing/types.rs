@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use crate::core::artifacts::Finding;
 use crate::frontend::{self, CompilerInfo};
 use crate::ir::{IrInstr, IrModule, IrPlace, IrValue, IrVar, PlaceClass};
-use crate::norm::{FunctionKind, Mutability, NormalizedAst, Visibility};
+use crate::norm::{FunctionKind, Mutability, NormalizedAst, Span, Visibility};
 use serde::Serialize;
 
 // ---------------------------------------------------------------------------
@@ -338,6 +338,9 @@ fn is_contract_receiver(value: &IrValue, contract_name: Option<&str>) -> bool {
 pub struct TraceEvent {
     pub function_id: u32,
     pub kind: TraceEventKind,
+    /// Source span of the instruction that produced this event (stamped by the
+    /// executor), so oracles can report the exact line of the operation.
+    pub span: Option<Span>,
 }
 
 #[derive(Debug, Clone)]
@@ -461,6 +464,10 @@ pub struct FuzzFinding {
     pub message: String,
     pub tx_sequence: Vec<Transaction>,
     pub trace_hash: String,
+    /// Exact source span of the triggering operation, when the oracle can
+    /// attribute it to a specific trace event; falls back to the function span
+    /// in the report when `None`.
+    pub span: Option<Span>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
