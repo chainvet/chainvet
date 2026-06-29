@@ -29,6 +29,10 @@ pub struct HybridRunSummary {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct HybridFindingRow {
+    /// Confidence tier derived from provenance: `confirmed` when corroborated by
+    /// dynamic execution (fuzz/hybrid-confirmed) or a symbolic feasibility
+    /// witness; `candidate` when reported by static heuristics only.
+    pub tier: String,
     pub provenance: String,
     pub provenances: Vec<String>,
     pub kind: String,
@@ -63,6 +67,7 @@ impl HybridFindingRow {
         // targets) so static-only detections — TOD especially — reach the report.
         for finding in static_findings {
             rows.push(Self {
+                tier: tier_for("static").to_string(),
                 provenance: "static".to_string(),
                 provenances: vec!["static".to_string()],
                 kind: finding.kind.as_str().to_string(),
@@ -82,6 +87,7 @@ impl HybridFindingRow {
 
         for finding in se_findings {
             rows.push(Self {
+                tier: tier_for("symbolic").to_string(),
                 provenance: "symbolic".to_string(),
                 provenances: vec!["symbolic".to_string()],
                 kind: finding.kind.as_str().to_string(),
@@ -116,6 +122,7 @@ impl HybridFindingRow {
                 .map(|function| function.span);
             let loc = finding.span.or(function_span);
             rows.push(Self {
+                tier: tier_for(provenance).to_string(),
                 provenance: provenance.to_string(),
                 provenances: vec![provenance.to_string()],
                 kind: canonical,
@@ -184,10 +191,22 @@ pub fn print_hybrid_report(report: &HybridJsonReport, format: OutputFormat) -> R
                     stats.seeded_inputs_provided, stats.seeded_inputs_executed
                 );
             }
+            let confirmed = report
+                .findings
+                .iter()
+                .filter(|f| f.tier == "confirmed")
+                .count();
+            let candidate = report.findings.len() - confirmed;
+            println!(
+                "findings: {} total — {} confirmed (dynamic/SE evidence), {} candidate (static-only)",
+                report.findings.len(),
+                confirmed,
+                candidate
+            );
             for finding in &report.findings {
                 println!(
-                    "[{}] {} {}",
-                    finding.provenance, finding.kind, finding.message
+                    "  [{}|{}] {} {}",
+                    finding.tier, finding.provenance, finding.kind, finding.message
                 );
             }
             Ok(())
@@ -272,6 +291,11 @@ fn deduplicate_rows(rows: Vec<HybridFindingRow>) -> Vec<HybridFindingRow> {
                 right.message.as_str(),
             ))
     });
+    // Recompute the tier from the merged provenance: a static finding that fuzz
+    // or SE also reported becomes hybrid-confirmed, promoting it to `confirmed`.
+    for row in &mut deduped {
+        row.tier = tier_for(&row.provenance).to_string();
+    }
     deduped
 }
 
@@ -300,6 +324,16 @@ fn merge_rows(existing: &mut HybridFindingRow, incoming: HybridFindingRow) {
     existing.start = min_opt(existing.start, incoming.start);
     existing.end = max_opt(existing.end, incoming.end);
     existing.message = merge_message(existing.message.as_str(), incoming.message.as_str());
+}
+
+/// Map a provenance to its confidence tier. Dynamic execution (fuzz /
+/// hybrid-confirmed) and symbolic feasibility witnesses are `confirmed`; a
+/// static-only heuristic is a `candidate`.
+fn tier_for(provenance: &str) -> &'static str {
+    match provenance {
+        "hybrid-confirmed" | "fuzz" | "symbolic" => "confirmed",
+        _ => "candidate",
+    }
 }
 
 fn select_primary_provenance(provenances: &[String]) -> &'static str {
