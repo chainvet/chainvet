@@ -765,18 +765,84 @@ fn is_decision_like_expr(ast: &NormalizedAst, expr_id: u32) -> bool {
     }
 }
 
+/// Does any sub-expression reference a name in `tainted`?
+fn expr_references_tainted_local(
+    ast: &NormalizedAst,
+    expr_id: u32,
+    tainted: &HashSet<String>,
+) -> bool {
+    let mut found = false;
+    for_each_expr(ast, expr_id, &mut |_eid, e| {
+        if !found {
+            if let ExprKind::Ident(n) = &e.kind {
+                if tainted.contains(n) {
+                    found = true;
+                }
+            }
+        }
+    });
+    found
+}
+
+/// Local variables that hold (an expression derived from) `block.timestamp` /
+/// `now`. Tracking these lets the condition checks catch the common pattern
+/// `uint t = block.timestamp; if (deadline == t) …` where the miner-manipulable
+/// value flows through a local instead of appearing literally in the condition.
+/// Two forward passes give simple transitivity (`y = x`).
+fn timestamp_tainted_locals(ast: &NormalizedAst, body: u32) -> HashSet<String> {
+    let mut tainted: HashSet<String> = HashSet::new();
+    for _ in 0..2 {
+        let snapshot = tainted.clone();
+        let mut adds: Vec<String> = Vec::new();
+        for_each_stmt(ast, body, &mut |_sid, stmt| match &stmt.kind {
+            StmtKind::VarDecl {
+                names,
+                init: Some(e),
+            } => {
+                if contains_timestamp(ast, *e) || expr_references_tainted_local(ast, *e, &snapshot) {
+                    adds.extend(names.iter().cloned());
+                }
+            }
+            StmtKind::Expr(e) => {
+                if let Some(expr) = ast.expressions.get(*e as usize) {
+                    if let ExprKind::Assign { lhs, rhs, .. } = &expr.kind {
+                        if contains_timestamp(ast, *rhs)
+                            || expr_references_tainted_local(ast, *rhs, &snapshot)
+                        {
+                            if let Some(n) = lhs_base_name(ast, *lhs) {
+                                adds.push(n);
+                            }
+                        }
+                    }
+                }
+            }
+            _ => {}
+        });
+        for a in adds {
+            tainted.insert(a);
+        }
+    }
+    tainted
+}
+
 fn detect_dangerous_timestamp(ast: &NormalizedAst) -> Vec<Finding> {
     let mut findings = Vec::new();
 
     for func in &ast.functions {
         let Some(body) = func.body else { continue };
+        let ts_locals = timestamp_tainted_locals(ast, body);
+        // A condition is timestamp-dependent if it mentions block.timestamp/now
+        // directly OR a local tainted by it.
+        let cond_ts = |cond: u32| {
+            contains_timestamp(ast, cond) || expr_references_tainted_local(ast, cond, &ts_locals)
+        };
 
         // --- 1. Check conditionals (if / while / for conditions) ----------
         for_each_stmt(ast, body, &mut |_sid, stmt| {
             match &stmt.kind {
                 // if (block.timestamp ...)
                 StmtKind::If { cond, .. } => {
-                    if contains_timestamp(ast, *cond) {
+                    if cond_ts(*cond) {
                         findings.push(Finding {
                             kind: FindingKind::DangerousBlockTimestamp,
                             severity: Severity::Low,
@@ -790,7 +856,7 @@ fn detect_dangerous_timestamp(ast: &NormalizedAst) -> Vec<Finding> {
                 }
                 // while (block.timestamp ...)
                 StmtKind::While { cond, .. } => {
-                    if contains_timestamp(ast, *cond) {
+                    if cond_ts(*cond) {
                         findings.push(Finding {
                             kind: FindingKind::DangerousBlockTimestamp,
                             severity: Severity::Low,
@@ -807,7 +873,7 @@ fn detect_dangerous_timestamp(ast: &NormalizedAst) -> Vec<Finding> {
                 StmtKind::For {
                     cond: Some(cond), ..
                 } => {
-                    if contains_timestamp(ast, *cond) {
+                    if cond_ts(*cond) {
                         findings.push(Finding {
                             kind: FindingKind::DangerousBlockTimestamp,
                             severity: Severity::Low,
