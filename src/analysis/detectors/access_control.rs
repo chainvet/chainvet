@@ -1392,6 +1392,14 @@ fn function_source_unchecked_call(
         {
             continue;
         }
+        // A low-level call whose result is captured into a variable
+        // (e.g. `(bool success, ) = a.call(...)`) is presumably checked
+        // elsewhere (require(success) / verifyCallResult(...) on a later line).
+        // Only a discarded, bare-statement call is genuinely unchecked — and
+        // those have no assignment on the line.
+        if line.contains('=') {
+            continue;
+        }
         if line.contains(".send(") {
             return Some("send");
         }

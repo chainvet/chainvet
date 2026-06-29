@@ -69,6 +69,48 @@ pub fn detect_all(ast: &NormalizedAst) -> Vec<Finding> {
     findings.extend(detect_dos_with_failed_call(ast)); // DS-04
     findings.extend(detect_force_ether_balance_check(ast)); // DS-05
     findings.extend(detect_unsafe_send_in_require(ast)); // DS-06
+    findings.extend(detect_unchecked_send(ast)); // DS-07
+
+    findings
+}
+
+// ── DS-07  Unchecked send/transfer ───────────────────────────────────────────
+//
+// A `.send()`/`.transfer()` call whose result is discarded — i.e. the call is a
+// bare expression statement, not the condition of an `if`/`require` and not
+// captured into a variable. `.send()` returns a bool that must be checked;
+// `.transfer()` is the low-level value-transfer pattern the unchecked-send class
+// targets. Restricting to bare-statement form keeps precision high (checked
+// forms like `if (a.send(x))` / `require(a.send(x))` / `bool ok = a.send(x)`
+// are not flagged).
+fn detect_unchecked_send(ast: &NormalizedAst) -> Vec<Finding> {
+    let mut findings = Vec::new();
+
+    for func in &ast.functions {
+        let Some(body) = func.body else { continue };
+        for_each_stmt(ast, body, &mut |_sid, stmt| {
+            let StmtKind::Expr(expr_id) = &stmt.kind else {
+                return;
+            };
+            let Some(expr) = ast.expressions.get(*expr_id as usize) else {
+                return;
+            };
+            if is_unchecked_value_call(ast, expr) {
+                let func_name = func.name.as_deref().unwrap_or("<anonymous>");
+                findings.push(Finding {
+                    kind: FindingKind::UncheckedSend,
+                    severity: Severity::Medium,
+                    message: format!(
+                        "DS-07: unchecked low-level call in `{func_name}` — the boolean \
+                        result of `.send()`/`.call()` is discarded, so a failed call goes \
+                        unnoticed (`.transfer()` is excluded: it reverts on failure)"
+                    ),
+                    span: expr.span,
+                    function: Some(func.id),
+                });
+            }
+        });
+    }
 
     findings
 }
@@ -295,6 +337,49 @@ fn source_contains_failed_refund_guard(lower: &str) -> bool {
     lower
         .lines()
         .any(|line| line.contains("require(") && source_contains_external_payout(line))
+}
+
+/// Low-level calls that return a discardable boolean success flag. `.transfer()`
+/// is intentionally excluded: it reverts on failure, so a bare `.transfer()` is
+/// not an unchecked-result bug.
+const UNCHECKED_VALUE_METHODS: &[&str] = &["send", "call"];
+
+/// Returns `true` if the expression is a `.send()` or low-level `.call()` whose
+/// boolean result would be discarded if used as a bare statement.
+fn is_unchecked_value_call(ast: &NormalizedAst, expr: &crate::norm::Expr) -> bool {
+    if let Some(call) = &expr.meta.call {
+        let name = match &call.target {
+            CallTarget::Direct { name } => name.as_str(),
+            CallTarget::Member { name, .. } => name.as_str(),
+            CallTarget::Unknown => "",
+        };
+        if UNCHECKED_VALUE_METHODS.iter().any(|&m| m == name) {
+            return true;
+        }
+    }
+    // Inspect the callee directly, covering `addr.call{value: x}("")` where the
+    // callee is a Member (possibly under call options).
+    if let ExprKind::Call { callee, .. } = &expr.kind {
+        if let Some(callee_expr) = ast.expressions.get(*callee as usize) {
+            let member_field = match &callee_expr.kind {
+                ExprKind::Member { field, .. } => Some(field.as_str()),
+                ExprKind::CallOptions { callee: inner, .. } => ast
+                    .expressions
+                    .get(*inner as usize)
+                    .and_then(|e| match &e.kind {
+                        ExprKind::Member { field, .. } => Some(field.as_str()),
+                        _ => None,
+                    }),
+                _ => None,
+            };
+            if let Some(field) = member_field {
+                if UNCHECKED_VALUE_METHODS.iter().any(|&m| m == field) {
+                    return true;
+                }
+            }
+        }
+    }
+    false
 }
 
 /// Returns `true` if the expression is a call to `.transfer()` or `.send()`.

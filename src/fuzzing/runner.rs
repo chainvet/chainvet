@@ -12,8 +12,8 @@ use crate::fuzzing::mutator;
 use crate::fuzzing::oracle;
 use crate::fuzzing::scheduler::{self, CoverageMap};
 use crate::fuzzing::types::{
-    ContractAbi, Corpus, DependencyMap, Dictionary, FuzzConfig, FuzzFinding, FuzzFindingKind,
-    FuzzReport, FuzzSeverity, build_dependency_map, extract_abis,
+    build_dependency_map, extract_abis, ContractAbi, Corpus, DependencyMap, Dictionary, FuzzConfig,
+    FuzzFinding, FuzzFindingKind, FuzzHybridStats, FuzzReport, FuzzSeverity,
 };
 use crate::norm::{FunctionKind, Mutability, NormalizedAst, Span};
 use crate::surfaced;
@@ -22,102 +22,443 @@ use crate::{cfg, ir, meta};
 
 /// Run the fuzzer on a parsed contract.
 pub fn run(output: &FrontendOutput, config: &FuzzConfig) -> FuzzReport {
-    let start = Instant::now();
-    let ast = &output.ast;
+    let mut session = FuzzSession::new(output, config.clone());
+    session.run_slice(&[], config.max_iterations, config.max_duration_ms);
+    session.finalize()
+}
 
-    // Phase 1: Static analysis pre-pass
-    let ir_module = ir::lower_module(ast);
-    let cfgs = cfg::build_from_ir(&ir_module);
-    let abis = extract_abis(ast, &output.compiler);
-    let deps = build_dependency_map(&ir_module, ast);
-    let static_call_graph = analysis::build_call_graph(ast);
-    let static_taint = analysis::taint::analyze(ast, &cfgs);
-    let static_findings =
-        analysis::detectors::run_detectors(ast, &static_call_graph, &static_taint);
-    let meta_findings =
-        meta::analyze_for_engine(output, meta::ConsumerEngine::Fuzzing, &static_findings);
-    let (tod_allowed, sig_mall_allowed) = build_static_fp_guards(&static_findings);
-    let locked_ether_candidates = build_locked_ether_candidates(ast, &ir_module);
+/// Result of one fuzz slice, used by the hybrid orchestrator for stall detection.
+#[derive(Debug, Clone, Default)]
+pub struct SliceStats {
+    pub edges_before: usize,
+    pub edges_after: usize,
+    pub delta_edges: usize,
+    pub findings_total: usize,
+    pub new_findings: usize,
+}
 
-    // Extract dictionary from IR constants for smarter value generation
-    let dictionary = generator::extract_dictionary(&ir_module);
+/// Per-contract loop state carried across slices so coverage and the corpus
+/// accumulate over epochs (enabling real cross-epoch stall detection).
+struct ContractFuzzState {
+    abi_index: usize,
+    rng: rand::rngs::StdRng,
+    stall_counter: usize,
+    last_coverage_count: usize,
+    iters_run: usize,
+    initialized: bool,
+    locked_ether_candidate: bool,
+}
 
-    // Collect total blocks for coverage %
-    let total_blocks: usize = cfgs.iter().map(|c| c.blocks.len()).sum();
+/// A persistent fuzzing session. One-time setup (IR/CFG/detectors/dictionary)
+/// happens in `new`; `run_slice` runs a chunk of iterations continuing from the
+/// carried corpus + coverage (optionally injecting SE-witness seeds first), and
+/// `finalize` produces the report. `runner::run` == new + one slice + finalize,
+/// so the standalone `--fuzzing` path is behavior-identical.
+pub struct FuzzSession<'a> {
+    output: &'a FrontendOutput,
+    config: FuzzConfig,
+    ir_module: ir::IrModule,
+    cfgs: Vec<cfg::CfgFunction>,
+    abis: Vec<ContractAbi>,
+    deps: DependencyMap,
+    dictionary: Dictionary,
+    static_findings: Vec<analysis::detectors::Finding>,
+    meta_findings: Vec<crate::core::artifacts::Finding>,
+    tod_allowed: std::collections::HashSet<u32>,
+    sig_mall_allowed: std::collections::HashSet<u32>,
+    total_blocks: usize,
+    no_targets: bool,
+    start: Instant,
+    corpus: Corpus,
+    global_coverage: CoverageMap,
+    all_findings: Vec<FuzzFinding>,
+    /// Trace hashes of findings already seen, so a finding-bearing input is only
+    /// force-added to the corpus when it triggers a *novel* finding (otherwise a
+    /// constantly-firing oracle, e.g. tx-origin, would explode the corpus).
+    seen_finding_hashes: std::collections::HashSet<String>,
+    /// Concrete values observed during execution (storage values + mapping keys
+    /// like a `proposalId`), fed back into the value pool so later transactions
+    /// can use them as arguments — the standard fix for the stateful-fuzzing wall
+    /// where `f(runtimeId)` reverts because the fuzzer can't guess `runtimeId`.
+    harvested: std::collections::HashSet<u128>,
+    contract_states: Vec<ContractFuzzState>,
+    seeded_inputs_executed: usize,
+}
 
-    // If no contracts or functions, bail early
-    if abis.is_empty() || abis.iter().all(|a| a.functions.is_empty()) {
-        return FuzzReport {
-            iterations: 0,
-            coverage_pct: 0.0,
-            total_blocks,
-            covered_blocks: 0,
-            findings: Vec::new(),
-            meta_findings,
-            corpus_size: 0,
-            corpus_zero_reason: Some("no contracts or functions available for fuzzing".to_string()),
-            elapsed_ms: start.elapsed().as_millis(),
-        };
-    }
+impl<'a> FuzzSession<'a> {
+    /// One-time setup: static pre-pass, IR/CFG, dictionary, per-contract state.
+    pub fn new(output: &'a FrontendOutput, config: FuzzConfig) -> Self {
+        let start = Instant::now();
+        let ast = &output.ast;
 
-    let mut all_findings: Vec<FuzzFinding> = Vec::new();
-    let mut global_coverage = CoverageMap::new();
-    let mut corpus = Corpus::default();
+        let ir_module = ir::lower_module(ast);
+        let cfgs = cfg::build_from_ir(&ir_module);
+        let abis = extract_abis(ast, &output.compiler);
+        let deps = build_dependency_map(&ir_module, ast);
+        let static_call_graph = analysis::build_call_graph(ast);
+        let static_taint = analysis::taint::analyze(ast, &cfgs);
+        let static_findings =
+            analysis::detectors::run_detectors(ast, &static_call_graph, &static_taint);
+        let meta_findings =
+            meta::analyze_for_engine(output, meta::ConsumerEngine::Fuzzing, &static_findings);
+        let (tod_allowed, sig_mall_allowed) = build_static_fp_guards(&static_findings);
+        let locked_ether_candidates = build_locked_ether_candidates(ast, &ir_module);
+        let dictionary = generator::extract_dictionary(&ir_module);
+        let total_blocks: usize = cfgs.iter().map(|c| c.blocks.len()).sum();
 
-    // Run per-contract
-    for abi in &abis {
-        let locked_ether_candidate = locked_ether_candidates
-            .get(&abi.contract_name)
-            .copied()
-            .unwrap_or(false);
-        fuzz_contract(
+        let no_targets = abis.is_empty() || abis.iter().all(|a| a.functions.is_empty());
+
+        // Seed one persistent RNG per contract. Preserves the original per-call
+        // seeding (loop rng = seed + 1) so the single-slice path is unchanged.
+        let contract_states = abis
+            .iter()
+            .enumerate()
+            .map(|(abi_index, abi)| {
+                let rng = match config.seed {
+                    Some(seed) => <rand::rngs::StdRng as rand::SeedableRng>::seed_from_u64(
+                        seed.wrapping_add(1),
+                    ),
+                    None => <rand::rngs::StdRng as rand::SeedableRng>::from_entropy(),
+                };
+                ContractFuzzState {
+                    abi_index,
+                    rng,
+                    stall_counter: 0,
+                    last_coverage_count: 0,
+                    iters_run: 0,
+                    initialized: false,
+                    locked_ether_candidate: locked_ether_candidates
+                        .get(&abi.contract_name)
+                        .copied()
+                        .unwrap_or(false),
+                }
+            })
+            .collect();
+
+        Self {
             output,
-            abi,
-            &deps,
             config,
-            ast,
-            &ir_module,
-            &cfgs,
-            locked_ether_candidate,
-            &mut all_findings,
-            &mut global_coverage,
-            &mut corpus,
-            &dictionary,
-            &start,
-        );
+            ir_module,
+            cfgs,
+            abis,
+            deps,
+            dictionary,
+            static_findings,
+            meta_findings,
+            tod_allowed,
+            sig_mall_allowed,
+            total_blocks,
+            no_targets,
+            start,
+            corpus: Corpus::default(),
+            global_coverage: CoverageMap::new(),
+            all_findings: Vec::new(),
+            seen_finding_hashes: std::collections::HashSet::new(),
+            harvested: std::collections::HashSet::new(),
+            contract_states,
+            seeded_inputs_executed: 0,
+        }
     }
 
-    // Add AST-only shadowing checks (project extension used by scoring fixtures).
-    all_findings.extend(detect_shadowing_findings(ast));
-    // Add AST-level access control pattern for taxonomy parity.
-    all_findings.extend(detect_public_mint_burn_findings(ast, &output.compiler));
-    all_findings = apply_static_fp_guards(all_findings, &tod_allowed, &sig_mall_allowed);
-    all_findings.extend(inject_static_runtime_backstops(
-        &all_findings,
-        &static_findings,
-        ast,
-    ));
-    all_findings.extend(promoted_runtime_meta_findings(&meta_findings));
+    /// Total findings discovered so far (pre-finalize, undeduped).
+    pub fn raw_findings_len(&self) -> usize {
+        self.all_findings.len()
+    }
 
-    // Deduplicate findings
-    let findings = oracle::deduplicate(all_findings);
-    let covered_blocks = global_coverage.count();
-    let coverage_pct = if total_blocks > 0 {
-        (covered_blocks as f64 / total_blocks as f64) * 100.0
-    } else {
-        0.0
-    };
+    /// Function ids that have at least one covered block so far. Used by the
+    /// hybrid orchestrator to detect which target functions are still unmet.
+    pub fn covered_function_ids(&self) -> std::collections::HashSet<u32> {
+        self.global_coverage
+            .visited_set()
+            .into_iter()
+            .map(|(function_id, _block)| function_id)
+            .collect()
+    }
 
-    FuzzReport {
-        iterations: config.max_iterations,
-        coverage_pct,
-        total_blocks,
-        covered_blocks,
-        findings,
-        meta_findings,
-        corpus_size: corpus.entries.len(),
-        corpus_zero_reason: zero_corpus_reason(&abis, &corpus),
-        elapsed_ms: start.elapsed().as_millis(),
+    /// Total distinct edges covered so far.
+    pub fn covered_edges(&self) -> usize {
+        self.global_coverage.count()
+    }
+
+    /// Run one slice: optionally inject `extra_seeds`, then run up to
+    /// `max_iterations` per contract continuing from the carried state.
+    /// Returns the coverage delta for stall detection.
+    pub fn run_slice(
+        &mut self,
+        extra_seeds: &[crate::fuzzing::types::Individual],
+        max_iterations: usize,
+        max_duration_ms: Option<u64>,
+    ) -> SliceStats {
+        let slice_start = Instant::now();
+        let edges_before = self.global_coverage.count();
+        let findings_before = self.all_findings.len();
+
+        if self.no_targets {
+            return SliceStats {
+                edges_before,
+                edges_after: edges_before,
+                delta_edges: 0,
+                findings_total: self.all_findings.len(),
+                new_findings: 0,
+            };
+        }
+
+        for idx in 0..self.contract_states.len() {
+            if let Some(ms) = max_duration_ms {
+                if slice_start.elapsed().as_millis() as u64 >= ms {
+                    break;
+                }
+            }
+            let abi_index = self.contract_states[idx].abi_index;
+
+            // First-touch initialization: generate + execute the initial
+            // population (this is where config.seed_corpus is folded in).
+            if !self.contract_states[idx].initialized {
+                let population = generator::generate_initial_population_with_dict(
+                    &self.abis[abi_index],
+                    &self.deps,
+                    &self.config,
+                    Some(&self.dictionary),
+                );
+                self.seeded_inputs_executed +=
+                    count_seeded_inputs_for_abi(&self.abis[abi_index], &self.config);
+                let locked = self.contract_states[idx].locked_ether_candidate;
+                for ind in &population {
+                    self.execute_and_absorb(abi_index, ind, locked);
+                }
+                self.contract_states[idx].initialized = true;
+            }
+
+            // Inject SE-witness (or other) seeds applicable to this contract.
+            let locked = self.contract_states[idx].locked_ether_candidate;
+            for seed in extra_seeds {
+                if seed.transactions.is_empty() {
+                    continue;
+                }
+                let applicable = seed.transactions.iter().all(|tx| {
+                    self.abis[abi_index]
+                        .functions
+                        .iter()
+                        .any(|f| f.id == tx.function_id)
+                });
+                if applicable {
+                    self.execute_and_absorb(abi_index, &seed.clone(), locked);
+                }
+            }
+
+            self.run_contract_iterations(idx, max_iterations, &slice_start, max_duration_ms);
+        }
+
+        let edges_after = self.global_coverage.count();
+        SliceStats {
+            edges_before,
+            edges_after,
+            delta_edges: edges_after.saturating_sub(edges_before),
+            findings_total: self.all_findings.len(),
+            new_findings: self.all_findings.len().saturating_sub(findings_before),
+        }
+    }
+
+    /// Execute one individual, run oracles, fold findings + coverage into state.
+    fn execute_and_absorb(
+        &mut self,
+        abi_index: usize,
+        ind: &crate::fuzzing::types::Individual,
+        locked_ether_candidate: bool,
+    ) {
+        let trace = executor::execute_individual(
+            ind,
+            self.output,
+            &self.ir_module,
+            &self.cfgs,
+            &self.abis[abi_index],
+            &self.deps,
+        );
+
+        // Value feedback: harvest concrete runtime values (mapping keys like a
+        // proposalId, and stored values) into the value pool so later txs can use
+        // them as arguments. Capped to keep generation cheap.
+        if self.dictionary.values.len() < 1024 {
+            for (key, val) in &trace.final_state {
+                if let Some(index) = key.split('#').nth(1) {
+                    if let Ok(v) = index.parse::<u128>() {
+                        if v != 0 && self.harvested.insert(v) {
+                            self.dictionary.values.push(v);
+                        }
+                    }
+                }
+                let stored = val.as_uint();
+                if stored != 0 && self.harvested.insert(stored) {
+                    self.dictionary.values.push(stored);
+                }
+            }
+        }
+
+        let mut findings = oracle::check_all(&trace, &ind.transactions, Some(&self.output.ast));
+        findings.retain(|finding| keep_locked_ether_finding(finding, locked_ether_candidate));
+
+        // New-edge admission keeps the corpus bounded.
+        let added =
+            scheduler::update_corpus(&mut self.corpus, ind, &trace, &mut self.global_coverage);
+
+        if !findings.is_empty() {
+            // Report every finding (deduplicated at finalize), but only force-add
+            // this input to the corpus when it triggered a *novel* finding hash —
+            // otherwise an oracle that fires on most executions (e.g. tx-origin)
+            // would explode the corpus the same way bucket-admission did.
+            let mut novel_hashes = Vec::new();
+            for finding in &findings {
+                if self.seen_finding_hashes.insert(finding.trace_hash.clone()) {
+                    novel_hashes.push(finding.trace_hash.clone());
+                }
+            }
+            self.all_findings.extend(findings);
+            if !added && !novel_hashes.is_empty() {
+                self.corpus
+                    .entries
+                    .push(crate::fuzzing::types::CorpusEntry {
+                        individual: ind.clone(),
+                        coverage: trace.coverage.clone(),
+                        finding_hashes: novel_hashes,
+                    });
+            }
+        }
+    }
+
+    /// The core fuzz loop for one contract, continuing from carried state.
+    fn run_contract_iterations(
+        &mut self,
+        state_idx: usize,
+        max_iterations: usize,
+        slice_start: &Instant,
+        max_duration_ms: Option<u64>,
+    ) {
+        let abi_index = self.contract_states[state_idx].abi_index;
+        for _ in 0..max_iterations {
+            if let Some(ms) = max_duration_ms {
+                if slice_start.elapsed().as_millis() as u64 >= ms {
+                    break;
+                }
+            }
+
+            let parent = {
+                let st = &mut self.contract_states[state_idx];
+                match scheduler::select_next(&self.corpus, &mut st.rng) {
+                    Some(p) => p.clone(),
+                    None => continue,
+                }
+            };
+
+            let stall_counter = self.contract_states[state_idx].stall_counter;
+            let havoc_only = stall_counter >= 100;
+            let child = {
+                let st = &mut self.contract_states[state_idx];
+                if stall_counter >= 150 && st.rng.gen_bool(0.25) {
+                    generator::generate_dependency_seed_with_dict(
+                        &self.abis[abi_index],
+                        &self.deps,
+                        &self.config,
+                        &mut st.rng,
+                        Some(&self.dictionary),
+                    )
+                    .unwrap_or_else(|| parent.clone())
+                } else if st.rng.gen_bool(0.2) && self.corpus.entries.len() >= 2 {
+                    let other_idx = st.rng.gen_range(0..self.corpus.entries.len());
+                    let other = &self.corpus.entries[other_idx].individual;
+                    mutator::crossover(&parent, other, &mut st.rng)
+                } else {
+                    mutator::mutate_individual_guided_with_dict(
+                        &parent,
+                        &self.abis[abi_index],
+                        &self.deps,
+                        &mut st.rng,
+                        Some(&self.dictionary),
+                        havoc_only,
+                    )
+                }
+            };
+
+            let locked = self.contract_states[state_idx].locked_ether_candidate;
+            self.execute_and_absorb(abi_index, &child, locked);
+
+            let st = &mut self.contract_states[state_idx];
+            let current_coverage = self.global_coverage.count();
+            if current_coverage > st.last_coverage_count {
+                st.stall_counter = 0;
+                st.last_coverage_count = current_coverage;
+            } else {
+                st.stall_counter += 1;
+            }
+
+            let n = st.iters_run;
+            st.iters_run += 1;
+            if n % 50 == 0 {
+                scheduler::assign_energy(&mut self.corpus, &self.global_coverage);
+            }
+            if n % 200 == 0 && n > 0 {
+                scheduler::minimize_corpus(&mut self.corpus);
+            }
+        }
+    }
+
+    /// Produce the final report (post-processing identical to the old `run`).
+    pub fn finalize(mut self) -> FuzzReport {
+        let ast = &self.output.ast;
+        if self.no_targets {
+            return FuzzReport {
+                iterations: 0,
+                coverage_pct: 0.0,
+                total_blocks: self.total_blocks,
+                covered_blocks: 0,
+                findings: Vec::new(),
+                meta_findings: self.meta_findings,
+                corpus_size: 0,
+                corpus_zero_reason: Some(
+                    "no contracts or functions available for fuzzing".to_string(),
+                ),
+                elapsed_ms: self.start.elapsed().as_millis(),
+                hybrid_stats: self.config.hybrid_mode.then(|| FuzzHybridStats {
+                    seeded_inputs_provided: self.config.seed_corpus.len(),
+                    seeded_inputs_executed: 0,
+                }),
+            };
+        }
+
+        let mut all_findings = std::mem::take(&mut self.all_findings);
+        all_findings.extend(detect_shadowing_findings(ast));
+        all_findings.extend(detect_public_mint_burn_findings(ast, &self.output.compiler));
+        all_findings =
+            apply_static_fp_guards(all_findings, &self.tod_allowed, &self.sig_mall_allowed);
+        all_findings.extend(inject_static_runtime_backstops(
+            &all_findings,
+            &self.static_findings,
+            ast,
+        ));
+        all_findings.extend(promoted_runtime_meta_findings(&self.meta_findings));
+
+        let findings = oracle::deduplicate(all_findings);
+        let covered_blocks = self.global_coverage.count();
+        let coverage_pct = if self.total_blocks > 0 {
+            (covered_blocks as f64 / self.total_blocks as f64) * 100.0
+        } else {
+            0.0
+        };
+
+        FuzzReport {
+            iterations: self.config.max_iterations,
+            coverage_pct,
+            total_blocks: self.total_blocks,
+            covered_blocks,
+            findings,
+            meta_findings: self.meta_findings,
+            corpus_size: self.corpus.entries.len(),
+            corpus_zero_reason: zero_corpus_reason(&self.abis, &self.corpus),
+            elapsed_ms: self.start.elapsed().as_millis(),
+            hybrid_stats: self.config.hybrid_mode.then(|| FuzzHybridStats {
+                seeded_inputs_provided: self.config.seed_corpus.len(),
+                seeded_inputs_executed: self.seeded_inputs_executed,
+            }),
+        }
     }
 }
 
@@ -148,6 +489,7 @@ fn promoted_runtime_meta_findings(
                 _ => return None,
             };
             Some(FuzzFinding {
+                span: None,
                 kind,
                 severity: match finding.severity.as_str() {
                     "high" => FuzzSeverity::High,
@@ -204,6 +546,7 @@ fn detect_shadowing_findings(ast: &NormalizedAst) -> Vec<FuzzFinding> {
                     .unwrap_or("<anonymous>");
                 let detail = format!("{}:{}", function.id, param);
                 findings.push(FuzzFinding {
+                    span: None,
                     kind: FuzzFindingKind::Shadowing,
                     severity: FuzzSeverity::Medium,
                     message: format!(
@@ -240,6 +583,7 @@ fn detect_public_mint_burn_findings(
         }
         let detail = format!("{}:{}", function.id, lower);
         findings.push(FuzzFinding {
+            span: None,
             kind: FuzzFindingKind::PublicMintBurn,
             severity: FuzzSeverity::High,
             message: format!(
@@ -343,6 +687,7 @@ fn inject_static_runtime_backstops(
             .and_then(|f| f.name.as_deref())
             .unwrap_or("<unknown>");
         out.push(FuzzFinding {
+                    span: None,
             kind: FuzzFindingKind::ReentrancyHeuristic,
             severity: FuzzSeverity::Low,
             message: format!(
@@ -372,6 +717,7 @@ fn inject_static_runtime_backstops(
             .and_then(|f| f.name.as_deref())
             .unwrap_or("<unknown>");
         out.push(FuzzFinding {
+                    span: None,
             kind: FuzzFindingKind::DosWithFailedCall,
             severity: FuzzSeverity::Low,
             message: format!(
@@ -408,6 +754,7 @@ fn inject_static_runtime_backstops(
             .and_then(|f| f.name.as_deref())
             .unwrap_or("<unknown>");
         out.push(FuzzFinding {
+                    span: None,
             kind: FuzzFindingKind::DosBlockGasLimit,
             severity: FuzzSeverity::Low,
             message: format!(
@@ -437,6 +784,7 @@ fn inject_static_runtime_backstops(
             && injected.insert(("timestamp-dependency", function_id))
         {
             out.push(FuzzFinding {
+                    span: None,
                 kind: FuzzFindingKind::TimestampDependency,
                 severity: FuzzSeverity::Low,
                 message: format!(
@@ -456,6 +804,7 @@ fn inject_static_runtime_backstops(
             continue;
         }
         out.push(FuzzFinding {
+                    span: None,
             kind: FuzzFindingKind::WeakPRNG,
             severity: FuzzSeverity::Low,
             message: format!(
@@ -486,6 +835,7 @@ fn inject_static_runtime_backstops(
             .and_then(|f| f.name.as_deref())
             .unwrap_or("<unknown>");
         out.push(FuzzFinding {
+                    span: None,
             kind: FuzzFindingKind::LockedEther,
             severity: FuzzSeverity::Low,
             message: format!(
@@ -514,6 +864,7 @@ fn inject_static_runtime_backstops(
             .and_then(|f| f.name.as_deref())
             .unwrap_or("<unknown>");
         out.push(FuzzFinding {
+                    span: None,
             kind: FuzzFindingKind::UncheckedCall,
             severity: FuzzSeverity::Low,
             message: format!(
@@ -540,6 +891,7 @@ fn inject_static_runtime_backstops(
             .and_then(|f| f.name.as_deref())
             .unwrap_or("<unknown>");
         out.push(FuzzFinding {
+                    span: None,
             kind: FuzzFindingKind::AccessControl,
             severity: FuzzSeverity::Low,
             message: format!(
@@ -816,132 +1168,27 @@ fn ir_function_has_ether_send(function: &ir::IrFunction) -> bool {
     })
 }
 
-fn fuzz_contract(
-    output: &FrontendOutput,
-    abi: &ContractAbi,
-    deps: &DependencyMap,
-    config: &FuzzConfig,
-    _ast: &NormalizedAst,
-    ir_module: &ir::IrModule,
-    cfgs: &[cfg::CfgFunction],
-    locked_ether_candidate: bool,
-    all_findings: &mut Vec<FuzzFinding>,
-    global_coverage: &mut CoverageMap,
-    corpus: &mut Corpus,
-    dictionary: &Dictionary,
-    start_time: &Instant,
-) {
-    // Phase 2: Generate initial population (using dictionary for smarter values)
-    let population =
-        generator::generate_initial_population_with_dict(abi, deps, config, Some(dictionary));
+// `fuzz_contract` was absorbed into `FuzzSession::run_slice` /
+// `run_contract_iterations` so the loop state (corpus, coverage, rng, stall
+// counter) can persist across epochs for the hybrid orchestrator.
 
-    // Execute initial population
-    for ind in &population {
-        let trace = executor::execute_individual(ind, output, ir_module, cfgs, abi, deps);
-        let mut findings = oracle::check_all(&trace, &ind.transactions, Some(&output.ast));
-        findings.retain(|finding| keep_locked_ether_finding(finding, locked_ether_candidate));
-        all_findings.extend(findings);
-        scheduler::update_corpus(corpus, ind, &trace, global_coverage);
-    }
-
-    // Phase 3: Fuzzing loop
-    let mut rng = match config.seed {
-        Some(seed) => {
-            <rand::rngs::StdRng as rand::SeedableRng>::seed_from_u64(seed.wrapping_add(1))
-        }
-        None => <rand::rngs::StdRng as rand::SeedableRng>::from_entropy(),
-    };
-
-    // Coverage plateau detection: stall counter tracks iterations without new coverage
-    let mut stall_counter: usize = 0;
-    let mut last_coverage_count = global_coverage.count();
-
-    for _iteration in 0..config.max_iterations {
-        // Time-based stopping: check wall-clock time limit
-        if let Some(max_ms) = config.max_duration_ms {
-            if start_time.elapsed().as_millis() as u64 >= max_ms {
-                break;
-            }
-        }
-
-        // Select a parent from the corpus
-        let parent = match scheduler::select_next(corpus, &mut rng) {
-            Some(p) => p.clone(),
-            None => continue,
-        };
-
-        // Determine if we're in havoc-only mode due to coverage plateau
-        let havoc_only = stall_counter >= 100;
-
-        // Mutate (or crossover), with occasional dependency-aware reseed on stalls.
-        let child = if stall_counter >= 150 && rng.gen_bool(0.25) {
-            generator::generate_dependency_seed_with_dict(
-                abi,
-                deps,
-                config,
-                &mut rng,
-                Some(dictionary),
-            )
-            .unwrap_or_else(|| parent.clone())
-        } else if rng.gen_bool(0.2) && corpus.entries.len() >= 2 {
-            // Crossover with another random parent
-            let other_idx = rng.gen_range(0..corpus.entries.len());
-            let other = &corpus.entries[other_idx].individual;
-            mutator::crossover(&parent, other, &mut rng)
-        } else {
-            mutator::mutate_individual_guided_with_dict(
-                &parent,
-                abi,
-                deps,
-                &mut rng,
-                Some(dictionary),
-                havoc_only,
-            )
-        };
-
-        // Execute
-        let trace = executor::execute_individual(&child, output, ir_module, cfgs, abi, deps);
-
-        // Oracle check
-        let mut findings = oracle::check_all(&trace, &child.transactions, Some(&output.ast));
-        findings.retain(|finding| keep_locked_ether_finding(finding, locked_ether_candidate));
-        if !findings.is_empty() {
-            // Tag the corpus entry with finding hashes
-            let hashes: Vec<String> = findings.iter().map(|f| f.trace_hash.clone()).collect();
-            all_findings.extend(findings);
-
-            // Add to corpus even if coverage is not new (it found bugs)
-            let added = scheduler::update_corpus(corpus, &child, &trace, global_coverage);
-            if !added {
-                corpus.entries.push(crate::fuzzing::types::CorpusEntry {
-                    individual: child.clone(),
-                    coverage: trace.coverage.clone(),
-                    finding_hashes: hashes,
-                });
-            }
-        } else {
-            scheduler::update_corpus(corpus, &child, &trace, global_coverage);
-        }
-
-        // Update coverage plateau detection
-        let current_coverage = global_coverage.count();
-        if current_coverage > last_coverage_count {
-            stall_counter = 0;
-            last_coverage_count = current_coverage;
-        } else {
-            stall_counter += 1;
-        }
-
-        // Re-assign energy periodically
-        if _iteration % 50 == 0 {
-            scheduler::assign_energy(corpus, global_coverage);
-        }
-
-        // Corpus minimization every 200 iterations
-        if _iteration % 200 == 0 && _iteration > 0 {
-            scheduler::minimize_corpus(corpus);
-        }
-    }
+fn count_seeded_inputs_for_abi(abi: &ContractAbi, config: &FuzzConfig) -> usize {
+    let abi_function_ids = abi
+        .functions
+        .iter()
+        .map(|function| function.id)
+        .collect::<std::collections::HashSet<_>>();
+    config
+        .seed_corpus
+        .iter()
+        .filter(|seed| {
+            !seed.transactions.is_empty()
+                && seed
+                    .transactions
+                    .iter()
+                    .all(|tx| abi_function_ids.contains(&tx.function_id))
+        })
+        .count()
 }
 
 /// Print a text report of fuzz results, grouped by taxonomy category.
@@ -963,6 +1210,12 @@ pub fn print_report(report: &FuzzReport) {
         "coverage: {}/{} blocks ({:.1}%)",
         report.covered_blocks, report.total_blocks, report.coverage_pct
     );
+    if let Some(stats) = &report.hybrid_stats {
+        println!(
+            "hybrid_seeds: provided={}, executed={}",
+            stats.seeded_inputs_provided, stats.seeded_inputs_executed
+        );
+    }
     if let Some(reason) = &report.corpus_zero_reason {
         println!("corpus_zero_reason: {reason}");
     }
@@ -1075,6 +1328,7 @@ struct JsonFuzzReport {
     corpus_size: usize,
     corpus_zero_reason: Option<String>,
     elapsed_ms: u128,
+    hybrid_stats: Option<JsonFuzzHybridStats>,
     finding_count_raw: usize,
     suppressed_findings: usize,
     finding_counts: Vec<surfaced::SurfacedCount>,
@@ -1085,6 +1339,12 @@ struct JsonFuzzReport {
     meta_finding_counts: Vec<surfaced::SurfacedCount>,
     meta_findings: Vec<surfaced::SurfacedFinding>,
     meta_findings_raw: Vec<crate::core::artifacts::Finding>,
+}
+
+#[derive(Debug, Serialize)]
+struct JsonFuzzHybridStats {
+    seeded_inputs_provided: usize,
+    seeded_inputs_executed: usize,
 }
 
 pub fn print_report_json(report: &FuzzReport) -> Result<()> {
@@ -1111,6 +1371,13 @@ fn json_report(report: &FuzzReport) -> JsonFuzzReport {
         corpus_size: report.corpus_size,
         corpus_zero_reason: report.corpus_zero_reason.clone(),
         elapsed_ms: report.elapsed_ms,
+        hybrid_stats: report
+            .hybrid_stats
+            .as_ref()
+            .map(|stats| JsonFuzzHybridStats {
+                seeded_inputs_provided: stats.seeded_inputs_provided,
+                seeded_inputs_executed: stats.seeded_inputs_executed,
+            }),
         finding_count_raw: report.findings.len(),
         suppressed_findings: surfaced.suppressed_runtime_findings,
         finding_counts: surfaced.runtime_finding_counts,
@@ -1256,6 +1523,7 @@ mod tests {
 
     fn finding(kind: FuzzFindingKind, message: &str) -> FuzzFinding {
         FuzzFinding {
+            span: None,
             kind,
             severity: FuzzSeverity::Medium,
             message: message.to_string(),
@@ -1328,21 +1596,15 @@ mod tests {
 
         let filtered = apply_static_fp_guards(findings, &tod_allowed, &sig_mall_allowed);
         assert_eq!(filtered.len(), 2);
-        assert!(
-            filtered
-                .iter()
-                .any(|f| matches!(f.kind, FuzzFindingKind::TransactionOrderDependency))
-        );
-        assert!(
-            filtered
-                .iter()
-                .any(|f| matches!(f.kind, FuzzFindingKind::UncheckedCall))
-        );
-        assert!(
-            !filtered
-                .iter()
-                .any(|f| matches!(f.kind, FuzzFindingKind::SignatureMalleability))
-        );
+        assert!(filtered
+            .iter()
+            .any(|f| matches!(f.kind, FuzzFindingKind::TransactionOrderDependency)));
+        assert!(filtered
+            .iter()
+            .any(|f| matches!(f.kind, FuzzFindingKind::UncheckedCall)));
+        assert!(!filtered
+            .iter()
+            .any(|f| matches!(f.kind, FuzzFindingKind::SignatureMalleability)));
     }
 
     #[test]
@@ -1539,16 +1801,12 @@ mod tests {
 
         let injected = inject_static_runtime_backstops(&[], &static_findings, &ast);
         assert!(injected.iter().any(|f| f.kind == FuzzFindingKind::WeakPRNG));
-        assert!(
-            injected
-                .iter()
-                .any(|f| f.kind == FuzzFindingKind::LockedEther)
-        );
-        assert!(
-            injected
-                .iter()
-                .any(|f| f.kind == FuzzFindingKind::UncheckedCall)
-        );
+        assert!(injected
+            .iter()
+            .any(|f| f.kind == FuzzFindingKind::LockedEther));
+        assert!(injected
+            .iter()
+            .any(|f| f.kind == FuzzFindingKind::UncheckedCall));
     }
 
     #[test]
@@ -1567,11 +1825,9 @@ mod tests {
         }];
 
         let injected = inject_static_runtime_backstops(&[], &static_findings, &ast);
-        assert!(
-            injected
-                .iter()
-                .any(|f| f.kind == FuzzFindingKind::LockedEther)
-        );
+        assert!(injected
+            .iter()
+            .any(|f| f.kind == FuzzFindingKind::LockedEther));
     }
 
     #[test]
@@ -1633,11 +1889,9 @@ mod tests {
         }];
 
         let injected = inject_static_runtime_backstops(&runtime_findings, &static_findings, &ast);
-        assert!(
-            injected
-                .iter()
-                .any(|finding| finding.kind == FuzzFindingKind::DosBlockGasLimit)
-        );
+        assert!(injected
+            .iter()
+            .any(|finding| finding.kind == FuzzFindingKind::DosBlockGasLimit));
     }
 
     #[test]
@@ -1749,11 +2003,9 @@ mod tests {
             finding.kind == FuzzFindingKind::TimestampDependency
                 && finding.message.contains("block.timestamp/now")
         }));
-        assert!(
-            injected
-                .iter()
-                .any(|finding| finding.kind == FuzzFindingKind::WeakPRNG)
-        );
+        assert!(injected
+            .iter()
+            .any(|finding| finding.kind == FuzzFindingKind::WeakPRNG));
     }
 
     #[test]

@@ -111,6 +111,8 @@ function modeLabel(mode) {
   switch (value) {
     case "fuzzing":
       return "Fuzzing Analysis";
+    case "hybrid":
+      return "Hybrid Analysis";
     case "symbolic":
       return "Symbolic Analysis";
     case "static":
@@ -397,6 +399,9 @@ function summaryAccent(label, index) {
     "Unique Kinds": "summary-card summary-card-info",
     "High Severity": "summary-card summary-card-error",
     "High Confidence": "summary-card summary-card-good",
+    "Selected Targets": "summary-card summary-card-info",
+    "SE Findings": "summary-card summary-card-good",
+    "Injected Seeds": "summary-card summary-card-good",
     Warnings: "summary-card summary-card-warn",
   };
   return toneByLabel[label] || "summary-card";
@@ -409,6 +414,9 @@ function renderSummary(cards) {
     "Unique Kinds",
     "High Severity",
     "High Confidence",
+    "Selected Targets",
+    "SE Findings",
+    "Injected Seeds",
     "Warnings",
   ];
   const orderedCards = [...cards].sort((left, right) => {

@@ -1,7 +1,9 @@
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use crate::cfg::BlockId;
+use crate::norm::Span;
 use crate::symbolic::detectors::DetectorRegistry;
 use crate::symbolic::state::storage::StorageLayout;
 use crate::symbolic::state::SymbolicState;
@@ -70,6 +72,10 @@ pub struct SeConfig {
     /// Contract name used for storage slot lookup.
     /// Defaults to empty string (single-contract analysis).
     pub contract_name: String,
+    /// Optional function-level targeting used by hybrid mode.
+    pub target_function_ids: Option<HashSet<u32>>,
+    /// Optional sink span preference used by hybrid mode.
+    pub preferred_sink_span: Option<Span>,
 }
 
 impl Default for SeConfig {
@@ -86,6 +92,8 @@ impl Default for SeConfig {
             detectors: DetectorRegistry::new(),
             storage_layout: Arc::new(StorageLayout::empty()),
             contract_name: String::new(),
+            target_function_ids: None,
+            preferred_sink_span: None,
         }
     }
 }

@@ -392,6 +392,16 @@ fn handle_call(
             }
         }
         _ => {
+            // A pending (low-level call) return passed as a call argument is
+            // being consumed — e.g. OpenZeppelin's `verifyCallResult(success,
+            // returndata)` — so it is not a silently-dropped result. Clear it
+            // before processing this call. (Bare discarded calls have no dest and
+            // are flagged by the DoS detector, so SolidiFI recall is unaffected.)
+            for arg in args {
+                if let IrValue::Var(v) = arg {
+                    state.clear_pending_by_var(v);
+                }
+            }
             let cname = callee_name_str(callee).unwrap_or_default();
             let low_level = is_low_level_call_name(&cname);
             // Signal external call for callback simulation in the engine loop.

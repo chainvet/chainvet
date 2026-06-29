@@ -1,7 +1,7 @@
 pub mod dump;
 pub mod lower;
 
-pub use dump::{DumpFormat, dump_module};
+pub use dump::{dump_module, DumpFormat};
 pub use lower::lower_module;
 
 use crate::norm::{Literal, Span};
@@ -103,6 +103,28 @@ pub enum IrInstr {
         language: Option<String>,
         span: Span,
     },
+}
+
+impl IrInstr {
+    /// Source span of this instruction (every variant carries one).
+    pub fn span(&self) -> Span {
+        match self {
+            IrInstr::Nop { span }
+            | IrInstr::Eval { span, .. }
+            | IrInstr::Declare { span, .. }
+            | IrInstr::Assign { span, .. }
+            | IrInstr::Store { span, .. }
+            | IrInstr::Load { span, .. }
+            | IrInstr::Binary { span, .. }
+            | IrInstr::Unary { span, .. }
+            | IrInstr::Call { span, .. }
+            | IrInstr::Select { span, .. }
+            | IrInstr::Emit { span, .. }
+            | IrInstr::Return { span, .. }
+            | IrInstr::Control { span, .. }
+            | IrInstr::InlineAsm { span, .. } => *span,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]

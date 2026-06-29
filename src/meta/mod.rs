@@ -621,8 +621,8 @@ mod tests {
     }
 
     #[test]
-    fn taxonomy_row_count_stays_at_46() {
-        assert_eq!(TAXONOMY_ROW_COUNT, 46);
+    fn taxonomy_row_count_stays_at_47() {
+        assert_eq!(TAXONOMY_ROW_COUNT, 47);
     }
 
     #[test]

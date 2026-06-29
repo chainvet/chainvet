@@ -97,6 +97,7 @@ pub enum FindingKind {
     DosWithFailedCall,      // DS-04
     ForceEtherBalanceCheck, // DS-05
     UnsafeSendInRequire,    // DS-06
+    UncheckedSend,          // DS-07
 
     // ── Reentrancy (5) ───────────────────────────────────────────────
     ReentrancyNegativeEvents, // RE-01
@@ -119,7 +120,7 @@ pub enum FindingKind {
     TaintedCall, // MI-02
 }
 
-pub const TAXONOMY_FINDING_KINDS: [FindingKind; 46] = [
+pub const TAXONOMY_FINDING_KINDS: [FindingKind; 47] = [
     FindingKind::ArbitraryTransferFrom,
     FindingKind::ArbitraryCalldata,
     FindingKind::CallerNotChecked,
@@ -153,6 +154,7 @@ pub const TAXONOMY_FINDING_KINDS: [FindingKind; 46] = [
     FindingKind::DosWithFailedCall,
     FindingKind::ForceEtherBalanceCheck,
     FindingKind::UnsafeSendInRequire,
+    FindingKind::UncheckedSend,
     FindingKind::ReentrancyNegativeEvents,
     FindingKind::ReentrancyTransfer,
     FindingKind::ReentrancySameEffect,
@@ -215,6 +217,7 @@ impl FindingKind {
             FindingKind::DosWithFailedCall => "dos-with-failed-call",
             FindingKind::ForceEtherBalanceCheck => "force-ether-balance-check",
             FindingKind::UnsafeSendInRequire => "unsafe-send-in-require",
+            FindingKind::UncheckedSend => "unchecked-send",
             // Reentrancy
             FindingKind::ReentrancyNegativeEvents => "reentrancy-negative-events",
             FindingKind::ReentrancyTransfer => "reentrancy-transfer",
@@ -275,7 +278,8 @@ impl FindingKind {
             | FindingKind::DosBlockGasLimit
             | FindingKind::DosWithFailedCall
             | FindingKind::ForceEtherBalanceCheck
-            | FindingKind::UnsafeSendInRequire => Category::DenialOfService,
+            | FindingKind::UnsafeSendInRequire
+            | FindingKind::UncheckedSend => Category::DenialOfService,
 
             FindingKind::ReentrancyNegativeEvents
             | FindingKind::ReentrancyTransfer
@@ -330,7 +334,7 @@ pub fn run_detectors(
     findings.extend(access_control::detect_all(ast, call_graph, taint_summaries));
 
     // ── Arithmetic category (4 rules) ────────────────────────────────────
-    findings.extend(arithmetic::detect_all(ast));
+    findings.extend(arithmetic::detect_all(ast, taint_summaries));
 
     // ── Block Manipulation category (3 rules) ────────────────────────────
     findings.extend(block_manipulation::detect_all(ast));

@@ -44,7 +44,48 @@ pub fn detect_all(ast: &NormalizedAst) -> Vec<Finding> {
     findings.extend(detect_reentrancy_eth_transfer(ast)); // RE-04
     findings.extend(detect_reentrancy_no_eth_transfer(ast)); // RE-05
 
+    // Trust-context guard: drop findings in functions protected by a reentrancy
+    // guard (nonReentrant) or access control (onlyOwner/onlyRole/…). The FSE'24
+    // SAST study found that flagging the call→state-change pattern without regard
+    // for the trust environment is a leading false-positive source on real code.
+    // SolidiFI's injected bugs live in unguarded public functions, so this costs
+    // no recall while removing the FP class the study describes.
+    findings.retain(|f| {
+        f.function
+            .and_then(|id| ast.functions.iter().find(|func| func.id == id))
+            .map(|func| !function_is_trust_guarded(func))
+            .unwrap_or(true)
+    });
+
     findings
+}
+
+/// A function is "trust-guarded" when a modifier marks it as reentrancy-locked
+/// or access-controlled — the caller (or the re-entrant path) is then trusted.
+fn function_is_trust_guarded(func: &crate::norm::Function) -> bool {
+    const GUARD_HINTS: &[&str] = &[
+        // reentrancy locks
+        "nonreentrant",
+        "noreentrant",
+        "nonreentrancy",
+        "reentrancyguard",
+        "mutex",
+        // access control
+        "onlyowner",
+        "owneronly",
+        "onlyadmin",
+        "adminonly",
+        "onlyrole",
+        "onlygovernance",
+        "onlygovernor",
+        "onlyminter",
+        "onlyauthorized",
+        "restricted",
+    ];
+    func.modifiers.iter().any(|m| {
+        let lo = m.to_lowercase();
+        GUARD_HINTS.iter().any(|h| lo.contains(h))
+    })
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -787,11 +828,7 @@ fn detect_reentrancy_same_effect(ast: &NormalizedAst) -> Vec<Finding> {
 
         for (i, &sid) in stmts.iter().enumerate() {
             let ext_calls = find_external_calls_in_stmt(ast, sid);
-            let callback_capable_calls: Vec<_> = ext_calls
-                .iter()
-                .filter(|call| !call.is_transfer_or_send)
-                .collect();
-            if callback_capable_calls.is_empty() {
+            if ext_calls.is_empty() {
                 continue;
             }
 
@@ -823,15 +860,34 @@ fn detect_reentrancy_same_effect(ast: &NormalizedAst) -> Vec<Finding> {
             if read_before {
                 let func_name = func.name.as_deref().unwrap_or("<anonymous>");
                 let var_list = written_after.join(", ");
+                // A `.call`-style call forwards all gas → directly exploitable (High).
+                // A `.transfer`/`.send` forwards only the 2300-gas stipend, so the
+                // same checks-effects-interactions violation is not exploitable
+                // *today* — but it is a fragile anti-pattern (breaks the moment the
+                // call becomes `.call` or gas costs shift), so flag it at Medium.
+                let callback = ext_calls.iter().find(|c| !c.is_transfer_or_send);
+                let (severity, span, detail) = match callback {
+                    Some(c) => (
+                        Severity::High,
+                        c.span,
+                        "a re-entrant callback will see stale values and repeat the same effect",
+                    ),
+                    None => (
+                        Severity::Medium,
+                        ext_calls[0].span,
+                        "the .transfer/.send 2300-gas stipend limits exploitability today, but \
+                         this checks-effects-interactions violation is fragile — update state \
+                         before the call",
+                    ),
+                };
                 findings.push(Finding {
                     kind: FindingKind::ReentrancySameEffect,
-                    severity: Severity::High,
+                    severity,
                     message: format!(
                         "RE-03: reentrancy in `{func_name}`: variable(s) `{var_list}` \
-                        read before external call and written after it; a re-entrant \
-                        callback will see stale values and repeat the same effect"
+                        read before external call and written after it; {detail}"
                     ),
-                    span: callback_capable_calls[0].span,
+                    span,
                     function: Some(func.id),
                 });
             }

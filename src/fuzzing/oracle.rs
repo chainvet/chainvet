@@ -18,8 +18,16 @@ pub fn check_all(
     findings.extend(check_timestamp_dependency(trace, tx_sequence));
     findings.extend(check_unchecked_call(trace, tx_sequence, ast));
     findings.extend(check_exception_disorder(trace, tx_sequence, ast));
-    findings.extend(check_integer_overflow(trace, tx_sequence));
-    findings.extend(check_integer_underflow(trace, tx_sequence));
+    // In Solidity >= 0.8 arithmetic is checked: an overflow reverts instead of
+    // wrapping, so the wrapping-based overflow/underflow oracles would be false
+    // positives (confirmed on audited 0.8 code in the clean precision set).
+    let arithmetic_unchecked = ast
+        .map(|a| !crate::analysis::detectors::arithmetic::all_files_are_0_8_plus(a))
+        .unwrap_or(true);
+    if arithmetic_unchecked {
+        findings.extend(check_integer_overflow(trace, tx_sequence));
+        findings.extend(check_integer_underflow(trace, tx_sequence));
+    }
     findings.extend(check_access_control(trace, tx_sequence, ast));
     findings.extend(check_arbitrary_write(trace, tx_sequence, ast));
     findings.extend(check_wrong_constructor_name(trace, tx_sequence));
@@ -38,7 +46,73 @@ pub fn check_all(
     findings.extend(check_cryptographic(trace, tx_sequence));
     findings.extend(check_unprotected_ether_withdrawal(trace, tx_sequence, ast));
     findings.extend(check_locked_ether(trace, tx_sequence));
+    findings.extend(check_supply_conservation(trace, tx_sequence, ast));
     findings
+}
+
+/// ERC-20 supply conservation invariant: the sum of per-account balances must
+/// equal `totalSupply` after any sequence of transactions. A divergence means a
+/// transaction created or destroyed tokens outside supply accounting (e.g. a
+/// `transfer` that credits the receiver without debiting the sender). Relies on
+/// the executor keying mapping state by resolved runtime index.
+fn check_supply_conservation(
+    trace: &ExecutionTrace,
+    tx_sequence: &[Transaction],
+    ast: Option<&NormalizedAst>,
+) -> Vec<FuzzFinding> {
+    let Some(ast) = ast else {
+        return Vec::new();
+    };
+    let balance_var = ast.state_vars.iter().find(|v| {
+        v.name.to_ascii_lowercase().contains("balance")
+            && v.type_string
+                .as_deref()
+                .map(|t| t.contains("mapping"))
+                .unwrap_or(false)
+    });
+    let supply_var = ast
+        .state_vars
+        .iter()
+        .find(|v| v.name.to_ascii_lowercase().contains("totalsupply"));
+    let (Some(balance_var), Some(supply_var)) = (balance_var, supply_var) else {
+        return Vec::new();
+    };
+
+    let prefix = format!("{}#", balance_var.name);
+    let sum: u128 = trace
+        .final_state
+        .iter()
+        .filter(|(k, _)| k.starts_with(&prefix))
+        .map(|(_, v)| v.as_uint())
+        .sum();
+    let total = trace
+        .final_state
+        .get(&supply_var.name)
+        .map(|v| v.as_uint())
+        .unwrap_or(0);
+
+    // Only flag the inflation direction: more tokens in balances than the total
+    // supply (tokens created in an account without supply accounting — the
+    // classic mint-without-bookkeeping bug). The opposite direction (sum < total)
+    // is mostly the abstract executor under-modeling balances on complex real
+    // contracts, so flagging it produces false positives. Also require a
+    // non-reverted trace so partial state from a reverted sequence isn't judged.
+    if sum > total && !trace.reverted {
+        let hash = hash_finding("supply-conservation", 0, &format!("{sum}:{total}"));
+        return vec![FuzzFinding {
+            span: None,
+            kind: FuzzFindingKind::InvariantViolation,
+            severity: FuzzSeverity::High,
+            message: format!(
+                "ERC-20 supply conservation violated: sum of `{}` ({}) exceeds `{}` ({}); \
+                a transaction creates tokens outside supply accounting",
+                balance_var.name, sum, supply_var.name, total
+            ),
+            tx_sequence: tx_sequence.to_vec(),
+            trace_hash: hash,
+        }];
+    }
+    Vec::new()
 }
 
 /// Reentrancy: callback-capable external call followed by a storage write in the same function.
@@ -124,6 +198,7 @@ fn check_reentrancy(
                         format!("{key}:{evidence}").as_str(),
                     );
                     findings.push(FuzzFinding {
+                    span: None,
                         kind: FuzzFindingKind::Reentrancy,
                         severity: FuzzSeverity::High,
                         message: format!(
@@ -141,6 +216,7 @@ fn check_reentrancy(
                 {
                     let hash = hash_finding("reentrancy-fallback", event.function_id, key.as_str());
                     findings.push(FuzzFinding {
+                    span: None,
                         kind: FuzzFindingKind::ReentrancyHeuristic,
                         severity: FuzzSeverity::Low,
                         message: format!(
@@ -174,6 +250,7 @@ fn check_reentrancy(
                 let hash =
                     hash_finding("reentrancy-pre-call-effects", function_id, detail.as_str());
                 findings.push(FuzzFinding {
+                    span: None,
                     kind: FuzzFindingKind::ReentrancyHeuristic,
                     severity: FuzzSeverity::Low,
                     message: format!(
@@ -186,6 +263,7 @@ fn check_reentrancy(
             } else {
                 let hash = hash_finding("reentrancy-callback", function_id, "callback-only");
                 findings.push(FuzzFinding {
+                    span: None,
                     kind: FuzzFindingKind::ReentrancyHeuristic,
                     severity: FuzzSeverity::Low,
                     message: format!(
@@ -227,6 +305,7 @@ fn check_timestamp_dependency(
             if seen_functions.insert(event.function_id) {
                 let hash = hash_finding("timestamp", event.function_id, "branch");
                 findings.push(FuzzFinding {
+                    span: event.span,
                     kind: FuzzFindingKind::TimestampDependency,
                     severity: FuzzSeverity::Medium,
                     message,
@@ -258,6 +337,7 @@ fn check_unchecked_call(
             if seen.insert(key) {
                 let hash = hash_finding("unchecked-call", event.function_id, callee);
                 findings.push(FuzzFinding {
+                    span: event.span,
                     kind: FuzzFindingKind::UncheckedCall,
                     severity: FuzzSeverity::Medium,
                     message: format!(
@@ -293,6 +373,7 @@ fn check_exception_disorder(
                 if seen.insert(key) {
                     let hash = hash_finding("exception-disorder", event.function_id, callee);
                     findings.push(FuzzFinding {
+                    span: event.span,
                         kind: FuzzFindingKind::ExceptionDisorder,
                         severity: FuzzSeverity::Medium,
                         message: format!(
@@ -344,6 +425,7 @@ fn check_integer_overflow(trace: &ExecutionTrace, tx_sequence: &[Transaction]) -
                 if seen.insert(key) {
                     let hash = hash_finding("overflow", event.function_id, op);
                     findings.push(FuzzFinding {
+                    span: event.span,
                         kind: FuzzFindingKind::IntegerOverflow,
                         severity: FuzzSeverity::High,
                         message: format!(
@@ -463,6 +545,7 @@ fn check_access_control(
             let detail = detail_from_slots(&summary.authority_slots);
             let hash = hash_finding("access-control", func_id, "no-sender-check");
             findings.push(FuzzFinding {
+                    span: None,
                 kind: FuzzFindingKind::AccessControl,
                 severity: FuzzSeverity::High,
                 message: format!(
@@ -519,6 +602,7 @@ fn check_arbitrary_write(
         if seen.insert(function_id) {
             let hash = hash_finding("arbitrary-write", function_id, detail.as_str());
             findings.push(FuzzFinding {
+                    span: None,
                 kind: FuzzFindingKind::ArbitraryWrite,
                 severity: FuzzSeverity::High,
                 message: format!(
@@ -556,6 +640,7 @@ fn check_wrong_constructor_name(
                     function_name.as_str(),
                 );
                 findings.push(FuzzFinding {
+                    span: None,
                     kind: FuzzFindingKind::WrongConstructorName,
                     severity: FuzzSeverity::High,
                     message: format!(
@@ -582,6 +667,7 @@ fn check_tx_origin(trace: &ExecutionTrace, tx_sequence: &[Transaction]) -> Vec<F
             if seen_functions.insert(event.function_id) {
                 let hash = hash_finding("tx-origin", event.function_id, "used");
                 findings.push(FuzzFinding {
+                    span: event.span,
                     kind: FuzzFindingKind::TxOriginAuth,
                     severity: FuzzSeverity::Medium,
                     message: format!(
@@ -685,6 +771,7 @@ fn check_selfdestruct(
         {
             let hash = hash_finding("selfdestruct", *func_id, "call");
             findings.push(FuzzFinding {
+                span: None,
                 kind: FuzzFindingKind::SelfDestruct,
                 severity: FuzzSeverity::High,
                 message: format!(
@@ -711,6 +798,7 @@ fn check_dos(trace: &ExecutionTrace, tx_sequence: &[Transaction]) -> Vec<FuzzFin
             if seen.insert(key) {
                 let hash = hash_finding("dos", event.function_id, var_name);
                 findings.push(FuzzFinding {
+                    span: None,
                     kind: FuzzFindingKind::DenialOfService,
                     severity: FuzzSeverity::Medium,
                     message: format!(
@@ -758,6 +846,7 @@ fn check_dos_block_gas_limit(
         }
         let hash = hash_finding("dos-block-gas-limit", function_id, "dynamic-loop");
         findings.push(FuzzFinding {
+                    span: None,
             kind: FuzzFindingKind::DosBlockGasLimit,
             severity: FuzzSeverity::Medium,
             message: format!(
@@ -790,6 +879,7 @@ fn check_unsafe_send_in_require(
             if seen.insert(key) {
                 let hash = hash_finding("unsafe-send-in-require", event.function_id, callee);
                 findings.push(FuzzFinding {
+                    span: None,
                     kind: FuzzFindingKind::UnsafeSendInRequire,
                     severity: FuzzSeverity::High,
                     message: format!(
@@ -845,6 +935,7 @@ fn check_dos_with_failed_call(
         if function_has_loop_transfer.contains(&function_id) && seen.insert(function_id) {
             let hash = hash_finding("dos-with-failed-call", function_id, "loop-transfer");
             findings.push(FuzzFinding {
+                    span: None,
                 kind: FuzzFindingKind::DosWithFailedCall,
                 severity: FuzzSeverity::High,
                 message: format!(
@@ -861,6 +952,7 @@ fn check_dos_with_failed_call(
         if seen.insert(function_id) {
             let hash = hash_finding("dos-with-failed-call", function_id, "require-send");
             findings.push(FuzzFinding {
+                    span: None,
                 kind: FuzzFindingKind::DosWithFailedCall,
                 severity: FuzzSeverity::High,
                 message: format!(
@@ -921,6 +1013,7 @@ fn check_integer_underflow(
                 if seen.insert(key) {
                     let hash = hash_finding("underflow", event.function_id, op);
                     findings.push(FuzzFinding {
+                    span: event.span,
                         kind: FuzzFindingKind::IntegerUnderflow,
                         severity: FuzzSeverity::High,
                         message: format!(
@@ -969,6 +1062,7 @@ fn check_unsafe_delegatecall(
         if !functions_with_sender_check.contains(func_id) && seen.insert(*func_id) {
             let hash = hash_finding("unsafe-delegatecall", *func_id, callee);
             findings.push(FuzzFinding {
+                span: None,
                 kind: FuzzFindingKind::UnsafeDelegatecall,
                 severity: FuzzSeverity::High,
                 message: format!(
@@ -994,6 +1088,7 @@ fn check_weak_prng(trace: &ExecutionTrace, tx_sequence: &[Transaction]) -> Vec<F
             if seen_functions.insert(event.function_id) {
                 let hash = hash_finding("weak-prng", event.function_id, "block-number");
                 findings.push(FuzzFinding {
+                    span: None,
                     kind: FuzzFindingKind::WeakPRNG,
                     severity: FuzzSeverity::Medium,
                     message: format!(
@@ -1092,6 +1187,7 @@ fn check_transaction_order_dependency(
         if seen.insert((function_id, detail)) {
             let hash = hash_finding("transaction-order-dependency", function_id, detail);
             findings.push(FuzzFinding {
+                    span: None,
                 kind: FuzzFindingKind::TransactionOrderDependency,
                 severity: FuzzSeverity::Medium,
                 message: format!(
@@ -1154,6 +1250,7 @@ fn check_hardcoded_gas(
             if seen.insert(key) {
                 let hash = hash_finding("hardcoded-gas", event.function_id, callee);
                 findings.push(FuzzFinding {
+                    span: None,
                     kind: FuzzFindingKind::HardcodedGas,
                     severity: FuzzSeverity::Low,
                     message: format!(
@@ -1194,6 +1291,7 @@ fn check_locked_ether(trace: &ExecutionTrace, tx_sequence: &[Transaction]) -> Ve
         };
         let hash = hash_finding("locked-ether", *function_id, detail);
         return vec![FuzzFinding {
+                    span: None,
             kind: FuzzFindingKind::LockedEther,
             severity: FuzzSeverity::Medium,
             message: format!(
@@ -1224,6 +1322,7 @@ fn check_storage_memory(trace: &ExecutionTrace, tx_sequence: &[Transaction]) -> 
                 if seen.insert((event.function_id, "inline-asm".to_string())) {
                     let hash = hash_finding("storage-memory", event.function_id, "inline-asm");
                     findings.push(FuzzFinding {
+                    span: None,
                         kind: FuzzFindingKind::StorageMemoryIssue,
                         severity: FuzzSeverity::Medium,
                         message: format!(
@@ -1239,6 +1338,7 @@ fn check_storage_memory(trace: &ExecutionTrace, tx_sequence: &[Transaction]) -> 
                 if seen.insert((event.function_id, callee.clone())) {
                     let hash = hash_finding("storage-memory", event.function_id, callee);
                     findings.push(FuzzFinding {
+                    span: None,
                         kind: FuzzFindingKind::StorageMemoryIssue,
                         severity: FuzzSeverity::High,
                         message: format!(
@@ -1270,6 +1370,7 @@ fn check_division_before_multiplication(
             if seen.insert(*function_id_inner) {
                 let hash = hash_finding("div-before-mul", *function_id_inner, "pattern");
                 findings.push(FuzzFinding {
+                    span: None,
                     kind: FuzzFindingKind::DivisionBeforeMultiplication,
                     severity: FuzzSeverity::Medium,
                     message: format!(
@@ -1321,6 +1422,7 @@ fn check_cryptographic(trace: &ExecutionTrace, tx_sequence: &[Transaction]) -> V
         if seen.insert((function_id, "cryptographic")) {
             let hash = hash_finding("cryptographic", function_id, "ecrecover-no-zero-check");
             findings.push(FuzzFinding {
+                    span: None,
                 kind: FuzzFindingKind::CryptographicIssue,
                 severity: FuzzSeverity::Medium,
                 message: format!(
@@ -1334,6 +1436,7 @@ fn check_cryptographic(trace: &ExecutionTrace, tx_sequence: &[Transaction]) -> V
         if seen.insert((function_id, "signature-malleability")) {
             let hash = hash_finding("signature-malleability", function_id, "ecrecover");
             findings.push(FuzzFinding {
+                    span: None,
             kind: FuzzFindingKind::SignatureMalleability,
             severity: FuzzSeverity::Medium,
             message: format!(
@@ -1389,6 +1492,7 @@ fn check_unprotected_ether_withdrawal(
         {
             let hash = hash_finding("unprotected-withdrawal", *func_id, callee);
             findings.push(FuzzFinding {
+                span: None,
                 kind: FuzzFindingKind::UnprotectedEtherWithdrawal,
                 severity: FuzzSeverity::High,
                 message: format!(
@@ -2404,11 +2508,9 @@ mod tests {
             },
         ];
         let findings = check_transaction_order_dependency(&trace, &txs);
-        assert!(
-            findings
-                .iter()
-                .any(|f| f.kind == FuzzFindingKind::TransactionOrderDependency)
-        );
+        assert!(findings
+            .iter()
+            .any(|f| f.kind == FuzzFindingKind::TransactionOrderDependency));
     }
 
     #[test]
@@ -2438,11 +2540,9 @@ mod tests {
             },
         ];
         let findings = check_cryptographic(&trace, &txs);
-        assert!(
-            findings
-                .iter()
-                .any(|f| f.kind == FuzzFindingKind::SignatureMalleability)
-        );
+        assert!(findings
+            .iter()
+            .any(|f| f.kind == FuzzFindingKind::SignatureMalleability));
     }
 
     #[test]
@@ -2484,6 +2584,7 @@ mod tests {
     #[test]
     fn dedup_removes_duplicates() {
         let f1 = FuzzFinding {
+            span: None,
             kind: FuzzFindingKind::Reentrancy,
             severity: FuzzSeverity::High,
             message: "test".to_string(),
@@ -2492,6 +2593,7 @@ mod tests {
         };
         let f2 = f1.clone();
         let f3 = FuzzFinding {
+            span: None,
             trace_hash: "def".to_string(),
             ..f1.clone()
         };

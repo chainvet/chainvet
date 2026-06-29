@@ -149,6 +149,7 @@ enum WebMode {
     Static,
     Fuzzing,
     Symbolic,
+    Hybrid,
 }
 
 impl WebMode {
@@ -157,6 +158,7 @@ impl WebMode {
             "static" => Some(Self::Static),
             "fuzzing" => Some(Self::Fuzzing),
             "symbolic" => Some(Self::Symbolic),
+            "hybrid" => Some(Self::Hybrid),
             _ => None,
         }
     }
@@ -166,6 +168,7 @@ impl WebMode {
             Self::Static => "static",
             Self::Fuzzing => "fuzzing",
             Self::Symbolic => "symbolic",
+            Self::Hybrid => "hybrid",
         }
     }
 
@@ -174,6 +177,7 @@ impl WebMode {
             Self::Static => "--static",
             Self::Fuzzing => "--fuzzing",
             Self::Symbolic => "--symbolic",
+            Self::Hybrid => "--hybrid",
         }
     }
 }
@@ -573,7 +577,7 @@ fn analyze_sync(state: &AppState, request: AnalyzeRequest) -> ApiResult<AnalyzeR
         let findings = extract_web_findings(mode, &command_result.raw_report)?;
         let artifacts = collect_artifacts(&state.root_dir, command_result.run_dir.as_deref())?;
         let warnings = classify_warnings(command_result.warnings);
-        let summary_cards = build_summary_cards(mode, &findings, &warnings);
+        let summary_cards = build_summary_cards(mode, &findings, &warnings, &command_result.raw_report);
 
         Ok(AnalyzeResponse {
             root_dir: state.root_dir.display().to_string(),
@@ -759,7 +763,7 @@ fn aggregate_directory_analysis(
         ApiError::internal(format!("failed to serialize aggregate report: {err}"))
     })?;
     let warnings = classify_warnings(warnings);
-    let summary_cards = build_summary_cards(mode, &all_findings, &warnings);
+    let summary_cards = build_summary_cards(mode, &all_findings, &warnings, &raw_report);
 
     Ok(AnalyzeResponse {
         root_dir: state.root_dir.display().to_string(),
@@ -776,6 +780,39 @@ fn aggregate_directory_analysis(
 }
 
 fn build_summary_cards(
+    mode: WebMode,
+    findings: &[WebFinding],
+    warnings: &[WebWarning],
+    report: &Value,
+) -> Vec<SummaryCard> {
+    if mode == WebMode::Hybrid {
+        let metrics = hybrid_summary_metrics(report);
+        let mut cards = build_generic_summary_cards(mode, findings, warnings);
+        let insert_at = cards.len().saturating_sub(1);
+        cards.splice(
+            insert_at..insert_at,
+            [
+                SummaryCard {
+                    label: "Selected Targets".to_string(),
+                    value: metrics.selected_targets.to_string(),
+                },
+                SummaryCard {
+                    label: "SE Findings".to_string(),
+                    value: metrics.se_findings.to_string(),
+                },
+                SummaryCard {
+                    label: "Injected Seeds".to_string(),
+                    value: metrics.injected_seeds.to_string(),
+                },
+            ],
+        );
+        return cards;
+    }
+
+    build_generic_summary_cards(mode, findings, warnings)
+}
+
+fn build_generic_summary_cards(
     mode: WebMode,
     findings: &[WebFinding],
     warnings: &[WebWarning],
@@ -838,6 +875,13 @@ fn report_finding_totals(mode: WebMode, report: &Value) -> (usize, usize) {
                 + json_usize(report, "suppressed_meta_findings"),
         ),
         WebMode::Symbolic => (
+            report
+                .get("findings")
+                .and_then(Value::as_array)
+                .map_or(0, |a| a.len()),
+            0,
+        ),
+        WebMode::Hybrid => (
             report
                 .get("findings")
                 .and_then(Value::as_array)
@@ -930,6 +974,7 @@ fn extract_web_findings(mode: WebMode, report: &Value) -> ApiResult<Vec<WebFindi
         WebMode::Static => extract_static_findings(report),
         WebMode::Fuzzing => extract_surfaced_findings(report, "findings", "meta_findings"),
         WebMode::Symbolic => extract_symbolic_findings(report),
+        WebMode::Hybrid => extract_hybrid_findings(report),
     };
     findings.sort_by(|left, right| {
         (
@@ -995,6 +1040,29 @@ fn extract_symbolic_findings(report: &Value) -> Vec<WebFinding> {
             confidence: json_string_opt(finding, "confidence"),
             category: json_string_opt(finding, "category"),
             function: None,
+            file: json_string_opt(finding, "file"),
+            start: json_u32_opt(finding, "start"),
+            end: json_u32_opt(finding, "end"),
+            message: json_string(finding, "message"),
+            evidence: None,
+        })
+        .collect()
+}
+
+fn extract_hybrid_findings(report: &Value) -> Vec<WebFinding> {
+    report
+        .get("findings")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .map(|finding| WebFinding {
+            kind: json_string(finding, "kind"),
+            layer: json_string_opt(finding, "provenance")
+                .unwrap_or_else(|| "hybrid".to_string()),
+            severity: json_string_opt(finding, "severity"),
+            confidence: json_string_opt(finding, "confidence"),
+            category: json_string_opt(finding, "category"),
+            function: json_u32_opt(finding, "function_id").map(|id| format!("function #{id}")),
             file: json_string_opt(finding, "file"),
             start: json_u32_opt(finding, "start"),
             end: json_u32_opt(finding, "end"),
@@ -1207,6 +1275,38 @@ fn json_usize(value: &Value, key: &str) -> usize {
         .unwrap_or(0)
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+struct HybridSummaryMetrics {
+    selected_targets: usize,
+    se_findings: usize,
+    injected_seeds: usize,
+}
+
+fn hybrid_summary_metrics(report: &Value) -> HybridSummaryMetrics {
+    if let Some(entries) = report.get("reports").and_then(Value::as_array) {
+        return entries
+            .iter()
+            .filter_map(|entry| entry.get("report"))
+            .map(hybrid_summary_metrics_from_single_report)
+            .fold(HybridSummaryMetrics::default(), |acc, metrics| HybridSummaryMetrics {
+                selected_targets: acc.selected_targets + metrics.selected_targets,
+                se_findings: acc.se_findings + metrics.se_findings,
+                injected_seeds: acc.injected_seeds + metrics.injected_seeds,
+            });
+    }
+
+    hybrid_summary_metrics_from_single_report(report)
+}
+
+fn hybrid_summary_metrics_from_single_report(report: &Value) -> HybridSummaryMetrics {
+    let summary = report.get("summary").unwrap_or(report);
+    HybridSummaryMetrics {
+        selected_targets: json_usize(summary, "static_targets_selected"),
+        se_findings: json_usize(summary, "se_findings_total"),
+        injected_seeds: json_usize(summary, "fuzz_seed_count"),
+    }
+}
+
 fn severity_bucket(value: Option<&str>) -> &'static str {
     let normalized = value.unwrap_or("unknown").trim().to_ascii_lowercase();
     if normalized.contains("critical") || normalized.contains("high") {
@@ -1285,4 +1385,118 @@ fn request_process_termination(pid: u32) -> std::io::Result<()> {
         .args(["/PID", &pid.to_string(), "/T", "/F"])
         .status()?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn web_mode_supports_hybrid() {
+        assert_eq!(WebMode::parse("hybrid"), Some(WebMode::Hybrid));
+        assert_eq!(WebMode::Hybrid.as_str(), "hybrid");
+        assert_eq!(WebMode::Hybrid.flag(), "--hybrid");
+    }
+
+    #[test]
+    fn extract_hybrid_findings_maps_provenance_and_function_id() {
+        let report = json!({
+            "findings": [
+                {
+                    "provenance": "hybrid-confirmed",
+                    "kind": "reentrancy",
+                    "severity": "high",
+                    "confidence": "high",
+                    "category": "Reentrancy",
+                    "message": "confirmed by fuzzing",
+                    "function_id": 7,
+                    "file": "contracts/Vault.sol",
+                    "start": 12,
+                    "end": 34
+                }
+            ]
+        });
+
+        let findings = extract_hybrid_findings(&report);
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].layer, "hybrid-confirmed");
+        assert_eq!(findings[0].severity.as_deref(), Some("high"));
+        assert_eq!(findings[0].confidence.as_deref(), Some("high"));
+        assert_eq!(findings[0].category.as_deref(), Some("Reentrancy"));
+        assert_eq!(findings[0].function.as_deref(), Some("function #7"));
+        assert_eq!(findings[0].file.as_deref(), Some("contracts/Vault.sol"));
+        assert_eq!(findings[0].start, Some(12));
+        assert_eq!(findings[0].end, Some(34));
+    }
+
+    #[test]
+    fn hybrid_report_finding_totals_use_findings_array_length() {
+        let report = json!({
+            "findings": [{}, {}, {}]
+        });
+
+        assert_eq!(report_finding_totals(WebMode::Hybrid, &report), (3, 0));
+    }
+
+    #[test]
+    fn hybrid_summary_cards_read_single_report_counters() {
+        let warnings = vec![WebWarning {
+            title: "warning".to_string(),
+            message: "something".to_string(),
+            category: "general".to_string(),
+            suppressed_by_default: false,
+        }];
+        let report = json!({
+            "summary": {
+                "static_targets_selected": 4,
+                "se_findings_total": 2,
+                "fuzz_seed_count": 5
+            }
+        });
+
+        let cards = build_summary_cards(WebMode::Hybrid, &[], &warnings, &report);
+        assert!(cards.iter().any(|card| card.label == "Unique Kinds"));
+        assert!(cards.iter().any(|card| card.label == "High Severity"));
+        assert!(cards.iter().any(|card| card.label == "High Confidence"));
+        assert!(cards.iter().any(|card| card.label == "Selected Targets" && card.value == "4"));
+        assert!(cards.iter().any(|card| card.label == "SE Findings" && card.value == "2"));
+        assert!(cards.iter().any(|card| card.label == "Injected Seeds" && card.value == "5"));
+        assert!(cards.iter().any(|card| card.label == "Warnings" && card.value == "1"));
+    }
+
+    #[test]
+    fn hybrid_summary_cards_sum_nested_directory_reports() {
+        let report = json!({
+            "reports": [
+                {
+                    "report": {
+                        "summary": {
+                            "static_targets_selected": 2,
+                            "se_findings_total": 1,
+                            "fuzz_seed_count": 3
+                        }
+                    }
+                },
+                {
+                    "report": {
+                        "summary": {
+                            "static_targets_selected": 5,
+                            "se_findings_total": 4,
+                            "fuzz_seed_count": 6
+                        }
+                    }
+                }
+            ]
+        });
+
+        let metrics = hybrid_summary_metrics(&report);
+        assert_eq!(
+            metrics,
+            HybridSummaryMetrics {
+                selected_targets: 7,
+                se_findings: 5,
+                injected_seeds: 9,
+            }
+        );
+    }
 }

@@ -228,6 +228,7 @@ fn execute_transaction(
             };
             trace.coverage.insert((tx.function_id, block.id));
             trace.events.push(TraceEvent {
+                span: None,
                 function_id: tx.function_id,
                 kind: TraceEventKind::BlockVisited { block_id: block.id },
             });
@@ -344,10 +345,12 @@ fn execute_transaction(
         for block in &ir_func.blocks {
             trace.coverage.insert((tx.function_id, block.id));
             trace.events.push(TraceEvent {
+                span: None,
                 function_id: tx.function_id,
                 kind: TraceEventKind::BlockVisited { block_id: block.id },
             });
             for instr in &block.instrs {
+                let ev_before = trace.events.len();
                 execute_instr(
                     instr,
                     tx,
@@ -369,6 +372,14 @@ fn execute_transaction(
                     checked_arithmetic,
                     reentry_depth,
                 );
+                // Stamp each event this instruction produced with its source span,
+                // so oracles report the exact operation line (not the function).
+                let instr_span = instr.span();
+                for event in trace.events[ev_before..].iter_mut() {
+                    if event.span.is_none() {
+                        event.span = Some(instr_span);
+                    }
+                }
             }
         }
     }
@@ -403,6 +414,7 @@ fn execute_transaction(
                 if let Some(callee) = &last_ext_call {
                     if !ext_call_checked && var_name != "__no_sender_check" {
                         disorder_events.push(TraceEvent {
+                            span: None,
                             function_id: tx.function_id,
                             kind: TraceEventKind::ExternalCallThenState {
                                 callee: callee.clone(),
@@ -421,6 +433,7 @@ fn execute_transaction(
     for (call_id, callee) in tracked_calls {
         if !checked_calls.contains(&call_id) {
             trace.events.push(TraceEvent {
+                span: None,
                 function_id: tx.function_id,
                 kind: TraceEventKind::CallReturnUnchecked { callee },
             });
@@ -466,8 +479,14 @@ fn execute_instr(
                         is_wrong_constructor_runtime_candidate(function_id, ast, &output.compiler);
                     let sender_derived = value_is_sender_derived(src, temp_origins)
                         || value_name(src).contains("sender");
-                    state.insert(name.clone(), val);
+                    // Key mapping writes by resolved runtime index so per-account
+                    // balances are tracked separately (enables the conservation
+                    // oracle). Scalars fall back to their plain name.
+                    let store_key = runtime_place_key(dest, state, locals, contract_name)
+                        .unwrap_or_else(|| name.clone());
+                    state.insert(store_key, val);
                     trace.events.push(TraceEvent {
+                        span: None,
                         function_id,
                         kind: TraceEventKind::StorageWrite {
                             var_name: meta.var_name.clone(),
@@ -482,6 +501,7 @@ fn execute_instr(
                         && sender_derived
                     {
                         trace.events.push(TraceEvent {
+                            span: None,
                             function_id,
                             kind: TraceEventKind::WrongConstructorCandidate {
                                 function_name: ast
@@ -506,6 +526,7 @@ fn execute_instr(
             let val = if is_storage(src) {
                 if let Some(meta) = &storage_meta {
                     trace.events.push(TraceEvent {
+                        span: None,
                         function_id,
                         kind: TraceEventKind::StorageRead {
                             var_name: meta.var_name.clone(),
@@ -520,10 +541,11 @@ fn execute_instr(
                     .entry(dest_key.clone())
                     .or_default()
                     .insert(TempOrigin::StorageDerived);
-                state
-                    .get(&src_place_name)
-                    .cloned()
-                    .unwrap_or(FuzzValue::Uint(0))
+                // Read mapping entries by resolved runtime index (consistent with
+                // the Store path) so per-account balances read back faithfully.
+                let read_key = runtime_place_key(src, state, locals, contract_name)
+                    .unwrap_or_else(|| src_place_name.clone());
+                state.get(&read_key).cloned().unwrap_or(FuzzValue::Uint(0))
             } else {
                 locals
                     .get(&src_place_name)
@@ -559,6 +581,7 @@ fn execute_instr(
                             .or_default()
                             .insert(TempOrigin::BlockNumberDerived);
                         trace.events.push(TraceEvent {
+                            span: None,
                             function_id,
                             kind: TraceEventKind::BlockNumberUsed,
                         });
@@ -581,6 +604,7 @@ fn execute_instr(
                             .or_default()
                             .insert(TempOrigin::TxOrigin);
                         trace.events.push(TraceEvent {
+                            span: None,
                             function_id,
                             kind: TraceEventKind::TxOriginUsed,
                         });
@@ -664,6 +688,7 @@ fn execute_instr(
                             .or_default()
                             .insert(TempOrigin::BlockNumberDerived);
                         trace.events.push(TraceEvent {
+                            span: None,
                             function_id,
                             kind: TraceEventKind::BlockNumberUsed,
                         });
@@ -674,6 +699,7 @@ fn execute_instr(
                             .or_default()
                             .insert(TempOrigin::TxOrigin);
                         trace.events.push(TraceEvent {
+                            span: None,
                             function_id,
                             kind: TraceEventKind::TxOriginUsed,
                         });
@@ -757,6 +783,7 @@ fn execute_instr(
             // For Solidity >=0.8, arithmetic is checked by default; avoid treating checked math as wrapping vulns.
             if !checked_arithmetic && matches!(op.as_str(), "+" | "-" | "*") {
                 trace.events.push(TraceEvent {
+                    span: None,
                     function_id,
                     kind: TraceEventKind::ArithmeticOp {
                         op: op.clone(),
@@ -804,6 +831,7 @@ fn execute_instr(
                 )
             {
                 trace.events.push(TraceEvent {
+                    span: None,
                     function_id,
                     kind: TraceEventKind::TimestampArithmetic,
                 });
@@ -838,6 +866,7 @@ fn execute_instr(
                         .or_default()
                         .insert(TempOrigin::StorageDerived);
                     trace.events.push(TraceEvent {
+                        span: None,
                         function_id,
                         kind: TraceEventKind::SenderChecked,
                     });
@@ -857,6 +886,7 @@ fn execute_instr(
                 let compared_to_zero = (lhs_is_ecrecover && r == 0) || (rhs_is_ecrecover && l == 0);
                 if compared_to_zero {
                     trace.events.push(TraceEvent {
+                        span: None,
                         function_id,
                         kind: TraceEventKind::EcrecoverZeroChecked,
                     });
@@ -909,6 +939,7 @@ fn execute_instr(
                     .unwrap_or(false);
                 if lhs_is_div || rhs_is_div {
                     trace.events.push(TraceEvent {
+                        span: None,
                         function_id,
                         kind: TraceEventKind::DivisionBeforeMultiplication {
                             function_id_inner: function_id,
@@ -1003,6 +1034,7 @@ fn execute_instr(
             let callee_lower = callee_name.to_lowercase();
             if callee_lower == "selfdestruct" || callee_lower == "suicide" {
                 trace.events.push(TraceEvent {
+                    span: None,
                     function_id,
                     kind: TraceEventKind::SelfDestructCall,
                 });
@@ -1011,6 +1043,7 @@ fn execute_instr(
             // Detect delegatecall
             if callee_lower.contains("delegatecall") || callee_is_delegatecall_ref {
                 trace.events.push(TraceEvent {
+                    span: None,
                     function_id,
                     kind: TraceEventKind::DelegatecallDetected {
                         callee: callee_name.clone(),
@@ -1021,6 +1054,7 @@ fn execute_instr(
             // Detect ecrecover calls
             if callee_lower == "ecrecover" {
                 trace.events.push(TraceEvent {
+                    span: None,
                     function_id,
                     kind: TraceEventKind::EcrecoverCalled,
                 });
@@ -1035,6 +1069,7 @@ fn execute_instr(
                 || callee_is_transfer_ref
             {
                 trace.events.push(TraceEvent {
+                    span: None,
                     function_id,
                     kind: TraceEventKind::HardcodedGasCall {
                         callee: callee_name.clone(),
@@ -1042,10 +1077,22 @@ fn execute_instr(
                 });
             }
 
+            // A tracked low-level call result passed as an argument to any
+            // function (e.g. OpenZeppelin's `verifyCallResult(success, ret)`) is
+            // consumed, not silently dropped — mark it checked. Genuinely
+            // unchecked calls drop the result (no arg/condition use), so SolidiFI
+            // recall is unaffected.
+            for arg in args.iter() {
+                if let Some(call_id) = tracked_call_by_var.get(&value_key(arg)).copied() {
+                    checked_calls.insert(call_id);
+                }
+            }
+
             // Detect require(cond) — marks that the function checks conditions
             // If 1st arg is derived from a comparison with msg.sender, emit SenderChecked
             if callee_name == "require" || callee_name == "assert" {
                 trace.events.push(TraceEvent {
+                    span: None,
                     function_id,
                     kind: TraceEventKind::ConditionChecked,
                 });
@@ -1060,6 +1107,7 @@ fn execute_instr(
                         .unwrap_or(false);
                     if arg_is_send_result {
                         trace.events.push(TraceEvent {
+                            span: None,
                             function_id,
                             kind: TraceEventKind::UnsafeSendInRequire {
                                 callee: "send".to_string(),
@@ -1072,6 +1120,7 @@ fn execute_instr(
                         .unwrap_or(false);
                     if arg_has_this_balance {
                         trace.events.push(TraceEvent {
+                            span: None,
                             function_id,
                             kind: TraceEventKind::BalanceInvariantCheck,
                         });
@@ -1087,6 +1136,7 @@ fn execute_instr(
                             .unwrap_or(false)
                     {
                         trace.events.push(TraceEvent {
+                            span: None,
                             function_id,
                             kind: TraceEventKind::SenderChecked,
                         });
@@ -1150,6 +1200,7 @@ fn execute_instr(
 
             if is_external {
                 trace.events.push(TraceEvent {
+                    span: None,
                     function_id,
                     kind: TraceEventKind::ExternalCall {
                         callee: callee_name.clone(),
@@ -1162,6 +1213,7 @@ fn execute_instr(
                 if unchecked_call_candidate {
                     if dest.is_empty() {
                         trace.events.push(TraceEvent {
+                            span: None,
                             function_id,
                             kind: TraceEventKind::CallReturnUnchecked {
                                 callee: callee_name.clone(),
@@ -1188,6 +1240,7 @@ fn execute_instr(
                 if !callback_targets.is_empty() {
                     for callback_target in callback_targets {
                         trace.events.push(TraceEvent {
+                            span: None,
                             function_id,
                             kind: TraceEventKind::ReentrantCallback {
                                 into_function_id: callback_target,
@@ -1237,6 +1290,7 @@ fn execute_instr(
             // Track ether-sending calls
             if has_value && is_external {
                 trace.events.push(TraceEvent {
+                    span: None,
                     function_id,
                     kind: TraceEventKind::EtherSent {
                         callee: callee_name.clone(),
@@ -1248,6 +1302,7 @@ fn execute_instr(
             match kind {
                 ControlKind::If { cond } => {
                     trace.events.push(TraceEvent {
+                        span: None,
                         function_id,
                         kind: TraceEventKind::ConditionChecked,
                     });
@@ -1270,6 +1325,7 @@ fn execute_instr(
 
                     if has_timestamp {
                         trace.events.push(TraceEvent {
+                            span: None,
                             function_id,
                             kind: TraceEventKind::BranchOnTimestamp,
                         });
@@ -1277,6 +1333,7 @@ fn execute_instr(
                 }
                 ControlKind::Loop { cond } => {
                     trace.events.push(TraceEvent {
+                        span: None,
                         function_id,
                         kind: TraceEventKind::LoopEncountered,
                     });
@@ -1293,6 +1350,7 @@ fn execute_instr(
                         if is_storage_dep {
                             let cond_name = value_name(cond_val);
                             trace.events.push(TraceEvent {
+                                span: None,
                                 function_id,
                                 kind: TraceEventKind::UnboundedLoop {
                                     var_name: cond_name,
@@ -1304,6 +1362,7 @@ fn execute_instr(
                 ControlKind::Revert { value } => {
                     let msg = value.as_ref().map(|v| value_name(v));
                     trace.events.push(TraceEvent {
+                        span: None,
                         function_id,
                         kind: TraceEventKind::Revert { message: msg },
                     });
@@ -1361,6 +1420,7 @@ fn execute_instr(
         }
         IrInstr::InlineAsm { .. } => {
             trace.events.push(TraceEvent {
+                span: None,
                 function_id,
                 kind: TraceEventKind::InlineAssemblyDetected,
             });
@@ -1804,6 +1864,52 @@ fn var_key(var: &IrVar) -> String {
     }
 }
 
+/// Stable string for a resolved mapping index, so `balances[0]` and
+/// `balances[1]` get distinct storage keys (per-account state).
+fn fuzz_index_key(value: &FuzzValue) -> String {
+    match value {
+        FuzzValue::Uint(v) => v.to_string(),
+        FuzzValue::Int(v) => v.to_string(),
+        FuzzValue::Bool(b) => b.to_string(),
+        FuzzValue::Address(a) => format!("a{a}"),
+        FuzzValue::Bytes(b) => format!("0x{}", hex_lower(b)),
+        FuzzValue::StringVal(s) => s.clone(),
+    }
+}
+
+/// Storage key that distinguishes mapping entries by their *resolved runtime
+/// index* (`balances#<key>`), instead of collapsing the whole mapping to its
+/// root name. Scalar places fall back to their plain name, so existing state
+/// keying is unchanged for non-mapping vars.
+fn runtime_place_key(
+    place: &IrPlace,
+    state: &SimState,
+    locals: &HashMap<String, FuzzValue>,
+    contract_name: Option<&str>,
+) -> Option<String> {
+    match place {
+        IrPlace::Index {
+            base, index, root, ..
+        } => {
+            let var = root.clone().unwrap_or_else(|| value_name(base));
+            let key = match index {
+                Some(idx) => fuzz_index_key(&resolve_value(idx, state, locals)),
+                None => "_".to_string(),
+            };
+            Some(format!("{var}#{key}"))
+        }
+        _ => place_name(place, contract_name),
+    }
+}
+
+fn hex_lower(bytes: &[u8]) -> String {
+    let mut s = String::with_capacity(bytes.len() * 2);
+    for b in bytes {
+        s.push_str(&format!("{b:02x}"));
+    }
+    s
+}
+
 fn value_name(value: &IrValue) -> String {
     match value {
         IrValue::Var(IrVar::Named(name)) => name.clone(),
@@ -1963,8 +2069,8 @@ mod tests {
     use crate::cfg;
     use crate::frontend::{CompilerInfo, FrontendMode, FrontendOutput};
     use crate::fuzzing::types::{
-        ContractAbi, DependencyMap, FunctionAbi, Individual, ParamInfo, build_dependency_map,
-        extract_abis,
+        build_dependency_map, extract_abis, ContractAbi, DependencyMap, FunctionAbi, Individual,
+        ParamInfo,
     };
     use crate::ir::{IrBlock, IrCallOption, IrFunction, IrInstr, IrModule, IrPlace, IrValue};
     use crate::norm::{FunctionKind, Mutability, NormalizedAst, Span, Visibility};
@@ -2148,12 +2254,10 @@ mod tests {
             0,
         );
 
-        assert!(
-            trace
-                .events
-                .iter()
-                .any(|event| { matches!(event.kind, TraceEventKind::BalanceInvariantCheck) })
-        );
+        assert!(trace
+            .events
+            .iter()
+            .any(|event| { matches!(event.kind, TraceEventKind::BalanceInvariantCheck) }));
     }
 
     #[test]

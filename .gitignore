@@ -10,3 +10,6 @@ benchmark_hybrid.py
 .codex
 .cache
 .claude
+benchmark_hybrid_dual_policy_results.json
+benchmark_hybrid_multi_policy_results.json
+__pycache__/
