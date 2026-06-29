@@ -434,6 +434,7 @@ mod tests {
     fn dedup_merges_same_issue_and_preserves_provenance() {
         let rows = vec![
             HybridFindingRow {
+                tier: String::new(),
                 provenance: "symbolic".to_string(),
                 provenances: vec!["symbolic".to_string()],
                 kind: "reentrancy".to_string(),
@@ -447,6 +448,7 @@ mod tests {
                 end: Some(20),
             },
             HybridFindingRow {
+                tier: String::new(),
                 provenance: "hybrid-confirmed".to_string(),
                 provenances: vec!["hybrid-confirmed".to_string()],
                 kind: "reentrancy".to_string(),
@@ -478,6 +480,7 @@ mod tests {
     fn dedup_keeps_distinct_files_separate() {
         let rows = vec![
             HybridFindingRow {
+                tier: String::new(),
                 provenance: "symbolic".to_string(),
                 provenances: vec!["symbolic".to_string()],
                 kind: "reentrancy".to_string(),
@@ -491,6 +494,7 @@ mod tests {
                 end: Some(2),
             },
             HybridFindingRow {
+                tier: String::new(),
                 provenance: "hybrid-confirmed".to_string(),
                 provenances: vec!["hybrid-confirmed".to_string()],
                 kind: "reentrancy".to_string(),
