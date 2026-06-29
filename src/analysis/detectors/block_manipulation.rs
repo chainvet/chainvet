@@ -4,8 +4,11 @@
 //!   BM-02 – Transaction Order Dependency (TOD / front-running)
 //!   BM-03 – Weak PRNG (pseudorandom number generator)
 
+use std::collections::HashSet;
+
 use crate::norm::{
-    CallOption, CallTarget, ChainSegment, ExprKind, NormalizedAst, Span, StmtKind, Visibility,
+    CallOption, CallTarget, ChainSegment, ExprKind, FunctionKind, NormalizedAst, Span, StmtKind,
+    Visibility,
 };
 
 use super::{Finding, FindingKind, Severity};
@@ -885,16 +888,115 @@ fn detect_dangerous_timestamp(ast: &NormalizedAst) -> Vec<Finding> {
 //
 // Severity: Medium — front-running can cause direct financial loss.
 
+/// Mutable storage variables (non-constant/immutable) that are *assigned* in
+/// some public/external function — i.e. an attacker can change them by sending a
+/// transaction. Constructors are excluded (one-time deploy-time init is not
+/// attacker-controllable), which keeps immutable-ish beneficiaries out.
+fn attacker_writable_storage(ast: &NormalizedAst) -> HashSet<String> {
+    let storage: HashSet<&str> = ast
+        .state_vars
+        .iter()
+        .filter(|v| !v.constant && !v.immutable)
+        .map(|v| v.name.as_str())
+        .collect();
+    let mut writable = HashSet::new();
+    for func in &ast.functions {
+        match func.visibility {
+            Visibility::Public | Visibility::External | Visibility::Unknown => {}
+            _ => continue,
+        }
+        if matches!(func.kind, FunctionKind::Constructor) {
+            continue;
+        }
+        let Some(body) = func.body else { continue };
+        for_each_expr_in_stmt(ast, body, &mut |_eid, expr| {
+            if let ExprKind::Assign { lhs, .. } = &expr.kind {
+                if let Some(name) = lhs_base_name(ast, *lhs) {
+                    if storage.contains(name.as_str()) {
+                        writable.insert(name);
+                    }
+                }
+            }
+        });
+    }
+    writable
+}
+
+/// Base variable name of an assignment target (`x`, `x[i]`, `x.f` → `x`).
+fn lhs_base_name(ast: &NormalizedAst, expr_id: u32) -> Option<String> {
+    let expr = ast.expressions.get(expr_id as usize)?;
+    match &expr.kind {
+        ExprKind::Ident(n) => Some(n.clone()),
+        ExprKind::Index { base, .. } | ExprKind::Member { base, .. } => lhs_base_name(ast, *base),
+        _ => None,
+    }
+}
+
+/// Is this expression an attacker-writable storage var used as a transfer
+/// recipient? Unwraps `payable(x)` / `address(x)` casts.
+fn recipient_is_writable_storage(
+    ast: &NormalizedAst,
+    expr_id: u32,
+    writable: &HashSet<String>,
+) -> bool {
+    let Some(expr) = ast.expressions.get(expr_id as usize) else {
+        return false;
+    };
+    match &expr.kind {
+        ExprKind::Ident(n) => writable.contains(n),
+        ExprKind::Call { callee, args } if args.len() == 1 => ast
+            .expressions
+            .get(*callee as usize)
+            .and_then(|c| match &c.kind {
+                ExprKind::Ident(f) if f == "payable" || f == "address" => {
+                    Some(recipient_is_writable_storage(ast, args[0], writable))
+                }
+                _ => None,
+            })
+            .unwrap_or(false),
+        _ => false,
+    }
+}
+
+/// Does the function send ETH (`.transfer`/`.send`/`.call`) to a recipient that
+/// is an attacker-writable storage variable? This is the canonical TOD /
+/// front-running shape — e.g. `winner.transfer(x)` where another public function
+/// assigns `winner` — that the name-hint heuristic misses.
+fn transfers_to_writable_recipient(
+    ast: &NormalizedAst,
+    stmt_id: u32,
+    writable: &HashSet<String>,
+) -> bool {
+    const ETH_TRANSFER: &[&str] = &["transfer", "send", "call"];
+    let mut hit = false;
+    for_each_expr_in_stmt(ast, stmt_id, &mut |eid, _expr| {
+        if hit {
+            return;
+        }
+        if let Some(expr) = ast.expressions.get(eid as usize) {
+            if let ExprKind::Call { callee, .. } = &expr.kind {
+                if let Some(c) = ast.expressions.get(*callee as usize) {
+                    if let ExprKind::Member { base, field } = &c.kind {
+                        if ETH_TRANSFER.contains(&field.as_str())
+                            && recipient_is_writable_storage(ast, *base, writable)
+                        {
+                            hit = true;
+                        }
+                    }
+                }
+            }
+        }
+    });
+    hit
+}
+
 fn detect_transaction_order_dependency(ast: &NormalizedAst) -> Vec<Finding> {
     let mut findings = Vec::new();
+    let writable = attacker_writable_storage(ast);
 
     for func in &ast.functions {
         // Only flag externally callable functions (public / external).
-        // Internal / private helpers are only dangerous if their callers
-        // are public, but that would require inter-procedural analysis;
-        // we keep it simple and match the function's own visibility.
-        // Note: Visibility::Unknown defaults to public in Solidity, so
-        // we include it to be conservative.
+        // Note: Visibility::Unknown defaults to public in Solidity.
         match func.visibility {
             Visibility::Public | Visibility::External | Visibility::Unknown => {}
             _ => continue,
@@ -903,7 +1005,8 @@ fn detect_transaction_order_dependency(ast: &NormalizedAst) -> Vec<Finding> {
         let Some(body) = func.body else { continue };
         let source_lower = function_source_lower(ast, func);
 
-        // --- Step 1:  Does the body reference an order-sensitive var? ------
+        // --- Path A: reads an order-sensitive (price/rate/reward/…) var AND
+        //     performs a value transfer in the same function. ---------------
         let mut reads_sensitive = false;
         for_each_expr_in_stmt(ast, body, &mut |eid, _expr| {
             if !reads_sensitive && expr_references_order_sensitive_var(ast, eid) {
@@ -915,32 +1018,40 @@ fn detect_transaction_order_dependency(ast: &NormalizedAst) -> Vec<Finding> {
                 reads_sensitive = source_contains_order_sensitive_hint(source_lower);
             }
         }
-
-        // --- Step 2:  Does the body contain a value-transfer call? ---------
         let has_transfer = stmt_contains_transfer(ast, body)
             || source_lower
                 .as_deref()
                 .map(source_contains_transfer_call)
                 .unwrap_or(false);
+        let path_a = reads_sensitive && has_transfer;
 
-        if !reads_sensitive {
+        // --- Path B: sends ETH to an attacker-writable storage recipient
+        //     (e.g. `winner.transfer(...)` set by another public function). --
+        let path_b = !writable.is_empty() && transfers_to_writable_recipient(ast, body, &writable);
+
+        if !path_a && !path_b {
             continue;
         }
-        if !has_transfer {
-            continue;
-        }
 
-        // --- Step 3:  Both conditions met → report TOD --------------------
         let func_name = func.name.as_deref().unwrap_or("<anonymous>");
+        let message = if path_b {
+            format!(
+                "function `{func_name}` transfers value to a storage-held recipient that \
+                another transaction can modify; the payout depends on transaction ordering \
+                (front-running / TOD risk)"
+            )
+        } else {
+            format!(
+                "function `{func_name}` reads an order-sensitive state variable and performs \
+                a value transfer; its outcome depends on transaction ordering \
+                (front-running / TOD risk)"
+            )
+        };
 
         findings.push(Finding {
             kind: FindingKind::TransactionOrderDependency,
             severity: Severity::Medium,
-            message: format!(
-                "function `{func_name}` reads an order-sensitive state variable \
-                and performs a value transfer; its outcome depends on transaction \
-                ordering (front-running / TOD risk)"
-            ),
+            message,
             span: func.span,
             function: Some(func.id),
         });
