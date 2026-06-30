@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 chainvet-core = { path = "../chainvet-core" }
+chainvet-ai = { path = "../chainvet-ai" }
 chainvet-frontend = { path = "../chainvet-frontend" }
 chainvet-sa = { path = "../chainvet-sa" }
 chainvet-se = { path = "../chainvet-se" }

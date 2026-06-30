@@ -6,6 +6,8 @@
 //! hybrid telemetry when the hybrid engine ran. No printing, no file paths
 //! assumed beyond an optional convenience loader — frontends own all I/O.
 
+pub mod ai_report;
+
 use chainvet_core::cfg;
 use chainvet_core::ir;
 use chainvet_core::util::error::Result;
@@ -75,11 +77,14 @@ pub fn scan(output: &FrontendOutput, mode: ScanMode, budget: &HybridBudget) -> R
             (payload.findings.clone(), Some(payload))
         }
     };
-    Ok(ScanResult {
+    let mut result = ScanResult {
         mode,
         findings,
         hybrid,
-    })
+    };
+    // Optional AI review of findings (opt-in via CHAINVET_AI_REPORT; no-op otherwise).
+    ai_report::enhance(&mut result);
+    Ok(result)
 }
 
 /// Convenience: load a project from `path` (solc → tree-sitter → optional AI
