@@ -13,7 +13,6 @@ mod ssa;
 mod surfaced;
 mod symbolic;
 mod util;
-mod web;
 
 use crate::util::error::Error;
 use crate::util::error::Result;
@@ -47,7 +46,7 @@ fn main() {
 
 fn print_usage() {
     eprintln!(
-        "usage: static-analyzer --web | [--static|--symbolic|--fuzzing|--hybrid] <path> [--json|--text|--format <json|text>] [--dump-ir <text|json|tuple>]\n\
+        "usage: chainvet [--static|--symbolic|--fuzzing|--hybrid] <path> [--json|--text|--format <json|text>] [--dump-ir <text|json|tuple>]\n\
          hybrid budget overrides: [--max-epochs N] [--total-runtime-ms N] [--hard-cap-ms N] [--fuzz-iters N] [--fuzz-epoch-ms N] [--se-timeout-ms N] [--se-max-depth N] [--max-se-assists N] [--fuzz-seed N]"
     );
 }
@@ -67,7 +66,6 @@ fn run() -> Result<()> {
     let mut dump_ir = None;
     let mut mode = AnalysisMode::Static;
     let mut mode_flag = None::<&'static str>;
-    let mut web_mode = false;
     let mut hybrid_budget = hybrid::HybridBudget::default();
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
@@ -91,7 +89,6 @@ fn run() -> Result<()> {
         }
 
         match arg.as_str() {
-            "--web" => web_mode = true,
             "--json" => format = report::OutputFormat::Json,
             "--text" => format = report::OutputFormat::Text,
             "--help" | "-h" => {
@@ -166,15 +163,6 @@ fn run() -> Result<()> {
                 }
             }
         }
-    }
-
-    if web_mode {
-        if input.is_some() || mode_flag.is_some() || dump_ir.is_some() {
-            return Err(Error::msg(
-                "--web cannot be combined with an input path, analysis mode, or --dump-ir",
-            ));
-        }
-        return web::serve(std::env::current_dir()?);
     }
 
     let Some(input) = input else {
