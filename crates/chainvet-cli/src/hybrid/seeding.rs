@@ -1,5 +1,5 @@
 use chainvet_core::artifacts::{Seed, TxEnv, TxSeed};
-use crate::fuzzing::types::{ContractAbi, Environment, FuzzValue, Individual, Transaction};
+use chainvet_fuzzing::fuzzing::types::{ContractAbi, Environment, FuzzValue, Individual, Transaction};
 use chainvet_core::norm::NormalizedAst;
 use chainvet_se::symbolic::results::{SeFinding, Witness};
 
@@ -161,7 +161,7 @@ fn infer_function_id(ast: &NormalizedAst, finding: &SeFinding) -> Option<u32> {
 mod tests {
     use super::*;
     use chainvet_sa::analysis::detectors::Severity;
-    use crate::fuzzing::types::{FunctionAbi, ParamInfo};
+    use chainvet_fuzzing::fuzzing::types::{FunctionAbi, ParamInfo};
     use chainvet_core::norm::{FunctionKind, Mutability, Span, Visibility};
     use chainvet_se::symbolic::results::finding::{Confidence, SeFinding, SeVulnKind};
 

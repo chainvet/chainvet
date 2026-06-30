@@ -1,8 +1,5 @@
-mod fuzzing;
 mod hybrid;
-mod meta;
 mod report;
-mod surfaced;
 
 use chainvet_core::util::error::Error;
 use chainvet_core::util::error::Result;
@@ -181,8 +178,8 @@ fn run() -> Result<()> {
         }
         AnalysisMode::Fuzzing => {
             let output = chainvet_frontend::frontend::load_project(&input)?;
-            let config = fuzzing::types::FuzzConfig::default();
-            fuzzing::run_fuzzer(&output, &config, format)?;
+            let config = chainvet_fuzzing::fuzzing::types::FuzzConfig::default();
+            chainvet_fuzzing::fuzzing::run_fuzzer(&output, &config, format)?;
         }
         AnalysisMode::Hybrid => {
             let output = chainvet_frontend::frontend::load_project(&input)?;

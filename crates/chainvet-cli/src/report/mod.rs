@@ -1,9 +1,9 @@
 use chainvet_sa::analysis::detectors::{self, Finding, Severity};
 use chainvet_sa::analysis::{self, ResolvedTarget};
 use chainvet_frontend::frontend::{FrontendMode, FrontendOutput};
-use crate::meta;
+use chainvet_sa::meta;
 use chainvet_core::norm::{ExprKind, Function, FunctionKind, NormalizedAst};
-use crate::surfaced;
+use chainvet_sa::surfaced;
 use chainvet_core::util::error::Result;
 use chainvet_core::{cfg, ir, ssa};
 use serde::Serialize;

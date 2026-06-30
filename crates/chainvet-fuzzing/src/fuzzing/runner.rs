@@ -16,9 +16,9 @@ use crate::fuzzing::types::{
     FuzzFinding, FuzzFindingKind, FuzzHybridStats, FuzzReport, FuzzSeverity,
 };
 use chainvet_core::norm::{FunctionKind, Mutability, NormalizedAst, Span};
-use crate::surfaced;
+use chainvet_sa::surfaced;
 use chainvet_core::util::error::{Error, Result};
-use crate::meta;
+use chainvet_sa::meta;
 use chainvet_core::{cfg, ir};
 
 /// Run the fuzzer on a parsed contract.
@@ -482,7 +482,7 @@ fn zero_corpus_reason(abis: &[ContractAbi], corpus: &Corpus) -> Option<String> {
 fn promoted_runtime_meta_findings(
     meta_findings: &[chainvet_core::artifacts::Finding],
 ) -> Vec<FuzzFinding> {
-    crate::meta::runtime_promotions(meta_findings)
+    chainvet_sa::meta::runtime_promotions(meta_findings)
         .into_iter()
         .filter_map(|finding| {
             let kind = match finding.finding_type.as_str() {

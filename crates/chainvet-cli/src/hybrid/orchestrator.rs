@@ -14,7 +14,7 @@ use chainvet_sa::analysis;
 use chainvet_core::cfg;
 use chainvet_core::artifacts::HybridReport;
 use chainvet_frontend::frontend::FrontendOutput;
-use crate::fuzzing::{self, runner::FuzzSession};
+use chainvet_fuzzing::fuzzing::{self, runner::FuzzSession};
 use chainvet_core::ir;
 use chainvet_core::OutputFormat;
 use chainvet_se::symbolic::{self, SymbolicOptions, results::SeFinding};

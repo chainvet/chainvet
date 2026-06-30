@@ -4,7 +4,7 @@ use serde::Serialize;
 
 use chainvet_sa::analysis::detectors::Finding;
 use chainvet_core::artifacts::HybridReport;
-use crate::fuzzing::types::{FuzzFinding, FuzzHybridStats};
+use chainvet_fuzzing::fuzzing::types::{FuzzFinding, FuzzHybridStats};
 use chainvet_core::norm::NormalizedAst;
 use chainvet_core::OutputFormat;
 use chainvet_se::symbolic::results::{coverage::CoverageReport, SeFinding};

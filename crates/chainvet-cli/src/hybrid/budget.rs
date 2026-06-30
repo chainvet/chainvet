@@ -9,7 +9,7 @@
 
 use std::collections::HashSet;
 
-use crate::fuzzing::types::FuzzConfig;
+use chainvet_fuzzing::fuzzing::types::FuzzConfig;
 use chainvet_se::symbolic::SymbolicOptions;
 
 /// Fixed fuzz seed for reproducible hybrid runs and clean benchmark deltas.
@@ -92,7 +92,7 @@ impl HybridBudget {
     /// Base fuzz config for the session; per-epoch iteration/time bounds are
     /// passed to `run_slice`, so `max_iterations`/`max_duration_ms` here only
     /// matter for the legacy single-call path.
-    pub fn fuzz_config(&self, seed_corpus: Vec<crate::fuzzing::types::Individual>) -> FuzzConfig {
+    pub fn fuzz_config(&self, seed_corpus: Vec<chainvet_fuzzing::fuzzing::types::Individual>) -> FuzzConfig {
         FuzzConfig {
             hybrid_mode: true,
             seed: Some(self.fuzz_seed),
