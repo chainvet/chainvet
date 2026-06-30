@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use crate::analysis::detectors::Severity;
+use chainvet_sa::analysis::detectors::Severity;
 use chainvet_core::cfg::BlockId;
 use chainvet_core::ir::{ControlKind, IrInstr, IrPlace, IrVar, IrValue};
 use crate::symbolic::detectors::{make_finding, place_matches, value_has_origin, Detector};

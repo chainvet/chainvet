@@ -133,7 +133,7 @@ fn parse_first_version(s: &str) -> Option<(u8, u8, u8)> {
 /// `>=0.4.16` (an interface) and `^0.8.20` (the contract) compiles as 0.8.x.
 /// Taking the max — not the min — is what makes range pragmas (e.g. OpenZeppelin)
 /// report correctly; the old per-file rule wrongly saw `>=0.4.16` as pre-0.8.
-pub(crate) fn all_files_are_0_8_plus(ast: &NormalizedAst) -> bool {
+pub fn all_files_are_0_8_plus(ast: &NormalizedAst) -> bool {
     let mut resolved: Option<(u8, u8, u8)> = None;
     for f in &ast.files {
         if let Some(version) = extract_solidity_version(&f.source) {

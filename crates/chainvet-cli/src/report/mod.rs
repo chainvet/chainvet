@@ -1,5 +1,5 @@
-use crate::analysis::detectors::{self, Finding, Severity};
-use crate::analysis::{self, ResolvedTarget};
+use chainvet_sa::analysis::detectors::{self, Finding, Severity};
+use chainvet_sa::analysis::{self, ResolvedTarget};
 use chainvet_frontend::frontend::{FrontendMode, FrontendOutput};
 use crate::meta;
 use chainvet_core::norm::{ExprKind, Function, FunctionKind, NormalizedAst};

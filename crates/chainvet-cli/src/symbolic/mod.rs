@@ -138,7 +138,7 @@ pub fn analyze_with_options(
     // precision set). Use the resolved compiler version (authoritative) rather
     // than per-file pragma parsing, which fails when a resolved import lacks a
     // clean 0.8 pragma. No effect on pre-0.8 code (e.g. SolidiFI's 0.5.x corpus).
-    if crate::analysis::detectors::arithmetic::all_files_are_0_8_plus(&output.ast)
+    if chainvet_sa::analysis::detectors::arithmetic::all_files_are_0_8_plus(&output.ast)
         || compiler_is_0_8_plus(output.compiler.compiler_version.as_deref())
     {
         all_findings.retain(|finding| {

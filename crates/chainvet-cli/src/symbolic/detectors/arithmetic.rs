@@ -1,7 +1,7 @@
 use z3::ast::{BV, Bool};
 use z3::SatResult;
 
-use crate::analysis::detectors::Severity;
+use chainvet_sa::analysis::detectors::Severity;
 use crate::symbolic::solver::optimization::is_trivially_false;
 use chainvet_core::cfg::BlockId;
 use chainvet_core::ir::{IrInstr, IrPlace, IrValue, IrVar};

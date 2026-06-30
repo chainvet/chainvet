@@ -10,7 +10,7 @@
 use std::collections::HashSet;
 use std::time::Instant;
 
-use crate::analysis;
+use chainvet_sa::analysis;
 use chainvet_core::cfg;
 use chainvet_core::artifacts::HybridReport;
 use chainvet_frontend::frontend::FrontendOutput;

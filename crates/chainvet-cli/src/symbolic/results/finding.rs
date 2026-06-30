@@ -1,6 +1,6 @@
 // Reuses Severity and Category from static analysis — these are stable,
 // engine-agnostic classifications shared across all analysis modes.
-use crate::analysis::detectors::{Category, Severity};
+use chainvet_sa::analysis::detectors::{Category, Severity};
 use chainvet_core::norm::Span;
 use crate::symbolic::state::StateId;
 use serde::Serialize;

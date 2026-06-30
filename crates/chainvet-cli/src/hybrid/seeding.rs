@@ -160,7 +160,7 @@ fn infer_function_id(ast: &NormalizedAst, finding: &SeFinding) -> Option<u32> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::analysis::detectors::Severity;
+    use chainvet_sa::analysis::detectors::Severity;
     use crate::fuzzing::types::{FunctionAbi, ParamInfo};
     use chainvet_core::norm::{FunctionKind, Mutability, Span, Visibility};
     use crate::symbolic::results::finding::{Confidence, SeFinding, SeVulnKind};

@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::analysis::detectors::Severity;
+use chainvet_sa::analysis::detectors::Severity;
 use chainvet_core::cfg::BlockId;
 use chainvet_core::ir::{IrCallOption, IrInstr, IrPlace, IrValue, PlaceClass};
 use crate::symbolic::detectors::{make_finding, CalleeTracker, Detector};

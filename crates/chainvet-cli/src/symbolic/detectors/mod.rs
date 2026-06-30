@@ -20,7 +20,7 @@ use storage::StorageDetector;
 
 use std::collections::HashMap;
 
-use crate::analysis::detectors::Severity;
+use chainvet_sa::analysis::detectors::Severity;
 use chainvet_core::cfg::BlockId;
 use chainvet_core::ir::{IrInstr, IrPlace, IrValue, IrVar};
 use chainvet_core::norm::Span;
@@ -309,7 +309,7 @@ pub(crate) fn value_has_origin(state: &SymbolicState, val: &IrValue, origin: Val
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::analysis::detectors::Severity;
+    use chainvet_sa::analysis::detectors::Severity;
     use chainvet_core::norm::Span;
     use crate::symbolic::results::finding::{Confidence, SeFinding, SeVulnKind};
     use crate::symbolic::solver::z3_backend::Z3Backend;

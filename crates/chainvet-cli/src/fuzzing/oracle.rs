@@ -22,7 +22,7 @@ pub fn check_all(
     // wrapping, so the wrapping-based overflow/underflow oracles would be false
     // positives (confirmed on audited 0.8 code in the clean precision set).
     let arithmetic_unchecked = ast
-        .map(|a| !crate::analysis::detectors::arithmetic::all_files_are_0_8_plus(a))
+        .map(|a| !chainvet_sa::analysis::detectors::arithmetic::all_files_are_0_8_plus(a))
         .unwrap_or(true);
     if arithmetic_unchecked {
         findings.extend(check_integer_overflow(trace, tx_sequence));

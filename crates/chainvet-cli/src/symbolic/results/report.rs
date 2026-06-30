@@ -138,7 +138,7 @@ fn print_se_json(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::analysis::detectors::Severity;
+    use chainvet_sa::analysis::detectors::Severity;
     use chainvet_core::norm::Span;
     use crate::symbolic::results::finding::{Confidence, SeFinding, SeVulnKind};
     use crate::symbolic::results::witness::Witness;

@@ -1,4 +1,4 @@
-use crate::analysis::detectors::Severity;
+use chainvet_sa::analysis::detectors::Severity;
 use chainvet_core::cfg::BlockId;
 use chainvet_core::ir::{ControlKind, IrInstr, IrPlace, IrValue, IrVar};
 use chainvet_core::norm::Span;

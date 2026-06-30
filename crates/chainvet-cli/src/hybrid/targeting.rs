@@ -1,4 +1,4 @@
-use crate::analysis::detectors::{Finding, FindingKind, Severity};
+use chainvet_sa::analysis::detectors::{Finding, FindingKind, Severity};
 use chainvet_core::norm::{NormalizedAst, Span};
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -126,7 +126,7 @@ fn is_high_signal_kind(kind: FindingKind) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::analysis::detectors::{Finding, FindingKind, Severity};
+    use chainvet_sa::analysis::detectors::{Finding, FindingKind, Severity};
     use chainvet_core::norm::{NormalizedAst, SourceFile, Span};
 
     fn ast() -> NormalizedAst {

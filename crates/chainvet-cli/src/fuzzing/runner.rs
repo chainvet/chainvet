@@ -4,7 +4,7 @@ use rand::Rng;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 
-use crate::analysis;
+use chainvet_sa::analysis;
 use chainvet_frontend::frontend::FrontendOutput;
 use crate::fuzzing::executor;
 use crate::fuzzing::generator;
@@ -1514,7 +1514,7 @@ mod tests {
         extract_function_id_from_message, inject_static_runtime_backstops,
         keep_locked_ether_finding,
     };
-    use crate::analysis::detectors::{Finding, FindingKind, Severity};
+    use chainvet_sa::analysis::detectors::{Finding, FindingKind, Severity};
     use crate::fuzzing::types::{FuzzFinding, FuzzFindingKind, FuzzSeverity};
     use chainvet_core::ir::{IrBlock, IrFunction, IrInstr, IrModule, IrValue, IrVar};
     use chainvet_core::norm::{

@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-use crate::analysis::detectors;
+use chainvet_sa::analysis::detectors;
 use chainvet_core::artifacts::{Finding, FindingLocation};
 use chainvet_frontend::frontend::FrontendOutput;
 use chainvet_core::norm::{Contract, ContractKind};
@@ -528,7 +528,7 @@ fn file_path(output: &FrontendOutput, file_id: u32) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::analysis::detectors::{
+    use chainvet_sa::analysis::detectors::{
         Finding as StaticFinding, FindingKind, Severity, TAXONOMY_ROW_COUNT,
     };
     use chainvet_frontend::frontend::{CompilerInfo, FrontendMode};

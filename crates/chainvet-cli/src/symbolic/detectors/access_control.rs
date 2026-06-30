@@ -1,7 +1,7 @@
 use z3::SatResult;
 use z3::ast::Bool;
 
-use crate::analysis::detectors::Severity;
+use chainvet_sa::analysis::detectors::Severity;
 use chainvet_core::cfg::BlockId;
 use chainvet_core::ir::{
     ControlKind, IrCallOption, IrInstr, IrPlace, IrValue, IrVar, PlaceClass,

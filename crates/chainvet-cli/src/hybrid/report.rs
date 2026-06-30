@@ -2,7 +2,7 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 
 use serde::Serialize;
 
-use crate::analysis::detectors::Finding;
+use chainvet_sa::analysis::detectors::Finding;
 use chainvet_core::artifacts::HybridReport;
 use crate::fuzzing::types::{FuzzFinding, FuzzHybridStats};
 use chainvet_core::norm::NormalizedAst;
