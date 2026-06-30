@@ -34,20 +34,37 @@ Integrations live in their own repositories: **chainvet-vscode** (VS Code
 extension → LSP), **chainvet-web** (web UI → server), **chainvet-action**
 (GitHub Action → CI).
 
-## Install
+## Build from source
 
-Requires a Rust toolchain and the **Z3** system library.
+Requires a Rust toolchain and the **Z3** system library:
 
 ```bash
 # Debian/Ubuntu: sudo apt-get install libz3-dev
 # macOS:         brew install z3
 git clone https://github.com/chainvet/chainvet
 cd chainvet
+```
+
+The CLI is the core tool; the **CI**, **server**, and **LSP** frontends are
+optional and pull extra dependencies (the server uses `axum`/`tower-http`, the
+language server uses `tower-lsp`). Use `-p` to build only the frontends you want
+and skip compiling the rest:
+
+```bash
+# CLI only — just the `chainvet` analyzer, none of the optional frontends
+cargo build --release -p chainvet-cli
+
+# CLI plus whichever frontends you want (mix and match)
+cargo build --release -p chainvet-cli -p chainvet-ci       # + SARIF / CI
+cargo build --release -p chainvet-cli -p chainvet-server   # + REST server
+cargo build --release -p chainvet-cli -p chainvet-lsp      # + language server
+
+# Everything — all four binaries
 cargo build --release
 ```
 
-Binaries land in `target/release/`: `chainvet`, `chainvet-ci`, `chainvet-server`,
-`chainvet-lsp`.
+Each `-p chainvet-<name>` produces `target/release/chainvet-<name>` (the CLI's
+binary is just `chainvet`); plain `cargo build --release` builds all four.
 
 ## Usage
 
