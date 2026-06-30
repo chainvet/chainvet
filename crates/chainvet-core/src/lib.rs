@@ -10,3 +10,11 @@ pub mod ir;
 pub mod norm;
 pub mod ssa;
 pub mod util;
+
+/// How a frontend renders results. Shared so engines can accept a requested
+/// format without depending on any particular frontend's rendering crate.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OutputFormat {
+    Text,
+    Json,
+}

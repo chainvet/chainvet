@@ -7,7 +7,7 @@ mod targeting;
 pub use budget::HybridBudget;
 
 use chainvet_frontend::frontend::FrontendOutput;
-use crate::report::OutputFormat;
+use chainvet_core::OutputFormat;
 use chainvet_core::util::error::Result;
 
 /// Run the hybrid engine with the default budget.

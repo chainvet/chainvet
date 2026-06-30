@@ -1,7 +1,7 @@
 use chainvet_core::artifacts::{Seed, TxEnv, TxSeed};
 use crate::fuzzing::types::{ContractAbi, Environment, FuzzValue, Individual, Transaction};
 use chainvet_core::norm::NormalizedAst;
-use crate::symbolic::results::{SeFinding, Witness};
+use chainvet_se::symbolic::results::{SeFinding, Witness};
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct HybridSeed {
@@ -163,7 +163,7 @@ mod tests {
     use chainvet_sa::analysis::detectors::Severity;
     use crate::fuzzing::types::{FunctionAbi, ParamInfo};
     use chainvet_core::norm::{FunctionKind, Mutability, Span, Visibility};
-    use crate::symbolic::results::finding::{Confidence, SeFinding, SeVulnKind};
+    use chainvet_se::symbolic::results::finding::{Confidence, SeFinding, SeVulnKind};
 
     fn sample_ast() -> NormalizedAst {
         let mut ast = NormalizedAst::from_sources(vec![chainvet_core::norm::SourceFile {

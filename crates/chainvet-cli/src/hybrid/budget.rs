@@ -10,7 +10,7 @@
 use std::collections::HashSet;
 
 use crate::fuzzing::types::FuzzConfig;
-use crate::symbolic::SymbolicOptions;
+use chainvet_se::symbolic::SymbolicOptions;
 
 /// Fixed fuzz seed for reproducible hybrid runs and clean benchmark deltas.
 pub const HYBRID_FUZZ_SEED: u64 = 0x5EED_C0DE_5EED_C0DE;

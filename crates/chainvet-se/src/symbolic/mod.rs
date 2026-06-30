@@ -11,7 +11,7 @@ use std::collections::HashSet;
 use std::sync::Arc;
 
 use chainvet_frontend::frontend::FrontendOutput;
-use crate::report::OutputFormat;
+use chainvet_core::OutputFormat;
 use crate::symbolic::detectors::DetectorRegistry;
 use crate::symbolic::engine::run_engine;
 use crate::symbolic::engine::scheduler::SeConfig;

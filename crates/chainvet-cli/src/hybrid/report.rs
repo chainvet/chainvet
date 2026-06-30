@@ -6,8 +6,8 @@ use chainvet_sa::analysis::detectors::Finding;
 use chainvet_core::artifacts::HybridReport;
 use crate::fuzzing::types::{FuzzFinding, FuzzHybridStats};
 use chainvet_core::norm::NormalizedAst;
-use crate::report::OutputFormat;
-use crate::symbolic::results::{coverage::CoverageReport, SeFinding};
+use chainvet_core::OutputFormat;
+use chainvet_se::symbolic::results::{coverage::CoverageReport, SeFinding};
 use chainvet_core::util::error::{Error, Result};
 
 use super::seeding::HybridSeed;

@@ -11,10 +11,7 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-pub enum OutputFormat {
-    Text,
-    Json,
-}
+use chainvet_core::OutputFormat;
 
 pub fn print_report(
     output: &FrontendOutput,

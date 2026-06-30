@@ -1,5 +1,5 @@
 use chainvet_core::norm::SourceFile;
-use crate::report::OutputFormat;
+use chainvet_core::OutputFormat;
 use crate::symbolic::results::coverage::CoverageReport;
 use crate::symbolic::results::finding::SeFinding;
 use chainvet_core::util::error::{Error, Result};

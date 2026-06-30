@@ -3,7 +3,6 @@ mod hybrid;
 mod meta;
 mod report;
 mod surfaced;
-mod symbolic;
 
 use chainvet_core::util::error::Error;
 use chainvet_core::util::error::Result;
@@ -53,7 +52,7 @@ where
 
 fn run() -> Result<()> {
     let mut input = None;
-    let mut format = report::OutputFormat::Text;
+    let mut format = chainvet_core::OutputFormat::Text;
     let mut dump_ir = None;
     let mut mode = AnalysisMode::Static;
     let mut mode_flag = None::<&'static str>;
@@ -80,8 +79,8 @@ fn run() -> Result<()> {
         }
 
         match arg.as_str() {
-            "--json" => format = report::OutputFormat::Json,
-            "--text" => format = report::OutputFormat::Text,
+            "--json" => format = chainvet_core::OutputFormat::Json,
+            "--text" => format = chainvet_core::OutputFormat::Text,
             "--help" | "-h" => {
                 print_usage();
                 return Ok(());
@@ -91,8 +90,8 @@ fn run() -> Result<()> {
                     return Err(Error::msg("missing value for --format"));
                 };
                 match value.as_str() {
-                    "json" => format = report::OutputFormat::Json,
-                    "text" => format = report::OutputFormat::Text,
+                    "json" => format = chainvet_core::OutputFormat::Json,
+                    "text" => format = chainvet_core::OutputFormat::Text,
                     _ => return Err(Error::msg(format!("unknown format: {value}"))),
                 }
             }
@@ -178,7 +177,7 @@ fn run() -> Result<()> {
         }
         AnalysisMode::Symbolic => {
             let output = chainvet_frontend::frontend::load_project(&input)?;
-            symbolic::run(&output, format)?;
+            chainvet_se::symbolic::run(&output, format)?;
         }
         AnalysisMode::Fuzzing => {
             let output = chainvet_frontend::frontend::load_project(&input)?;

@@ -10,7 +10,7 @@ pub mod types;
 
 use chainvet_frontend::frontend::FrontendOutput;
 use crate::fuzzing::types::FuzzConfig;
-use crate::report::OutputFormat;
+use chainvet_core::OutputFormat;
 use chainvet_core::util::error::Result;
 
 /// Main entry point: run the fuzzer against a parsed project.
