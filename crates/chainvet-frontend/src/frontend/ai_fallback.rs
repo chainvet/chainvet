@@ -3,10 +3,8 @@ use chainvet_core::norm::{
     SourceFile, Span, StateVariable, Visibility,
 };
 use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::Value;
 use std::env;
-use std::io::{Read, Write};
-use std::net::TcpStream;
 use std::time::Duration;
 
 const DEFAULT_ENDPOINT: &str = "http://127.0.0.1:11434";
@@ -796,79 +794,13 @@ fn is_safe_identifier(value: &str) -> bool {
 }
 
 fn ollama_generate(config: &AiFallbackConfig, prompt: &str) -> std::result::Result<String, String> {
-    let body = json!({
-        "model": config.model,
-        "prompt": prompt,
-        "stream": false,
-        "format": "json",
-        "options": {
-            "temperature": 0.0,
-            "num_ctx": 16384,
-            "num_predict": config.num_predict
-        }
-    })
-    .to_string();
-
-    let response = http_post_json(&config.endpoint, "/api/generate", &body, config.timeout)?;
-    let parsed = serde_json::from_str::<Value>(&response)
-        .map_err(|err| format!("failed to parse Ollama response: {err}"))?;
-    parsed
-        .get("response")
-        .and_then(Value::as_str)
-        .map(str::to_string)
-        .ok_or_else(|| "Ollama response did not contain a response field".to_string())
-}
-
-fn http_post_json(
-    endpoint: &str,
-    path: &str,
-    body: &str,
-    timeout: Duration,
-) -> std::result::Result<String, String> {
-    let endpoint = endpoint
-        .trim()
-        .trim_start_matches("http://")
-        .trim_end_matches('/');
-    let mut parts = endpoint.splitn(2, '/');
-    let host_port = parts.next().unwrap_or("127.0.0.1:11434");
-    let extra_path = parts.next().unwrap_or("");
-    let request_path = if extra_path.is_empty() {
-        path.to_string()
-    } else {
-        format!("/{extra_path}{path}")
+    let oc = chainvet_ai::ollama::OllamaConfig {
+        endpoint: config.endpoint.clone(),
+        model: config.model.clone(),
+        timeout: config.timeout,
+        num_predict: config.num_predict,
     };
-
-    let mut stream = TcpStream::connect(host_port)
-        .map_err(|err| format!("failed to connect to Ollama at {endpoint}: {err}"))?;
-    stream
-        .set_read_timeout(Some(timeout))
-        .map_err(|err| format!("failed to set Ollama read timeout: {err}"))?;
-    stream
-        .set_write_timeout(Some(timeout))
-        .map_err(|err| format!("failed to set Ollama write timeout: {err}"))?;
-
-    let request = format!(
-        "POST {request_path} HTTP/1.1\r\nHost: {host_port}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
-        body.len()
-    );
-    stream
-        .write_all(request.as_bytes())
-        .map_err(|err| format!("failed to write Ollama request: {err}"))?;
-
-    let mut response = String::new();
-    stream
-        .read_to_string(&mut response)
-        .map_err(|err| format!("failed to read Ollama response: {err}"))?;
-    let Some((headers, body)) = response.split_once("\r\n\r\n") else {
-        return Err("invalid HTTP response from Ollama".to_string());
-    };
-    if !headers.starts_with("HTTP/1.1 200") && !headers.starts_with("HTTP/1.0 200") {
-        return Err(format!(
-            "Ollama returned non-200 response: {}",
-            headers.lines().next().unwrap_or("unknown status")
-        ));
-    }
-    Ok(body.to_string())
+    chainvet_ai::ollama::generate(&oc, prompt)
 }
 
 fn parse_json_object(raw: &str) -> std::result::Result<Value, String> {
