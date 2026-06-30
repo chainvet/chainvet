@@ -10,18 +10,5 @@ path = "src/main.rs"
 [dependencies]
 chainvet-core = { path = "../chainvet-core" }
 chainvet-frontend = { path = "../chainvet-frontend" }
-chainvet-sa = { path = "../chainvet-sa" }
-chainvet-se = { path = "../chainvet-se" }
-chainvet-fuzzing = { path = "../chainvet-fuzzing" }
-chainvet-hybrid = { path = "../chainvet-hybrid" }
-serde = { version = "1", features = ["derive"] }
+chainvet-orchestrator = { path = "../chainvet-orchestrator" }
 serde_json = "1"
-tree-sitter = "0.25"
-tree-sitter-solidity = "1"
-rand = "0.8"
-sha2 = "0.10"
-z3 = "0.19.11"
-tiny-keccak = { version = "2", features = ["keccak"] }
-
-[dev-dependencies]
-proptest = "1"

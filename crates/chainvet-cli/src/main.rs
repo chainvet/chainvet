@@ -1,7 +1,8 @@
-mod report;
+mod render;
 
 use chainvet_core::util::error::Error;
 use chainvet_core::util::error::Result;
+use chainvet_orchestrator::ScanMode;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum AnalysisMode {
@@ -52,7 +53,7 @@ fn run() -> Result<()> {
     let mut dump_ir = None;
     let mut mode = AnalysisMode::Static;
     let mut mode_flag = None::<&'static str>;
-    let mut hybrid_budget = chainvet_hybrid::hybrid::HybridBudget::default();
+    let mut hybrid_budget = chainvet_orchestrator::HybridBudget::default();
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         if let Some(next_mode) = AnalysisMode::from_flag(&arg) {
@@ -160,31 +161,21 @@ fn run() -> Result<()> {
         return Err(Error::msg("--dump-ir is only supported in --static mode"));
     }
 
-    match mode {
-        AnalysisMode::Static => {
-            let output = chainvet_frontend::frontend::load_project(&input)?;
-            if let Some(format) = dump_ir {
-                let ir_module = chainvet_core::ir::lower_module(&output.ast);
-                let payload = chainvet_core::ir::dump_module(&ir_module, format);
-                println!("{payload}");
-                return Ok(());
-            }
-            report::print_report(&output, &input, format)?;
-        }
-        AnalysisMode::Symbolic => {
-            let output = chainvet_frontend::frontend::load_project(&input)?;
-            chainvet_se::symbolic::run(&output, format)?;
-        }
-        AnalysisMode::Fuzzing => {
-            let output = chainvet_frontend::frontend::load_project(&input)?;
-            let config = chainvet_fuzzing::fuzzing::types::FuzzConfig::default();
-            chainvet_fuzzing::fuzzing::run_fuzzer(&output, &config, format)?;
-        }
-        AnalysisMode::Hybrid => {
-            let output = chainvet_frontend::frontend::load_project(&input)?;
-            chainvet_hybrid::hybrid::run_with_budget(&output, &hybrid_budget, format)?;
-        }
+    // --dump-ir is an IR-inspection utility, not a scan.
+    if let Some(ir_format) = dump_ir {
+        let output = chainvet_frontend::frontend::load_project(&input)?;
+        let ir_module = chainvet_core::ir::lower_module(&output.ast);
+        println!("{}", chainvet_core::ir::dump_module(&ir_module, ir_format));
+        return Ok(());
     }
 
-    Ok(())
+    let scan_mode = match mode {
+        AnalysisMode::Static => ScanMode::Static,
+        AnalysisMode::Symbolic => ScanMode::Symbolic,
+        AnalysisMode::Fuzzing => ScanMode::Fuzzing,
+        AnalysisMode::Hybrid => ScanMode::Hybrid,
+    };
+    let output = chainvet_frontend::frontend::load_project(&input)?;
+    let result = chainvet_orchestrator::scan(&output, scan_mode, &hybrid_budget)?;
+    render::render(&result, format)
 }
