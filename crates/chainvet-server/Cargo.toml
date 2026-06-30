@@ -1,0 +1,16 @@
+[package]
+name = "chainvet-server"
+version = "0.1.0"
+edition = "2024"
+
+[[bin]]
+name = "chainvet-server"
+path = "src/main.rs"
+
+[dependencies]
+chainvet-core = { path = "../chainvet-core" }
+chainvet-orchestrator = { path = "../chainvet-orchestrator" }
+axum = "0.7"
+tokio = { version = "1", features = ["rt-multi-thread", "net", "macros"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

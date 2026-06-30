@@ -20,7 +20,7 @@ use chainvet_hybrid::hybrid::{self, HybridFindingRow, HybridJsonReport};
 pub use chainvet_hybrid::hybrid::{HybridBudget, HybridFindingRow as ScanFinding};
 
 /// Which engine(s) a scan runs.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 pub enum ScanMode {
     Static,
     Symbolic,
@@ -30,7 +30,7 @@ pub enum ScanMode {
 
 /// The typed result of a scan: the finished (collected + deduplicated) findings
 /// shared by every renderer, plus the hybrid engine's run telemetry when it ran.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct ScanResult {
     pub mode: ScanMode,
     /// Unified findings, already merged/deduplicated and tier-tagged — exactly

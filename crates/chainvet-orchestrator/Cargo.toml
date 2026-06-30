@@ -11,3 +11,4 @@ chainvet-sa = { path = "../chainvet-sa" }
 chainvet-se = { path = "../chainvet-se" }
 chainvet-fuzzing = { path = "../chainvet-fuzzing" }
 chainvet-hybrid = { path = "../chainvet-hybrid" }
+serde = { version = "1", features = ["derive"] }
