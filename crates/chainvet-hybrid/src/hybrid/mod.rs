@@ -5,6 +5,10 @@ mod seeding;
 mod targeting;
 
 pub use budget::HybridBudget;
+pub use orchestrator::analyze;
+pub use report::{
+    HybridFindingRow, HybridJsonReport, HybridRunSummary, deduplicate_rows, print_hybrid_report,
+};
 
 use chainvet_frontend::frontend::FrontendOutput;
 use chainvet_core::OutputFormat;

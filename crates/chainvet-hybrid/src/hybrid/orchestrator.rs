@@ -26,6 +26,14 @@ use super::seeding::build_hybrid_seeds;
 use super::targeting::{build_targets, classify_threshold, selected_targets};
 
 pub fn run(output: &FrontendOutput, budget: &HybridBudget, format: OutputFormat) -> Result<()> {
+    let payload = analyze(output, budget)?;
+    print_hybrid_report(&payload, format)
+}
+
+/// Run the full hybrid pipeline and return the typed report without rendering.
+/// `run` is exactly this plus `print_hybrid_report`; the orchestrator facade
+/// calls `analyze` so any frontend can render the result however it likes.
+pub fn analyze(output: &FrontendOutput, budget: &HybridBudget) -> Result<HybridJsonReport> {
     let ast = &output.ast;
     let ir_module = ir::lower_module(ast);
     let cfgs = cfg::build_from_ir(&ir_module);
@@ -221,7 +229,7 @@ pub fn run(output: &FrontendOutput, budget: &HybridBudget, format: OutputFormat)
         fuzz_hybrid_stats: fuzz_report.hybrid_stats,
     };
 
-    print_hybrid_report(&payload, format)
+    Ok(payload)
 }
 
 fn run_se_assist(

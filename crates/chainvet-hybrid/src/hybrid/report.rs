@@ -254,7 +254,7 @@ struct DedupKey {
     file: Option<String>,
 }
 
-fn deduplicate_rows(rows: Vec<HybridFindingRow>) -> Vec<HybridFindingRow> {
+pub fn deduplicate_rows(rows: Vec<HybridFindingRow>) -> Vec<HybridFindingRow> {
     let mut grouped = HashMap::<DedupKey, HybridFindingRow>::new();
 
     for row in rows {
