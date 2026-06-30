@@ -6,7 +6,7 @@ use std::fs;
 use chainvet_orchestrator::{ScanFinding, ScanResult};
 use serde_json::{Value, json};
 
-/// SARIF severity level for a ChainVet severity string.
+/// SARIF severity level for a Chainvet severity string.
 fn level_for(severity: Option<&str>) -> &'static str {
     match severity {
         Some("high") => "error",
@@ -65,7 +65,7 @@ pub fn to_sarif(result: &ScanResult) -> Value {
         "runs": [{
             "tool": {
                 "driver": {
-                    "name": "ChainVet",
+                    "name": "Chainvet",
                     "informationUri": "https://github.com/chainvet/chainvet",
                     "rules": rules
                 }

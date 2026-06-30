@@ -1,4 +1,4 @@
-//! ChainVet AI adapter: a tiny, dependency-light client for a local LLM.
+//! Chainvet AI adapter: a tiny, dependency-light client for a local LLM.
 //!
 //! Transport only — no analysis types, no finding model — so both the frontend
 //! (AST-enrichment fallback) and the orchestrator (report review) can share one

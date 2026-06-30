@@ -1,4 +1,4 @@
-//! ChainVet core: the shared types every engine and frontend agrees on.
+//! Chainvet core: the shared types every engine and frontend agrees on.
 //!
 //! Normalized AST (`norm`), the SlithIR-style instruction set (`ir`), control-flow
 //! graphs (`cfg`), SSA form (`ssa`), the finding/report model (`artifacts`), and

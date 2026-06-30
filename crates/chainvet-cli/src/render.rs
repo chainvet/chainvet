@@ -26,7 +26,7 @@ fn render_json(result: &ScanResult) -> Result<()> {
 }
 
 fn render_text(result: &ScanResult) -> Result<()> {
-    println!("=== ChainVet {} ===", mode_label(result.mode));
+    println!("=== Chainvet {} ===", mode_label(result.mode));
 
     if let Some(h) = &result.hybrid {
         println!(

@@ -1,4 +1,4 @@
-//! ChainVet HTTP server frontend: a thin REST API over `orchestrator::scan` so
+//! Chainvet HTTP server frontend: a thin REST API over `orchestrator::scan` so
 //! web apps and other clients can analyze Solidity without linking the engines.
 //!
 //! Endpoints:
@@ -54,7 +54,7 @@ async fn main() {
 async fn health() -> Json<Value> {
     Json(json!({
         "status": "ok",
-        "name": "ChainVet",
+        "name": "Chainvet",
         "version": env!("CARGO_PKG_VERSION"),
     }))
 }

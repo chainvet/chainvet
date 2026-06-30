@@ -88,7 +88,7 @@ fn review_prompt(finding: &ScanFinding, source: Option<&str>) -> String {
     let source = source.unwrap_or("Source context unavailable.");
     let severity = finding.severity.as_deref().unwrap_or("unknown");
     format!(
-        r#"You are ChainVet's local smart-contract audit verifier.
+        r#"You are Chainvet's local smart-contract audit verifier.
 
 Validate whether the analyzer finding is correct for the provided Solidity code.
 Be strict: if the source contradicts the finding, mark it false_positive; if it is

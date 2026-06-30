@@ -1,5 +1,5 @@
 //! The web-app API: file browser + async analyze/status/cancel, matching the
-//! ChainVet web UI's contract. Unlike the old coupled server this drives the
+//! Chainvet web UI's contract. Unlike the old coupled server this drives the
 //! orchestrator library directly (iterating the project's .sol files for real
 //! per-file progress) instead of shelling a CLI, and serves no static assets —
 //! the UI is a separate app that calls these endpoints (CORS-enabled in main).

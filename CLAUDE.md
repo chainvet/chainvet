@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-ChainVet is a hybrid Solidity smart-contract analyzer in Rust: static analysis, symbolic execution (Z3), and coverage-guided fuzzing, plus a hybrid mode that runs them as one feedback loop. It is a **Cargo workspace** — the engines are pure libraries (no I/O), one orchestration crate exposes a typed `scan()`, and thin frontend binaries render the result.
+Chainvet is a hybrid Solidity smart-contract analyzer in Rust: static analysis, symbolic execution (Z3), and coverage-guided fuzzing, plus a hybrid mode that runs them as one feedback loop. It is a **Cargo workspace** — the engines are pure libraries (no I/O), one orchestration crate exposes a typed `scan()`, and thin frontend binaries render the result.
 
 ## Build & Run Commands
 

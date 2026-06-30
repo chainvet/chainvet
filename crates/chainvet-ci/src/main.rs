@@ -1,4 +1,4 @@
-//! ChainVet CI frontend: run a scan, emit SARIF, and set the exit code from a
+//! Chainvet CI frontend: run a scan, emit SARIF, and set the exit code from a
 //! fail-on-severity threshold — for GitHub/GitLab code-scanning pipelines.
 
 mod sarif;

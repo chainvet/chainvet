@@ -1,6 +1,6 @@
-# Contributing to ChainVet
+# Contributing to Chainvet
 
-Thanks for your interest in improving ChainVet!
+Thanks for your interest in improving Chainvet!
 
 ## Getting started
 
@@ -12,7 +12,7 @@ cargo test
 
 ## Project layout
 
-ChainVet is a Cargo workspace (see [README](./README.md) and [CLAUDE.md](./CLAUDE.md)).
+Chainvet is a Cargo workspace (see [README](./README.md) and [CLAUDE.md](./CLAUDE.md)).
 The important rule: **engine crates are pure**. `chainvet-core`, `-sa`, `-se`,
 `-fuzzing`, and `-hybrid` must not do I/O or depend on a web/LSP stack — they take
 typed inputs and return typed results. All rendering and I/O lives in the frontend

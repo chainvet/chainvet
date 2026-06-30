@@ -1,6 +1,6 @@
-# ChainVet
+# Chainvet
 
-A hybrid security analyzer for Solidity smart contracts. ChainVet combines three
+A hybrid security analyzer for Solidity smart contracts. Chainvet combines three
 engines over a shared frontend and IR — **static analysis** (45+ detectors),
 **symbolic execution** (Z3), and **coverage-guided fuzzing** — and a **hybrid**
 mode that runs them as one feedback loop: static analysis steers symbolic
@@ -11,7 +11,7 @@ from static heuristics only).
 
 ## Workspace
 
-ChainVet is a Cargo workspace. The engines are pure libraries (no I/O); one
+Chainvet is a Cargo workspace. The engines are pure libraries (no I/O); one
 orchestration crate exposes a typed `scan()` facade; thin frontends render it.
 
 ```
@@ -93,7 +93,7 @@ Point any LSP client at it (the **chainvet-vscode** extension does this for you)
 ## Optional AI features
 
 Both are **opt-in** and call a local [Ollama](https://ollama.com) server — with
-them off (the default), ChainVet runs fully offline and deterministically.
+them off (the default), Chainvet runs fully offline and deterministically.
 
 | Env var | Effect |
 |---|---|

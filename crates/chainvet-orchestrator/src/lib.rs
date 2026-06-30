@@ -1,4 +1,4 @@
-//! ChainVet orchestration facade.
+//! Chainvet orchestration facade.
 //!
 //! One entry point — [`scan`] — that runs the requested analysis mode over a
 //! loaded project and returns a typed [`ScanResult`]: the unified, deduplicated

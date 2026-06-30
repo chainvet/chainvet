@@ -1,4 +1,4 @@
-//! ChainVet language server: publishes findings as diagnostics as you edit
+//! Chainvet language server: publishes findings as diagnostics as you edit
 //! Solidity. A thin tower-lsp shell over `orchestrator::scan` (static mode for
 //! interactive latency); the VS Code extension and any LSP client consume it.
 

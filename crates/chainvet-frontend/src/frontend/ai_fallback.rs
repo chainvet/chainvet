@@ -70,7 +70,7 @@ fn extract_hints(
 
 fn parse_prompt(file: &SourceFile, chunk: &SourceChunk) -> String {
     format!(
-        r#"You are ChainVet's Solidity fallback parser helper.
+        r#"You are Chainvet's Solidity fallback parser helper.
 
 Task:
 Extract only syntax facts from the Solidity source. Do not identify vulnerabilities. Do not invent declarations.
