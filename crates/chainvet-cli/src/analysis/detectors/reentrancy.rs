@@ -1079,7 +1079,7 @@ fn detect_reentrancy_no_eth_transfer(ast: &NormalizedAst) -> Vec<Finding> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::frontend::parser::load_via_parser_sources;
+    use chainvet_frontend::frontend::parser::load_via_parser_sources;
     use chainvet_core::norm::SourceFile;
 
     #[test]

@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use chainvet_core::cfg::CfgFunction;
-use crate::frontend::FrontendOutput;
+use chainvet_frontend::frontend::FrontendOutput;
 use chainvet_core::ir::{
     ControlKind, IrCallOption, IrInstr, IrModule, IrPlace, IrValue, IrVar, PlaceClass,
 };
@@ -1450,7 +1450,7 @@ fn build_callback_transaction(
 fn select_reentrant_callback_targets(
     current_function_id: u32,
     ast: &chainvet_core::norm::NormalizedAst,
-    compiler: &crate::frontend::CompilerInfo,
+    compiler: &chainvet_frontend::frontend::CompilerInfo,
     deps: &DependencyMap,
 ) -> Vec<u32> {
     let Some(current_function) = ast.functions.get(current_function_id as usize) else {
@@ -1471,7 +1471,7 @@ fn select_reentrant_callback_targets(
         let Some(function) = ast.functions.get(function_id as usize) else {
             continue;
         };
-        if !crate::frontend::is_mutating_entrypoint(function, compiler)
+        if !chainvet_frontend::frontend::is_mutating_entrypoint(function, compiler)
             || function.kind != chainvet_core::norm::FunctionKind::Function
         {
             continue;
@@ -1507,7 +1507,7 @@ fn select_reentrant_callback_targets(
 fn has_no_value_reentrant_callback_overlap(
     current_function_id: u32,
     ast: &chainvet_core::norm::NormalizedAst,
-    compiler: &crate::frontend::CompilerInfo,
+    compiler: &chainvet_frontend::frontend::CompilerInfo,
     deps: &DependencyMap,
 ) -> bool {
     let Some(current_function) = ast.functions.get(current_function_id as usize) else {
@@ -1527,7 +1527,7 @@ fn has_no_value_reentrant_callback_overlap(
         .filter(|&function_id| function_id != current_function_id)
         .filter_map(|function_id| {
             let function = ast.functions.get(function_id as usize)?;
-            if !crate::frontend::is_mutating_entrypoint(function, compiler)
+            if !chainvet_frontend::frontend::is_mutating_entrypoint(function, compiler)
                 || function.kind != chainvet_core::norm::FunctionKind::Function
             {
                 return None;
@@ -1731,7 +1731,7 @@ fn value_is_sender_derived(
 fn function_is_constructor_like(
     function_id: u32,
     ast: &NormalizedAst,
-    compiler: &crate::frontend::CompilerInfo,
+    compiler: &chainvet_frontend::frontend::CompilerInfo,
 ) -> bool {
     let Some(function) = ast.functions.get(function_id as usize) else {
         return false;
@@ -1748,7 +1748,7 @@ fn function_is_constructor_like(
         .map(|contract| contract.name.as_str());
     contract_name
         .map(|contract_name| {
-            name == contract_name && crate::frontend::is_public_entrypoint(function, compiler)
+            name == contract_name && chainvet_frontend::frontend::is_public_entrypoint(function, compiler)
         })
         .unwrap_or(false)
 }
@@ -1756,14 +1756,14 @@ fn function_is_constructor_like(
 fn is_wrong_constructor_runtime_candidate(
     function_id: u32,
     ast: &NormalizedAst,
-    compiler: &crate::frontend::CompilerInfo,
+    compiler: &chainvet_frontend::frontend::CompilerInfo,
 ) -> bool {
     let Some(function) = ast.functions.get(function_id as usize) else {
         return false;
     };
     if function.kind != chainvet_core::norm::FunctionKind::Function
         || !function.params.is_empty()
-        || !crate::frontend::is_public_entrypoint(function, compiler)
+        || !chainvet_frontend::frontend::is_public_entrypoint(function, compiler)
     {
         return false;
     }
@@ -2067,14 +2067,14 @@ fn has_checked_arithmetic(ast: &NormalizedAst) -> bool {
 mod tests {
     use super::*;
     use chainvet_core::cfg;
-    use crate::frontend::{CompilerInfo, FrontendMode, FrontendOutput};
+    use chainvet_frontend::frontend::{CompilerInfo, FrontendMode, FrontendOutput};
     use crate::fuzzing::types::{
         build_dependency_map, extract_abis, ContractAbi, DependencyMap, FunctionAbi, Individual,
         ParamInfo,
     };
     use chainvet_core::ir::{IrBlock, IrCallOption, IrFunction, IrInstr, IrModule, IrPlace, IrValue};
     use chainvet_core::norm::{FunctionKind, Mutability, NormalizedAst, Span, Visibility};
-    use crate::frontend;
+    use chainvet_frontend::frontend;
     use chainvet_core::ir;
 
     #[test]

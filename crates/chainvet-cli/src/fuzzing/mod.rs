@@ -8,7 +8,7 @@ pub mod runner;
 pub mod scheduler;
 pub mod types;
 
-use crate::frontend::FrontendOutput;
+use chainvet_frontend::frontend::FrontendOutput;
 use crate::fuzzing::types::FuzzConfig;
 use crate::report::OutputFormat;
 use chainvet_core::util::error::Result;

@@ -360,7 +360,8 @@ pub fn run_detectors(
 #[cfg(test)]
 mod tests {
     use super::{FindingKind, run_detectors};
-    use crate::{analysis, frontend};
+    use crate::analysis;
+    use chainvet_frontend::frontend;
     use chainvet_core::{cfg, ir};
 
     fn benchmark_findings(path: &str) -> Vec<super::Finding> {

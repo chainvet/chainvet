@@ -6,7 +6,7 @@ mod targeting;
 
 pub use budget::HybridBudget;
 
-use crate::frontend::FrontendOutput;
+use chainvet_frontend::frontend::FrontendOutput;
 use crate::report::OutputFormat;
 use chainvet_core::util::error::Result;
 

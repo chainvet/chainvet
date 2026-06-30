@@ -1,5 +1,4 @@
 mod analysis;
-mod frontend;
 mod fuzzing;
 mod hybrid;
 mod meta;
@@ -169,7 +168,7 @@ fn run() -> Result<()> {
 
     match mode {
         AnalysisMode::Static => {
-            let output = frontend::load_project(&input)?;
+            let output = chainvet_frontend::frontend::load_project(&input)?;
             if let Some(format) = dump_ir {
                 let ir_module = chainvet_core::ir::lower_module(&output.ast);
                 let payload = chainvet_core::ir::dump_module(&ir_module, format);
@@ -179,16 +178,16 @@ fn run() -> Result<()> {
             report::print_report(&output, &input, format)?;
         }
         AnalysisMode::Symbolic => {
-            let output = frontend::load_project(&input)?;
+            let output = chainvet_frontend::frontend::load_project(&input)?;
             symbolic::run(&output, format)?;
         }
         AnalysisMode::Fuzzing => {
-            let output = frontend::load_project(&input)?;
+            let output = chainvet_frontend::frontend::load_project(&input)?;
             let config = fuzzing::types::FuzzConfig::default();
             fuzzing::run_fuzzer(&output, &config, format)?;
         }
         AnalysisMode::Hybrid => {
-            let output = frontend::load_project(&input)?;
+            let output = chainvet_frontend::frontend::load_project(&input)?;
             hybrid::run_with_budget(&output, &hybrid_budget, format)?;
         }
     }

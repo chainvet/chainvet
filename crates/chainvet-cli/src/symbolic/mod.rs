@@ -10,7 +10,7 @@ pub mod engine;
 use std::collections::HashSet;
 use std::sync::Arc;
 
-use crate::frontend::FrontendOutput;
+use chainvet_frontend::frontend::FrontendOutput;
 use crate::report::OutputFormat;
 use crate::symbolic::detectors::DetectorRegistry;
 use crate::symbolic::engine::run_engine;
@@ -172,7 +172,7 @@ fn compiler_is_0_8_plus(version: Option<&str>) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::frontend::{CompilerInfo, FrontendMode, FrontendOutput};
+    use chainvet_frontend::frontend::{CompilerInfo, FrontendMode, FrontendOutput};
     use chainvet_core::norm::NormalizedAst;
 
     fn test_compiler_info() -> CompilerInfo {

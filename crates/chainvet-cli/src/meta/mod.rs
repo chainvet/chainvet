@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 use crate::analysis::detectors;
 use chainvet_core::artifacts::{Finding, FindingLocation};
-use crate::frontend::FrontendOutput;
+use chainvet_frontend::frontend::FrontendOutput;
 use chainvet_core::norm::{Contract, ContractKind};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -531,7 +531,7 @@ mod tests {
     use crate::analysis::detectors::{
         Finding as StaticFinding, FindingKind, Severity, TAXONOMY_ROW_COUNT,
     };
-    use crate::frontend::{CompilerInfo, FrontendMode};
+    use chainvet_frontend::frontend::{CompilerInfo, FrontendMode};
     use chainvet_core::norm::{NormalizedAst, SourceFile, Span};
 
     fn test_output() -> FrontendOutput {

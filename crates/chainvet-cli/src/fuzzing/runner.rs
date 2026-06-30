@@ -5,7 +5,7 @@ use serde::Serialize;
 use sha2::{Digest, Sha256};
 
 use crate::analysis;
-use crate::frontend::FrontendOutput;
+use chainvet_frontend::frontend::FrontendOutput;
 use crate::fuzzing::executor;
 use crate::fuzzing::generator;
 use crate::fuzzing::mutator;
@@ -566,7 +566,7 @@ fn detect_shadowing_findings(ast: &NormalizedAst) -> Vec<FuzzFinding> {
 
 fn detect_public_mint_burn_findings(
     ast: &NormalizedAst,
-    compiler: &crate::frontend::CompilerInfo,
+    compiler: &chainvet_frontend::frontend::CompilerInfo,
 ) -> Vec<FuzzFinding> {
     let mut findings = Vec::new();
     for function in &ast.functions {
@@ -577,7 +577,7 @@ fn detect_public_mint_burn_findings(
         if lower != "mint" && lower != "burn" {
             continue;
         }
-        if !crate::frontend::is_public_entrypoint(function, compiler)
+        if !chainvet_frontend::frontend::is_public_entrypoint(function, compiler)
             || function.kind != FunctionKind::Function
         {
             continue;

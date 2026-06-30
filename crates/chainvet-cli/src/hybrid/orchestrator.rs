@@ -13,7 +13,7 @@ use std::time::Instant;
 use crate::analysis;
 use chainvet_core::cfg;
 use chainvet_core::artifacts::HybridReport;
-use crate::frontend::FrontendOutput;
+use chainvet_frontend::frontend::FrontendOutput;
 use crate::fuzzing::{self, runner::FuzzSession};
 use chainvet_core::ir;
 use crate::report::OutputFormat;

@@ -940,7 +940,7 @@ fn detect_locked_ether(ast: &NormalizedAst) -> Vec<Finding> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::frontend::parser::load_via_parser_sources;
+    use chainvet_frontend::frontend::parser::load_via_parser_sources;
     use chainvet_core::norm::SourceFile;
 
     fn parse(source: &str) -> NormalizedAst {

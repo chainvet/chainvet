@@ -509,8 +509,8 @@ fn function_has_authority_guard_hint(function_id: u32, ast: Option<&NormalizedAs
     let Some(function) = ast_function_by_id(ast, function_id) else {
         return false;
     };
-    crate::frontend::is_legacy_named_constructor(function, ast)
-        || crate::frontend::has_sender_authority_check_hint(function, ast)
+    chainvet_frontend::frontend::is_legacy_named_constructor(function, ast)
+        || chainvet_frontend::frontend::has_sender_authority_check_hint(function, ast)
 }
 
 fn function_is_externally_callable(function_id: u32, ast: Option<&NormalizedAst>) -> bool {
@@ -1539,7 +1539,7 @@ fn function_is_public_sender_payout(function_id: u32, ast: Option<&NormalizedAst
     let Some(function) = ast_function_by_id(ast, function_id) else {
         return false;
     };
-    crate::frontend::has_public_sender_payout_hint(function, ast)
+    chainvet_frontend::frontend::has_public_sender_payout_hint(function, ast)
 }
 
 fn ast_function_by_id(ast: &NormalizedAst, function_id: u32) -> Option<&chainvet_core::norm::Function> {
@@ -2249,7 +2249,7 @@ mod tests {
 
     #[test]
     fn exploit_helper_cleanup_selfdestruct_is_suppressed() {
-        let ast = crate::frontend::parser::load_via_parser_sources(vec![chainvet_core::norm::SourceFile {
+        let ast = chainvet_frontend::frontend::parser::load_via_parser_sources(vec![chainvet_core::norm::SourceFile {
             id: 0,
             path: "ReentrancyExploit.sol".to_string(),
             source: r#"

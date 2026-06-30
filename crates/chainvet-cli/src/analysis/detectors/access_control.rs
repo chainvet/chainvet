@@ -90,7 +90,7 @@ pub fn detect_all(
 /// Returns `true` if the function has a modifier whose name (case-insensitive)
 /// matches one of the common access-control patterns.
 fn has_access_control_modifier(ast: &NormalizedAst, func: &chainvet_core::norm::Function) -> bool {
-    crate::frontend::has_authority_modifier_hint(func, ast)
+    chainvet_frontend::frontend::has_authority_modifier_hint(func, ast)
         || func.modifiers.iter().any(|m| {
             let lower = m.to_lowercase();
             AC_MODIFIERS.iter().any(|ac| lower.contains(ac))
@@ -98,11 +98,11 @@ fn has_access_control_modifier(ast: &NormalizedAst, func: &chainvet_core::norm::
 }
 
 fn has_access_control_guard(ast: &NormalizedAst, func: &chainvet_core::norm::Function) -> bool {
-    crate::frontend::has_sender_authority_check_hint(func, ast)
+    chainvet_frontend::frontend::has_sender_authority_check_hint(func, ast)
 }
 
 fn has_public_sender_payout_hint(ast: &NormalizedAst, func: &chainvet_core::norm::Function) -> bool {
-    crate::frontend::has_public_sender_payout_hint(func, ast)
+    chainvet_frontend::frontend::has_public_sender_payout_hint(func, ast)
 }
 
 /// Returns `true` if the expression at `expr_id` is `msg.sender`.
@@ -942,7 +942,7 @@ fn detect_uninit_permission_check(ast: &NormalizedAst) -> Vec<Finding> {
         if matches!(func.visibility, Visibility::Internal | Visibility::Private) {
             continue;
         }
-        if crate::frontend::is_legacy_named_constructor(func, ast) {
+        if chainvet_frontend::frontend::is_legacy_named_constructor(func, ast) {
             continue;
         }
 
@@ -1487,7 +1487,7 @@ fn detect_arbitrary_storage_write(ast: &NormalizedAst) -> Vec<Finding> {
 mod tests {
     use super::*;
     use crate::analysis;
-    use crate::frontend::parser::load_via_parser_sources;
+    use chainvet_frontend::frontend::parser::load_via_parser_sources;
     use chainvet_core::norm::SourceFile;
 
     fn parse(source: &str) -> NormalizedAst {

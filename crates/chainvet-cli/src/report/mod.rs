@@ -1,6 +1,6 @@
 use crate::analysis::detectors::{self, Finding, Severity};
 use crate::analysis::{self, ResolvedTarget};
-use crate::frontend::{FrontendMode, FrontendOutput};
+use chainvet_frontend::frontend::{FrontendMode, FrontendOutput};
 use crate::meta;
 use chainvet_core::norm::{ExprKind, Function, FunctionKind, NormalizedAst};
 use crate::surfaced;
@@ -625,7 +625,7 @@ fn detect_static_reentrancy_backstops(
         .collect::<BTreeSet<_>>();
 
     for function in &ast.functions {
-        if !crate::frontend::is_mutating_entrypoint(function, &output.compiler) {
+        if !chainvet_frontend::frontend::is_mutating_entrypoint(function, &output.compiler) {
             continue;
         }
         if functions_with_reentrancy.contains(&function.id) {
@@ -700,13 +700,13 @@ fn is_public_authority_setter_candidate(output: &FrontendOutput, function: &Func
     if function.kind != FunctionKind::Function {
         return false;
     }
-    if !crate::frontend::is_mutating_entrypoint(function, &output.compiler) {
+    if !chainvet_frontend::frontend::is_mutating_entrypoint(function, &output.compiler) {
         return false;
     }
-    if crate::frontend::is_legacy_named_constructor(function, &output.ast) {
+    if chainvet_frontend::frontend::is_legacy_named_constructor(function, &output.ast) {
         return false;
     }
-    if crate::frontend::has_authority_modifier_hint(function, &output.ast) {
+    if chainvet_frontend::frontend::has_authority_modifier_hint(function, &output.ast) {
         return false;
     }
     if function
