@@ -1,0 +1,9 @@
+[package]
+name = "chainvet-sa"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+chainvet-core = { path = "../chainvet-core" }
+chainvet-frontend = { path = "../chainvet-frontend" }
+serde = { version = "1", features = ["derive"] }

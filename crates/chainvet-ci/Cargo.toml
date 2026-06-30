@@ -1,0 +1,13 @@
+[package]
+name = "chainvet-ci"
+version = "0.1.0"
+edition = "2024"
+
+[[bin]]
+name = "chainvet-ci"
+path = "src/main.rs"
+
+[dependencies]
+chainvet-core = { path = "../chainvet-core" }
+chainvet-orchestrator = { path = "../chainvet-orchestrator" }
+serde_json = "1"

@@ -4,59 +4,57 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-A hybrid Solidity smart contract analysis platform in Rust supporting three analysis modes: static analysis, symbolic execution (Z3-based), and fuzzing. All engines share a unified frontend and intermediate representation pipeline.
+ChainVet is a hybrid Solidity smart-contract analyzer in Rust: static analysis, symbolic execution (Z3), and coverage-guided fuzzing, plus a hybrid mode that runs them as one feedback loop. It is a **Cargo workspace** — the engines are pure libraries (no I/O), one orchestration crate exposes a typed `scan()`, and thin frontend binaries render the result.
 
 ## Build & Run Commands
 
 ```bash
-cargo build                  # Build (requires z3 system library)
-cargo build --release        # Release build
-cargo check                  # Type-check without full build
-cargo fmt                    # Format code
+cargo build --release        # Build the workspace (requires the z3 system library)
+cargo test                   # Run tests
 cargo clippy -- -D warnings  # Lint
+cargo fmt                    # Format
 
-# Run analysis (default mode: static)
-cargo run -- <path.sol>
-cargo run -- <path.sol> --json              # JSON output
-cargo run -- <path.sol> --dump-ir text      # Dump IR (text|json|tuple)
+# CLI (binary: chainvet)
+cargo run -p chainvet-cli -- <path.sol>              # static (default)
+cargo run -p chainvet-cli -- --hybrid <path.sol>     # hybrid / --symbolic / --fuzzing
+cargo run -p chainvet-cli -- --hybrid <path.sol> --json
+cargo run -p chainvet-cli -- <path.sol> --dump-ir text   # text|json|tuple
 
-# Select analysis mode
-cargo run -- --static <path.sol>
-cargo run -- --symbolic <path.sol>
-cargo run -- --fuzzing <path.sol>
-cargo run -- --hybrid <path.sol>
+# Other frontends
+cargo run -p chainvet-ci -- <path> --fail-on high --sarif out.sarif
+CHAINVET_SERVER_ROOT=./contracts cargo run -p chainvet-server   # REST on :8080
+cargo run -p chainvet-lsp                                       # stdio language server
 ```
 
-Test Solidity fixtures are in `fixtures/` (e.g., `fixtures/vuln_reentrancy.sol`).
+Test fixtures live in `crates/chainvet-cli/tests/fixtures/` (e.g. `vuln_reentrancy.sol`).
 
 ## Architecture
 
-### Pipeline: M1 -> M2 -> M3 -> Engines
+### Pipeline: frontend → IR/CFG/SSA → engines → orchestrator → frontend
 
-1. **M1 Frontend** (`src/frontend/solc.rs`, `solc_manager.rs`): Primary path. Invokes `solc` compiler to produce a full AST. Solc binary is auto-managed and cached in `~/.cache/static/solc`.
-2. **M2 Frontend** (`src/frontend/parser.rs`): Fallback when solc fails. Uses tree-sitter-solidity for error-tolerant parsing.
-3. **Normalization** (`src/norm/`): Both frontends produce a `NormalizedAst` that abstracts away solc version differences. This is the shared type consumed downstream.
-4. **M3 IR/CFG/SSA** (`src/ir/`, `src/cfg/`, `src/ssa/`): Lowers `NormalizedAst` into a SlithIR-style instruction set, builds control flow graphs, and computes SSA form with phi nodes and def/use chains.
+1. **Frontend** (`chainvet-frontend`): solc primary → tree-sitter fallback → optional AI fallback (`ai_fallback.rs`, env-gated). Produces a `NormalizedAst`.
+2. **Core** (`chainvet-core`): the shared types every crate agrees on — `norm` (NormalizedAst), `ir` (SlithIR-style), `cfg`, `ssa`, `artifacts` (finding model), `util::error`, `OutputFormat`. No engine logic, no I/O.
+3. **Engines** (each a pure library):
+   - `chainvet-sa` — call graph, taint, function summaries, 45+ detectors in `analysis/detectors/` (IDs like AC-01, RE-04). Also hosts `meta` + `surfaced`.
+   - `chainvet-se` — Z3 symbolic execution; `analyze_with_options` returns typed findings + witnesses.
+   - `chainvet-fuzzing` — generator/mutator/executor/oracle/scheduler; `runner::run` returns a typed report.
+   - `chainvet-hybrid` — the control loop; `analyze()` returns the typed payload, `run()` = analyze + print.
+4. **Orchestrator** (`chainvet-orchestrator`): `scan(output, ScanMode, budget) -> ScanResult` — runs the engine(s), unifies findings via `HybridFindingRow::collect` (merge/dedup/tier), and applies optional AI review (`ai_report`, env-gated). This is the one entry point every frontend calls.
+5. **Frontends** (thin, depend only on the orchestrator): `chainvet-cli` (render text/JSON), `chainvet-ci` (SARIF + exit codes), `chainvet-server` (axum REST), `chainvet-lsp` (tower-lsp diagnostics).
 
-### Analysis Engines
+### AI features
 
-- **Static Analysis** (`src/analysis/`): Fully implemented. Call graph construction, taint analysis, function summaries, and 45+ vulnerability detectors organized by category in `src/analysis/detectors/` (access control, arithmetic, reentrancy, DoS, etc.). Detector IDs follow a prefix convention (AC-01, AR-01, RE-01, etc.).
-- **Symbolic Execution** (`src/symbolic/`): Skeleton/in-progress. Uses Z3 SMT solver. Active development on `se-engine` branch.
-- **Fuzzing** (`src/fuzzing/`): Framework implemented with generator, mutator, executor, oracle, and scheduler modules.
-- **Reporting** (`src/report/`): Generates text or JSON output from analysis findings.
+`chainvet-ai` is a transport-only Ollama client (raw TCP, no HTTP dep). Both AI features are opt-in env vars and no-ops by default: `CHAINVET_AI_FALLBACK_PARSER` (frontend) and `CHAINVET_AI_REPORT` (orchestrator). Endpoint/model via `CHAINVET_AI_ENDPOINT`/`CHAINVET_AI_MODEL`.
 
-### Entry Point
+## Conventions
 
-`src/main.rs` parses CLI args (analysis mode, output format, IR dump flags) and dispatches to the selected engine. Custom error types are in `src/util/error.rs`.
+- **Purity:** `chainvet-core`/`-sa`/`-se`/`-fuzzing`/`-hybrid` must not depend on axum/tokio/reqwest. I/O lives in the frontends.
+- **Parity:** the hybrid `--json` output is the stable, benchmark-consumed schema (`HybridJsonReport`); don't change its shape casually.
+- Integrations (`chainvet-vscode`, `chainvet-web`, `chainvet-action`) live in separate repos and consume the LSP / server / CI frontends respectively.
 
 ## Key Dependencies
 
-- **z3** (0.19.11): SMT solver for symbolic execution
-- **tree-sitter** / **tree-sitter-solidity**: Fallback parser
-- **serde** / **serde_json**: Serialization for JSON output and IR dump
-
-## Branch Strategy
-
-- `main`: Stable branch
-- `se-engine`: Symbolic execution development
-- Feature branches exist for different hybrid integration strategies
+- **z3** (0.19.11) — symbolic execution
+- **tree-sitter** / **tree-sitter-solidity** — fallback parser
+- **axum** / **tower-http** — server frontend; **tower-lsp** — LSP frontend
+- **serde** / **serde_json** — serialization

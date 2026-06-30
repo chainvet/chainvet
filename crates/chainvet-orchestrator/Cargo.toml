@@ -1,0 +1,14 @@
+[package]
+name = "chainvet-orchestrator"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+chainvet-core = { path = "../chainvet-core" }
+chainvet-ai = { path = "../chainvet-ai" }
+chainvet-frontend = { path = "../chainvet-frontend" }
+chainvet-sa = { path = "../chainvet-sa" }
+chainvet-se = { path = "../chainvet-se" }
+chainvet-fuzzing = { path = "../chainvet-fuzzing" }
+chainvet-hybrid = { path = "../chainvet-hybrid" }
+serde = { version = "1", features = ["derive"] }
