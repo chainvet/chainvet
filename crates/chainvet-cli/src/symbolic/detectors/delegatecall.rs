@@ -1,6 +1,6 @@
 use crate::analysis::detectors::Severity;
-use crate::cfg::BlockId;
-use crate::ir::{IrCallOption, IrInstr, IrValue, IrVar};
+use chainvet_core::cfg::BlockId;
+use chainvet_core::ir::{IrCallOption, IrInstr, IrValue, IrVar};
 use crate::symbolic::detectors::{make_finding, CalleeTracker, Detector};
 use crate::symbolic::results::finding::{Confidence, SeFinding, SeVulnKind};
 use crate::symbolic::solver::SmtSolver;
@@ -109,8 +109,8 @@ impl Detector for DelegatecallDetector {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ir::{IrCallOption, IrInstr, IrValue, IrVar};
-    use crate::norm::Span;
+    use chainvet_core::ir::{IrCallOption, IrInstr, IrValue, IrVar};
+    use chainvet_core::norm::Span;
     use crate::symbolic::results::finding::SeVulnKind;
     use crate::symbolic::solver::z3_backend::Z3Backend;
     use crate::symbolic::state::call_context::CallContext;
@@ -222,8 +222,8 @@ mod tests {
         //   Load Temp(0) <- Member{base:Named("lib"), field:"delegatecall", root:Some("lib")}
         //   Call callee:Var(Temp(0)), args:[Var(Temp(1))]
         // Should emit UnsafeDelegatecall (Temp(1) is user-controlled).
-        use crate::ir::IrPlace;
-        use crate::ir::PlaceClass;
+        use chainvet_core::ir::IrPlace;
+        use chainvet_core::ir::PlaceClass;
 
         let (state, solver) = make_state_and_solver();
         let mut det = DelegatecallDetector::new();

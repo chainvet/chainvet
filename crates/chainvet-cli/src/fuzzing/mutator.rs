@@ -431,7 +431,7 @@ fn random_payable_value(rng: &mut impl Rng) -> u128 {
 mod tests {
     use super::*;
     use crate::fuzzing::types::{DependencyMap, Environment, FunctionAbi, FunctionDeps, ParamInfo};
-    use crate::norm::{FunctionKind, Mutability, Visibility};
+    use chainvet_core::norm::{FunctionKind, Mutability, Visibility};
     use std::collections::{HashMap, HashSet};
 
     fn sample_individual() -> Individual {

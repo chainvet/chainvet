@@ -1,11 +1,11 @@
 use std::collections::{HashMap, HashSet};
 
-use crate::cfg::CfgFunction;
+use chainvet_core::cfg::CfgFunction;
 use crate::frontend::FrontendOutput;
-use crate::ir::{
+use chainvet_core::ir::{
     ControlKind, IrCallOption, IrInstr, IrModule, IrPlace, IrValue, IrVar, PlaceClass,
 };
-use crate::norm::NormalizedAst;
+use chainvet_core::norm::NormalizedAst;
 
 use crate::fuzzing::types::{
     ContractAbi, DependencyMap, Environment, ExecutionTrace, FuzzValue, Individual, TraceEvent,
@@ -96,7 +96,7 @@ fn seed_contract_state_var_origins(
     }
 }
 
-fn state_var_initializer_lower(ast: &NormalizedAst, span: crate::norm::Span) -> Option<String> {
+fn state_var_initializer_lower(ast: &NormalizedAst, span: chainvet_core::norm::Span) -> Option<String> {
     let file = ast.files.get(span.file as usize)?;
     let source = file.source.get(span.start as usize..span.end as usize)?;
     let (_, rhs) = source.split_once('=')?;
@@ -209,7 +209,7 @@ fn execute_transaction(
 
     // If we have a CFG, execute along chosen control-flow edges (path-sensitive).
     if let Some(cfg) = cfg {
-        let block_map: HashMap<u32, &crate::cfg::Block> =
+        let block_map: HashMap<u32, &chainvet_core::cfg::Block> =
             cfg.blocks.iter().map(|b| (b.id, b)).collect();
         let mut succs: HashMap<u32, Vec<u32>> = HashMap::new();
         for edge in &cfg.edges {
@@ -1431,7 +1431,7 @@ fn execute_instr(
 
 fn build_callback_transaction(
     function_id: u32,
-    ast: &crate::norm::NormalizedAst,
+    ast: &chainvet_core::norm::NormalizedAst,
     sender: usize,
 ) -> Transaction {
     let args = ast
@@ -1449,7 +1449,7 @@ fn build_callback_transaction(
 
 fn select_reentrant_callback_targets(
     current_function_id: u32,
-    ast: &crate::norm::NormalizedAst,
+    ast: &chainvet_core::norm::NormalizedAst,
     compiler: &crate::frontend::CompilerInfo,
     deps: &DependencyMap,
 ) -> Vec<u32> {
@@ -1472,7 +1472,7 @@ fn select_reentrant_callback_targets(
             continue;
         };
         if !crate::frontend::is_mutating_entrypoint(function, compiler)
-            || function.kind != crate::norm::FunctionKind::Function
+            || function.kind != chainvet_core::norm::FunctionKind::Function
         {
             continue;
         }
@@ -1506,7 +1506,7 @@ fn select_reentrant_callback_targets(
 
 fn has_no_value_reentrant_callback_overlap(
     current_function_id: u32,
-    ast: &crate::norm::NormalizedAst,
+    ast: &chainvet_core::norm::NormalizedAst,
     compiler: &crate::frontend::CompilerInfo,
     deps: &DependencyMap,
 ) -> bool {
@@ -1528,7 +1528,7 @@ fn has_no_value_reentrant_callback_overlap(
         .filter_map(|function_id| {
             let function = ast.functions.get(function_id as usize)?;
             if !crate::frontend::is_mutating_entrypoint(function, compiler)
-                || function.kind != crate::norm::FunctionKind::Function
+                || function.kind != chainvet_core::norm::FunctionKind::Function
             {
                 return None;
             }
@@ -1736,7 +1736,7 @@ fn function_is_constructor_like(
     let Some(function) = ast.functions.get(function_id as usize) else {
         return false;
     };
-    if function.kind == crate::norm::FunctionKind::Constructor {
+    if function.kind == chainvet_core::norm::FunctionKind::Constructor {
         return true;
     }
     let Some(name) = function.name.as_deref() else {
@@ -1761,7 +1761,7 @@ fn is_wrong_constructor_runtime_candidate(
     let Some(function) = ast.functions.get(function_id as usize) else {
         return false;
     };
-    if function.kind != crate::norm::FunctionKind::Function
+    if function.kind != chainvet_core::norm::FunctionKind::Function
         || !function.params.is_empty()
         || !crate::frontend::is_public_entrypoint(function, compiler)
     {
@@ -2066,15 +2066,16 @@ fn has_checked_arithmetic(ast: &NormalizedAst) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cfg;
+    use chainvet_core::cfg;
     use crate::frontend::{CompilerInfo, FrontendMode, FrontendOutput};
     use crate::fuzzing::types::{
         build_dependency_map, extract_abis, ContractAbi, DependencyMap, FunctionAbi, Individual,
         ParamInfo,
     };
-    use crate::ir::{IrBlock, IrCallOption, IrFunction, IrInstr, IrModule, IrPlace, IrValue};
-    use crate::norm::{FunctionKind, Mutability, NormalizedAst, Span, Visibility};
-    use crate::{frontend, ir};
+    use chainvet_core::ir::{IrBlock, IrCallOption, IrFunction, IrInstr, IrModule, IrPlace, IrValue};
+    use chainvet_core::norm::{FunctionKind, Mutability, NormalizedAst, Span, Visibility};
+    use crate::frontend;
+    use chainvet_core::ir;
 
     #[test]
     fn eval_binary_ops() {
@@ -2094,7 +2095,7 @@ mod tests {
     fn resolve_literal_values() {
         let state = SimState::new();
         let locals = HashMap::new();
-        let lit = crate::norm::Literal {
+        let lit = chainvet_core::norm::Literal {
             kind: "number".to_string(),
             value: "42".to_string(),
         };

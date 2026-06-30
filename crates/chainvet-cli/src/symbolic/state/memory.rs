@@ -3,7 +3,7 @@ use z3::Sort;
 
 use crate::symbolic::types::symbolic_array;
 use crate::symbolic::types::SymbolicValue;
-use crate::util::error::Result;
+use chainvet_core::util::error::Result;
 
 /// Word-addressed symbolic memory: `Array<BV256, BV256>`.
 ///

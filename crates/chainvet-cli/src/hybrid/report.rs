@@ -3,12 +3,12 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use serde::Serialize;
 
 use crate::analysis::detectors::Finding;
-use crate::core::artifacts::HybridReport;
+use chainvet_core::artifacts::HybridReport;
 use crate::fuzzing::types::{FuzzFinding, FuzzHybridStats};
-use crate::norm::NormalizedAst;
+use chainvet_core::norm::NormalizedAst;
 use crate::report::OutputFormat;
 use crate::symbolic::results::{coverage::CoverageReport, SeFinding};
-use crate::util::error::{Error, Result};
+use chainvet_core::util::error::{Error, Result};
 
 use super::seeding::HybridSeed;
 use super::targeting::HybridTarget;

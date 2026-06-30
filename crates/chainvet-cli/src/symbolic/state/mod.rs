@@ -6,9 +6,9 @@ pub mod variables;
 
 use std::collections::{HashMap, HashSet};
 
-use crate::cfg::BlockId;
-use crate::ir::IrVar;
-use crate::norm::Span;
+use chainvet_core::cfg::BlockId;
+use chainvet_core::ir::IrVar;
+use chainvet_core::norm::Span;
 
 use self::call_context::CallContext;
 use self::constraints::PathConstraints;
@@ -246,7 +246,7 @@ impl SymbolicState {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ir::IrVar;
+    use chainvet_core::ir::IrVar;
     use crate::symbolic::types::SymbolicValue;
     use z3::ast::BV;
 

@@ -6,7 +6,7 @@
 use std::collections::HashSet;
 
 use crate::analysis::taint::TaintSummary;
-use crate::norm::{CallTarget, ExprKind, NormalizedAst, Span, StmtKind};
+use chainvet_core::norm::{CallTarget, ExprKind, NormalizedAst, Span, StmtKind};
 
 use super::{Finding, FindingKind, Severity};
 
@@ -238,7 +238,7 @@ fn detect_taint(ast: &NormalizedAst, summaries: &[TaintSummary]) -> Vec<Finding>
 mod tests {
     use super::*;
     use crate::frontend::parser::load_via_parser_sources;
-    use crate::norm::SourceFile;
+    use chainvet_core::norm::SourceFile;
 
     fn parse(source: &str) -> NormalizedAst {
         load_via_parser_sources(vec![SourceFile {

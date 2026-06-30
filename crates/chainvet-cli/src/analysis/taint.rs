@@ -1,9 +1,9 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 
 use crate::analysis::{ResolvedCallGraph, ResolvedTarget};
-use crate::cfg::{Block, CfgFunction};
-use crate::ir::{IrCallOption, IrInstr, IrPlace, IrValue, IrVar};
-use crate::norm::{CallOption, ExprKind, Function, NormalizedAst, Span, StmtKind, Visibility};
+use chainvet_core::cfg::{Block, CfgFunction};
+use chainvet_core::ir::{IrCallOption, IrInstr, IrPlace, IrValue, IrVar};
+use chainvet_core::norm::{CallOption, ExprKind, Function, NormalizedAst, Span, StmtKind, Visibility};
 
 #[derive(Debug, Clone)]
 pub struct TaintSummary {
@@ -549,15 +549,15 @@ fn apply_block(
                 }
             }
             IrInstr::Control { kind, .. } => match kind {
-                crate::ir::ControlKind::If { cond } => {
+                chainvet_core::ir::ControlKind::If { cond } => {
                     value_taint(cond, names, contract_name, state, temp_taint, uses_source);
                 }
-                crate::ir::ControlKind::Loop { cond } => {
+                chainvet_core::ir::ControlKind::Loop { cond } => {
                     if let Some(cond) = cond {
                         value_taint(cond, names, contract_name, state, temp_taint, uses_source);
                     }
                 }
-                crate::ir::ControlKind::Revert { value } => {
+                chainvet_core::ir::ControlKind::Revert { value } => {
                     if let Some(value) = value {
                         value_taint(value, names, contract_name, state, temp_taint, uses_source);
                     }

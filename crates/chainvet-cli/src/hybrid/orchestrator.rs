@@ -11,14 +11,14 @@ use std::collections::HashSet;
 use std::time::Instant;
 
 use crate::analysis;
-use crate::cfg;
-use crate::core::artifacts::HybridReport;
+use chainvet_core::cfg;
+use chainvet_core::artifacts::HybridReport;
 use crate::frontend::FrontendOutput;
 use crate::fuzzing::{self, runner::FuzzSession};
-use crate::ir;
+use chainvet_core::ir;
 use crate::report::OutputFormat;
 use crate::symbolic::{self, SymbolicOptions, results::SeFinding};
-use crate::util::error::Result;
+use chainvet_core::util::error::Result;
 
 use super::budget::HybridBudget;
 use super::report::{HybridFindingRow, HybridJsonReport, HybridRunSummary, print_hybrid_report};

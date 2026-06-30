@@ -4,7 +4,7 @@
 
 use crate::analysis::CallGraph;
 use crate::analysis::taint::TaintSummary;
-use crate::norm::{
+use chainvet_core::norm::{
     CallOption, CallTarget, ChainSegment, ExprKind, FunctionKind, NormalizedAst, Span, StmtKind,
     Visibility,
 };
@@ -89,7 +89,7 @@ pub fn detect_all(
 
 /// Returns `true` if the function has a modifier whose name (case-insensitive)
 /// matches one of the common access-control patterns.
-fn has_access_control_modifier(ast: &NormalizedAst, func: &crate::norm::Function) -> bool {
+fn has_access_control_modifier(ast: &NormalizedAst, func: &chainvet_core::norm::Function) -> bool {
     crate::frontend::has_authority_modifier_hint(func, ast)
         || func.modifiers.iter().any(|m| {
             let lower = m.to_lowercase();
@@ -97,11 +97,11 @@ fn has_access_control_modifier(ast: &NormalizedAst, func: &crate::norm::Function
         })
 }
 
-fn has_access_control_guard(ast: &NormalizedAst, func: &crate::norm::Function) -> bool {
+fn has_access_control_guard(ast: &NormalizedAst, func: &chainvet_core::norm::Function) -> bool {
     crate::frontend::has_sender_authority_check_hint(func, ast)
 }
 
-fn has_public_sender_payout_hint(ast: &NormalizedAst, func: &crate::norm::Function) -> bool {
+fn has_public_sender_payout_hint(ast: &NormalizedAst, func: &chainvet_core::norm::Function) -> bool {
     crate::frontend::has_public_sender_payout_hint(func, ast)
 }
 
@@ -136,7 +136,7 @@ fn is_msg_sender(ast: &NormalizedAst, expr_id: u32) -> bool {
 }
 
 /// Returns `true` if the function body contains any reference to `msg.sender`.
-fn body_contains_msg_sender(ast: &NormalizedAst, func: &crate::norm::Function) -> bool {
+fn body_contains_msg_sender(ast: &NormalizedAst, func: &chainvet_core::norm::Function) -> bool {
     let Some(body) = func.body else { return false };
     let mut found = false;
     for_each_expr_in_stmt(ast, body, &mut |eid, _| {
@@ -197,7 +197,7 @@ fn expr_is_constructor_authority_target(ast: &NormalizedAst, expr_id: u32) -> bo
 
 fn body_assigns_msg_sender_to_authority_target(
     ast: &NormalizedAst,
-    func: &crate::norm::Function,
+    func: &chainvet_core::norm::Function,
 ) -> bool {
     let Some(body) = func.body else { return false };
     let mut found = false;
@@ -217,7 +217,7 @@ fn body_assigns_msg_sender_to_authority_target(
 
 fn initializer_mentions_authority_context(
     ast: &NormalizedAst,
-    func: &crate::norm::Function,
+    func: &chainvet_core::norm::Function,
 ) -> bool {
     if func
         .params
@@ -251,7 +251,7 @@ fn initializer_mentions_authority_context(
 }
 
 /// Returns `true` if the function body calls a method with the given name.
-fn function_calls_method(ast: &NormalizedAst, func: &crate::norm::Function, method: &str) -> bool {
+fn function_calls_method(ast: &NormalizedAst, func: &chainvet_core::norm::Function, method: &str) -> bool {
     let Some(body) = func.body else { return false };
     let mut found = false;
     for_each_expr_in_stmt(ast, body, &mut |_eid, expr| {
@@ -268,7 +268,7 @@ fn function_calls_method(ast: &NormalizedAst, func: &crate::norm::Function, meth
 }
 
 /// Extract the simple name from a `CallMeta`.
-fn call_target_name(call: &crate::norm::CallMeta) -> &str {
+fn call_target_name(call: &chainvet_core::norm::CallMeta) -> &str {
     match &call.target {
         CallTarget::Direct { name } => name.as_str(),
         CallTarget::Member { name, .. } => name.as_str(),
@@ -322,7 +322,7 @@ fn expr_references_ident(ast: &NormalizedAst, expr_id: u32, name: &str) -> bool 
 /// references the given parameter name (heuristic for zero-address validation).
 fn has_validation_for_param(
     ast: &NormalizedAst,
-    func: &crate::norm::Function,
+    func: &chainvet_core::norm::Function,
     param: &str,
 ) -> bool {
     let Some(body) = func.body else { return false };
@@ -378,7 +378,7 @@ fn is_initializer_name(name: &str) -> bool {
 fn for_each_expr_in_stmt(
     ast: &NormalizedAst,
     stmt_id: u32,
-    cb: &mut impl FnMut(u32, &crate::norm::Expr),
+    cb: &mut impl FnMut(u32, &chainvet_core::norm::Expr),
 ) {
     let Some(stmt) = ast.statements.get(stmt_id as usize) else {
         return;
@@ -442,7 +442,7 @@ fn for_each_expr_in_stmt(
 }
 
 /// Walk every sub-expression under `expr_id`, calling `cb` for each.
-fn for_each_expr(ast: &NormalizedAst, expr_id: u32, cb: &mut impl FnMut(u32, &crate::norm::Expr)) {
+fn for_each_expr(ast: &NormalizedAst, expr_id: u32, cb: &mut impl FnMut(u32, &chainvet_core::norm::Expr)) {
     let Some(expr) = ast.expressions.get(expr_id as usize) else {
         return;
     };
@@ -500,7 +500,7 @@ fn for_each_expr(ast: &NormalizedAst, expr_id: u32, cb: &mut impl FnMut(u32, &cr
 }
 
 /// Walk every statement under `stmt_id`, calling `cb` for each.
-fn for_each_stmt(ast: &NormalizedAst, stmt_id: u32, cb: &mut impl FnMut(u32, &crate::norm::Stmt)) {
+fn for_each_stmt(ast: &NormalizedAst, stmt_id: u32, cb: &mut impl FnMut(u32, &chainvet_core::norm::Stmt)) {
     let Some(stmt) = ast.statements.get(stmt_id as usize) else {
         return;
     };
@@ -884,7 +884,7 @@ fn walk_expr_for_tx_origin(
     }
 }
 
-fn is_tx_origin(ast: &NormalizedAst, expr: &crate::norm::Expr) -> bool {
+fn is_tx_origin(ast: &NormalizedAst, expr: &chainvet_core::norm::Expr) -> bool {
     if let Some(chain) = expr.meta.chain.as_deref() {
         if chain.len() == 2 {
             if let (ChainSegment::Ident(a), ChainSegment::Member(b)) = (&chain[0], &chain[1]) {
@@ -1377,7 +1377,7 @@ fn low_level_call_name(ast: &NormalizedAst, expr_id: u32) -> Option<String> {
 
 fn function_source_unchecked_call(
     ast: &NormalizedAst,
-    func: &crate::norm::Function,
+    func: &chainvet_core::norm::Function,
 ) -> Option<&'static str> {
     let source = get_source_at_span(ast, &func.span)?;
     for raw_line in source.lines() {
@@ -1488,7 +1488,7 @@ mod tests {
     use super::*;
     use crate::analysis;
     use crate::frontend::parser::load_via_parser_sources;
-    use crate::norm::SourceFile;
+    use chainvet_core::norm::SourceFile;
 
     fn parse(source: &str) -> NormalizedAst {
         load_via_parser_sources(vec![SourceFile {

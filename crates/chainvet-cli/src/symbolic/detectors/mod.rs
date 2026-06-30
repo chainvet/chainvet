@@ -21,9 +21,9 @@ use storage::StorageDetector;
 use std::collections::HashMap;
 
 use crate::analysis::detectors::Severity;
-use crate::cfg::BlockId;
-use crate::ir::{IrInstr, IrPlace, IrValue, IrVar};
-use crate::norm::Span;
+use chainvet_core::cfg::BlockId;
+use chainvet_core::ir::{IrInstr, IrPlace, IrValue, IrVar};
+use chainvet_core::norm::Span;
 use crate::symbolic::results::finding::{Confidence, SeFinding, SeVulnKind};
 use crate::symbolic::results::witness::Witness;
 use crate::symbolic::solver::SmtSolver;
@@ -310,7 +310,7 @@ pub(crate) fn value_has_origin(state: &SymbolicState, val: &IrValue, origin: Val
 mod tests {
     use super::*;
     use crate::analysis::detectors::Severity;
-    use crate::norm::Span;
+    use chainvet_core::norm::Span;
     use crate::symbolic::results::finding::{Confidence, SeFinding, SeVulnKind};
     use crate::symbolic::solver::z3_backend::Z3Backend;
     use crate::symbolic::state::call_context::CallContext;
@@ -344,7 +344,7 @@ mod tests {
         fn on_instruction(
             &mut self,
             _state: &SymbolicState,
-            _instr: &crate::ir::IrInstr,
+            _instr: &chainvet_core::ir::IrInstr,
             _solver: &dyn SmtSolver,
         ) -> Vec<SeFinding> {
             self.on_instruction_called = true;
@@ -387,8 +387,8 @@ mod tests {
     }
 
     /// Build a minimal Nop IR instruction.
-    fn nop_instr() -> crate::ir::IrInstr {
-        crate::ir::IrInstr::Nop {
+    fn nop_instr() -> chainvet_core::ir::IrInstr {
+        chainvet_core::ir::IrInstr::Nop {
             span: Span { file: 0, start: 0, end: 0 },
         }
     }
@@ -508,7 +508,7 @@ mod tests {
     // CalleeTracker tests
     // -----------------------------------------------------------------------
 
-    use crate::ir::{IrPlace, IrValue, IrVar, PlaceClass};
+    use chainvet_core::ir::{IrPlace, IrValue, IrVar, PlaceClass};
 
     #[test]
     fn test_callee_tracker_track_load_member_stores_field() {

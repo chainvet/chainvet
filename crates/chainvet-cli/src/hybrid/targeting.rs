@@ -1,5 +1,5 @@
 use crate::analysis::detectors::{Finding, FindingKind, Severity};
-use crate::norm::{NormalizedAst, Span};
+use chainvet_core::norm::{NormalizedAst, Span};
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct HybridTarget {
@@ -127,7 +127,7 @@ fn is_high_signal_kind(kind: FindingKind) -> bool {
 mod tests {
     use super::*;
     use crate::analysis::detectors::{Finding, FindingKind, Severity};
-    use crate::norm::{NormalizedAst, SourceFile, Span};
+    use chainvet_core::norm::{NormalizedAst, SourceFile, Span};
 
     fn ast() -> NormalizedAst {
         NormalizedAst::from_sources(vec![SourceFile {

@@ -20,7 +20,7 @@
 //! DoS conditions, ranging from hardcoded gas assumptions that break
 //! after EVM hard-forks to unbounded loops that exceed block gas limits.
 
-use crate::norm::{
+use chainvet_core::norm::{
     CallOption, CallTarget, ChainSegment, ContractKind, ExprKind, FunctionKind, Mutability,
     NormalizedAst, Span, StmtKind,
 };
@@ -127,7 +127,7 @@ fn detect_unchecked_send(ast: &NormalizedAst) -> Vec<Finding> {
 fn for_each_expr_in_stmt(
     ast: &NormalizedAst,
     stmt_id: u32,
-    cb: &mut impl FnMut(u32, &crate::norm::Expr),
+    cb: &mut impl FnMut(u32, &chainvet_core::norm::Expr),
 ) {
     let Some(stmt) = ast.statements.get(stmt_id as usize) else {
         return;
@@ -202,7 +202,7 @@ fn for_each_expr_in_stmt(
 }
 
 /// Walk every sub-expression under `expr_id`, calling `cb` for each.
-fn for_each_expr(ast: &NormalizedAst, expr_id: u32, cb: &mut impl FnMut(u32, &crate::norm::Expr)) {
+fn for_each_expr(ast: &NormalizedAst, expr_id: u32, cb: &mut impl FnMut(u32, &chainvet_core::norm::Expr)) {
     let Some(expr) = ast.expressions.get(expr_id as usize) else {
         return;
     };
@@ -260,7 +260,7 @@ fn for_each_expr(ast: &NormalizedAst, expr_id: u32, cb: &mut impl FnMut(u32, &cr
 }
 
 /// Walk every statement under `stmt_id`, calling `cb` for each.
-fn for_each_stmt(ast: &NormalizedAst, stmt_id: u32, cb: &mut impl FnMut(u32, &crate::norm::Stmt)) {
+fn for_each_stmt(ast: &NormalizedAst, stmt_id: u32, cb: &mut impl FnMut(u32, &chainvet_core::norm::Stmt)) {
     let Some(stmt) = ast.statements.get(stmt_id as usize) else {
         return;
     };
@@ -311,7 +311,7 @@ fn get_source_at_span<'a>(ast: &'a NormalizedAst, span: &Span) -> Option<&'a str
     }
 }
 
-fn function_source_lower(ast: &NormalizedAst, func: &crate::norm::Function) -> Option<String> {
+fn function_source_lower(ast: &NormalizedAst, func: &chainvet_core::norm::Function) -> Option<String> {
     get_source_at_span(ast, &func.span).map(|source| source.to_ascii_lowercase())
 }
 
@@ -346,7 +346,7 @@ const UNCHECKED_VALUE_METHODS: &[&str] = &["send", "call"];
 
 /// Returns `true` if the expression is a `.send()` or low-level `.call()` whose
 /// boolean result would be discarded if used as a bare statement.
-fn is_unchecked_value_call(ast: &NormalizedAst, expr: &crate::norm::Expr) -> bool {
+fn is_unchecked_value_call(ast: &NormalizedAst, expr: &chainvet_core::norm::Expr) -> bool {
     if let Some(call) = &expr.meta.call {
         let name = match &call.target {
             CallTarget::Direct { name } => name.as_str(),
@@ -389,7 +389,7 @@ fn is_unchecked_value_call(ast: &NormalizedAst, expr: &crate::norm::Expr) -> boo
 /// Checks two strategies:
 ///   1. CallMeta with a Member target named "transfer" or "send".
 ///   2. AST `ExprKind::Call { callee: Member { field: "transfer"|"send" } }`.
-fn is_hardcoded_gas_call(ast: &NormalizedAst, expr: &crate::norm::Expr) -> bool {
+fn is_hardcoded_gas_call(ast: &NormalizedAst, expr: &chainvet_core::norm::Expr) -> bool {
     // Strategy 1: Check call metadata resolved by the normalizer.
     if let Some(call) = &expr.meta.call {
         let name = match &call.target {
@@ -420,7 +420,7 @@ fn is_hardcoded_gas_call(ast: &NormalizedAst, expr: &crate::norm::Expr) -> bool 
 
 /// Returns `true` if the expression is a call to an external transfer method.
 /// Used by DS-04 to detect external calls inside loops.
-fn is_external_call(ast: &NormalizedAst, expr: &crate::norm::Expr) -> bool {
+fn is_external_call(ast: &NormalizedAst, expr: &chainvet_core::norm::Expr) -> bool {
     // Strategy 1: CallMeta
     if let Some(call) = &expr.meta.call {
         let name = match &call.target {
@@ -458,7 +458,7 @@ fn is_external_call(ast: &NormalizedAst, expr: &crate::norm::Expr) -> bool {
 
 /// Returns `true` if the expression is a call to `selfdestruct(...)`.
 /// Checks both the call metadata and the callee identifier.
-fn is_selfdestruct_call(ast: &NormalizedAst, expr: &crate::norm::Expr) -> bool {
+fn is_selfdestruct_call(ast: &NormalizedAst, expr: &chainvet_core::norm::Expr) -> bool {
     // Strategy 1: CallMeta with Direct target named "selfdestruct" or "suicide".
     if let Some(call) = &expr.meta.call {
         if let CallTarget::Direct { name } = &call.target {
@@ -556,7 +556,7 @@ fn contains_this_balance(ast: &NormalizedAst, expr_id: u32) -> bool {
 }
 
 /// Returns `true` if the expression is or contains a call to `require(...)`.
-fn is_require_or_assert_call(expr: &crate::norm::Expr) -> bool {
+fn is_require_or_assert_call(expr: &chainvet_core::norm::Expr) -> bool {
     if let Some(call) = &expr.meta.call {
         if let CallTarget::Direct { name } = &call.target {
             if name == "require" || name == "assert" {
@@ -568,7 +568,7 @@ fn is_require_or_assert_call(expr: &crate::norm::Expr) -> bool {
 }
 
 /// Returns `true` if the expression is a call to `require(...)`.
-fn is_require_call(expr: &crate::norm::Expr) -> bool {
+fn is_require_call(expr: &chainvet_core::norm::Expr) -> bool {
     if let Some(call) = &expr.meta.call {
         if let CallTarget::Direct { name } = &call.target {
             if name == "require" {
@@ -689,7 +689,7 @@ fn body_contains_push(ast: &NormalizedAst, body_id: u32) -> bool {
 /// `pred` is the specific predicate that checks a single expression node.
 fn recurse_contains(
     ast: &NormalizedAst,
-    expr: &crate::norm::Expr,
+    expr: &chainvet_core::norm::Expr,
     pred: fn(&NormalizedAst, u32) -> bool,
 ) -> bool {
     match &expr.kind {
@@ -771,7 +771,7 @@ fn detect_hardcoded_gas_transfer(ast: &NormalizedAst) -> Vec<Finding> {
 
 /// Extract the method name ("transfer" or "send") from a detected
 /// hardcoded-gas call expression, for use in diagnostic messages.
-fn detected_method_name(ast: &NormalizedAst, expr: &crate::norm::Expr) -> &'static str {
+fn detected_method_name(ast: &NormalizedAst, expr: &chainvet_core::norm::Expr) -> &'static str {
     // Check call metadata first.
     if let Some(call) = &expr.meta.call {
         let name = match &call.target {
@@ -941,7 +941,7 @@ fn detect_locked_ether(ast: &NormalizedAst) -> Vec<Finding> {
 mod tests {
     use super::*;
     use crate::frontend::parser::load_via_parser_sources;
-    use crate::norm::SourceFile;
+    use chainvet_core::norm::SourceFile;
 
     fn parse(source: &str) -> NormalizedAst {
         load_via_parser_sources(vec![SourceFile {

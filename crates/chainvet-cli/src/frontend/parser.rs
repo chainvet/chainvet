@@ -1,9 +1,9 @@
-use crate::norm::{
+use chainvet_core::norm::{
     CallMeta, CallOption, CallTarget, ChainSegment, Contract, ContractKind, Expr, ExprKind,
     ExprMeta, Function, FunctionKind, Item, Mutability, NormalizedAst, SourceFile, Span, Stmt,
     StmtKind, Visibility,
 };
-use crate::util::error::{Error, Result};
+use chainvet_core::util::error::{Error, Result};
 use tree_sitter::{Node, Parser};
 use tree_sitter_solidity as ts_solidity;
 
@@ -341,7 +341,7 @@ fn parse_ts_state_var(node: Node, contract_id: Option<u32>, ctx: &mut TsContext)
     let name = find_ts_name(node, ctx.source).unwrap_or_else(|| "<unknown>".to_string());
     let span = span_from_node(node, ctx.file_id);
     let id = ctx.ast.state_vars.len() as u32;
-    ctx.ast.state_vars.push(crate::norm::StateVariable {
+    ctx.ast.state_vars.push(chainvet_core::norm::StateVariable {
         id,
         contract: contract_id,
         name,
@@ -706,7 +706,7 @@ fn parse_ts_try(node: Node, ctx: &mut TsContext) -> Option<u32> {
                 .unwrap_or_else(|| push_stmt(ctx.ast, StmtKind::Block(Vec::new()), span));
             let name = find_ts_identifier(child, ctx.source);
             let params = parse_ts_param_list(child, ctx);
-            clauses.push(crate::norm::TryClause {
+            clauses.push(chainvet_core::norm::TryClause {
                 kind: "catch".to_string(),
                 name,
                 params,
@@ -1397,7 +1397,7 @@ fn parse_legacy_ts_call_option(
     Some((*base, option, chain))
 }
 
-fn literal_from_ts_node(node: Node, source: &[u8]) -> Option<crate::norm::Literal> {
+fn literal_from_ts_node(node: Node, source: &[u8]) -> Option<chainvet_core::norm::Literal> {
     let kind = node.kind();
     let text = node_text(node, source)?;
     let (lit_kind, value) = match kind {
@@ -1408,7 +1408,7 @@ fn literal_from_ts_node(node: Node, source: &[u8]) -> Option<crate::norm::Litera
         "address_literal" => ("address", text),
         _ => return None,
     };
-    Some(crate::norm::Literal {
+    Some(chainvet_core::norm::Literal {
         kind: lit_kind.to_string(),
         value,
     })
@@ -2511,7 +2511,7 @@ fn parse_atom_expr_in_range(
         let expr_id = push_expr(
             ast,
             Expr {
-                kind: ExprKind::Literal(crate::norm::Literal {
+                kind: ExprKind::Literal(chainvet_core::norm::Literal {
                     kind: "number".to_string(),
                     value: token.text.clone(),
                 }),
@@ -2976,7 +2976,7 @@ fn push_contract(ast: &mut NormalizedAst, name: String, kind: ContractKind, span
 
 fn push_state_var(ast: &mut NormalizedAst, contract_id: u32, name: String, span: Span) -> u32 {
     let id = ast.state_vars.len() as u32;
-    ast.state_vars.push(crate::norm::StateVariable {
+    ast.state_vars.push(chainvet_core::norm::StateVariable {
         id,
         contract: contract_id,
         name,
@@ -3345,7 +3345,7 @@ mod tests {
     fn first_function_expr<'a>(
         ast: &'a NormalizedAst,
         function_name: &str,
-    ) -> &'a crate::norm::Expr {
+    ) -> &'a chainvet_core::norm::Expr {
         let function = ast
             .functions
             .iter()

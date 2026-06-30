@@ -1,9 +1,9 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use crate::analysis::detectors;
-use crate::core::artifacts::{Finding, FindingLocation};
+use chainvet_core::artifacts::{Finding, FindingLocation};
 use crate::frontend::FrontendOutput;
-use crate::norm::{Contract, ContractKind};
+use chainvet_core::norm::{Contract, ContractKind};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConsumerEngine {
@@ -280,7 +280,7 @@ fn retag_for_engine(mut finding: Finding, engine: ConsumerEngine) -> Finding {
     finding
 }
 
-fn is_stub_contract(ast: &crate::norm::NormalizedAst, contract: &Contract) -> bool {
+fn is_stub_contract(ast: &chainvet_core::norm::NormalizedAst, contract: &Contract) -> bool {
     if contract.kind == ContractKind::Interface {
         return true;
     }
@@ -497,7 +497,7 @@ fn is_ident_byte(byte: u8) -> bool {
 }
 
 fn find_function_id(
-    ast: &crate::norm::NormalizedAst,
+    ast: &chainvet_core::norm::NormalizedAst,
     contract: &Contract,
     name: &str,
 ) -> Option<u32> {
@@ -532,7 +532,7 @@ mod tests {
         Finding as StaticFinding, FindingKind, Severity, TAXONOMY_ROW_COUNT,
     };
     use crate::frontend::{CompilerInfo, FrontendMode};
-    use crate::norm::{NormalizedAst, SourceFile, Span};
+    use chainvet_core::norm::{NormalizedAst, SourceFile, Span};
 
     fn test_output() -> FrontendOutput {
         FrontendOutput {

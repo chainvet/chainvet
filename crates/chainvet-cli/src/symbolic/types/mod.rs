@@ -3,8 +3,8 @@ pub mod hash;
 pub mod symbolic_array;
 pub mod symbolic_bytes;
 
-use crate::norm::Literal;
-use crate::util::error::{Error, Result};
+use chainvet_core::norm::Literal;
+use chainvet_core::util::error::{Error, Result};
 use z3::ast::{Array, BV, Bool};
 
 /// Core symbolic value type used throughout the SE engine.

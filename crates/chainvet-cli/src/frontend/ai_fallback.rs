@@ -1,4 +1,4 @@
-use crate::norm::{
+use chainvet_core::norm::{
     Contract, ContractBase, ContractKind, Function, FunctionKind, Item, Mutability, NormalizedAst,
     SourceFile, Span, StateVariable, Visibility,
 };
@@ -1016,7 +1016,7 @@ struct SourceChunk {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::norm::{ContractKind, FunctionKind, Mutability, SourceFile, Visibility};
+    use chainvet_core::norm::{ContractKind, FunctionKind, Mutability, SourceFile, Visibility};
 
     fn source_file(source: &str) -> SourceFile {
         SourceFile {

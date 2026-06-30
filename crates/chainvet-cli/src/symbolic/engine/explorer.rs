@@ -1,8 +1,8 @@
 use std::cmp::Ordering;
 use std::collections::{BinaryHeap, HashMap, VecDeque};
 
-use crate::cfg::CfgFunction;
-use crate::ir::{ControlKind, IrInstr, IrVar, IrValue, PlaceClass};
+use chainvet_core::cfg::CfgFunction;
+use chainvet_core::ir::{ControlKind, IrInstr, IrVar, IrValue, PlaceClass};
 
 use super::scheduler::WorklistEntry;
 
@@ -262,11 +262,11 @@ pub fn build_sink_scores(cfgs: &[CfgFunction]) -> HashMap<u32, i32> {
     scores
 }
 
-fn place_is_storage(place: &crate::ir::IrPlace) -> bool {
+fn place_is_storage(place: &chainvet_core::ir::IrPlace) -> bool {
     match place {
-        crate::ir::IrPlace::Var { class, .. }
-        | crate::ir::IrPlace::Member { class, .. }
-        | crate::ir::IrPlace::Index { class, .. } => *class == PlaceClass::Storage,
+        chainvet_core::ir::IrPlace::Var { class, .. }
+        | chainvet_core::ir::IrPlace::Member { class, .. }
+        | chainvet_core::ir::IrPlace::Index { class, .. } => *class == PlaceClass::Storage,
     }
 }
 
@@ -314,7 +314,7 @@ pub fn make_strategy(kind: ExplorationStrategyKind, cfgs: &[CfgFunction]) -> Box
 mod tests {
     use super::*;
     use std::collections::HashMap;
-    use crate::cfg::BlockId;
+    use chainvet_core::cfg::BlockId;
     use crate::symbolic::state::{StateIdGen, SymbolicState};
     use crate::symbolic::state::call_context::CallContext;
     use crate::symbolic::engine::scheduler::WorklistEntry;

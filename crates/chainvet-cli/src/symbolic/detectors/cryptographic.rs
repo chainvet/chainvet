@@ -1,8 +1,8 @@
 use std::collections::HashSet;
 
 use crate::analysis::detectors::Severity;
-use crate::cfg::BlockId;
-use crate::ir::{IrInstr, IrValue, IrVar};
+use chainvet_core::cfg::BlockId;
+use chainvet_core::ir::{IrInstr, IrValue, IrVar};
 use crate::symbolic::detectors::{make_finding, Detector};
 use crate::symbolic::results::finding::{Confidence, SeFinding, SeVulnKind};
 use crate::symbolic::solver::SmtSolver;
@@ -131,8 +131,8 @@ impl Detector for CryptographicDetector {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ir::{IrInstr, IrValue, IrVar};
-    use crate::norm::{Literal, Span};
+    use chainvet_core::ir::{IrInstr, IrValue, IrVar};
+    use chainvet_core::norm::{Literal, Span};
     use crate::symbolic::results::finding::SeVulnKind;
     use crate::symbolic::solver::z3_backend::Z3Backend;
     use crate::symbolic::state::call_context::CallContext;

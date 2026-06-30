@@ -2,8 +2,8 @@ use std::collections::HashSet;
 
 use serde::Serialize;
 
-use crate::cfg::BlockId;
-use crate::ir::IrFunctionId;
+use chainvet_core::cfg::BlockId;
+use chainvet_core::ir::IrFunctionId;
 
 /// Mutable coverage accumulator passed to the engine during execution.
 ///

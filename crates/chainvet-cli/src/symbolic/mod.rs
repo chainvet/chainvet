@@ -20,7 +20,7 @@ use crate::symbolic::results::finding::SeFinding;
 use crate::symbolic::results::report::print_se_report;
 use crate::symbolic::solver::z3_backend::Z3Backend;
 use crate::symbolic::state::storage::StorageLayout;
-use crate::util::error::Result;
+use chainvet_core::util::error::Result;
 
 #[derive(Debug, Clone, Default)]
 pub struct SymbolicOptions {
@@ -73,8 +73,8 @@ pub fn analyze_with_options(
         });
     }
 
-    let ir_module = crate::ir::lower_module(&output.ast);
-    let cfgs = crate::cfg::build_from_ir(&ir_module);
+    let ir_module = chainvet_core::ir::lower_module(&output.ast);
+    let cfgs = chainvet_core::cfg::build_from_ir(&ir_module);
     let layout = Arc::new(StorageLayout::from_ast(&output.ast));
 
     let mut all_findings: Vec<SeFinding> = Vec::new();
@@ -173,7 +173,7 @@ fn compiler_is_0_8_plus(version: Option<&str>) -> bool {
 mod tests {
     use super::*;
     use crate::frontend::{CompilerInfo, FrontendMode, FrontendOutput};
-    use crate::norm::NormalizedAst;
+    use chainvet_core::norm::NormalizedAst;
 
     fn test_compiler_info() -> CompilerInfo {
         CompilerInfo {

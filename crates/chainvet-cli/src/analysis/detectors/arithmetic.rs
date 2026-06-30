@@ -5,7 +5,7 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::analysis::taint::TaintSummary;
-use crate::norm::{CallOption, CallTarget, ExprKind, NormalizedAst, Span, StmtKind};
+use chainvet_core::norm::{CallOption, CallTarget, ExprKind, NormalizedAst, Span, StmtKind};
 
 use super::{Finding, FindingKind, Severity};
 
@@ -150,7 +150,7 @@ pub(crate) fn all_files_are_0_8_plus(ast: &NormalizedAst) -> bool {
 fn for_each_expr_in_stmt(
     ast: &NormalizedAst,
     stmt_id: u32,
-    cb: &mut impl FnMut(u32, &crate::norm::Expr),
+    cb: &mut impl FnMut(u32, &chainvet_core::norm::Expr),
 ) {
     let Some(stmt) = ast.statements.get(stmt_id as usize) else {
         return;
@@ -214,7 +214,7 @@ fn for_each_expr_in_stmt(
 }
 
 /// Walk every sub-expression under `expr_id`, calling `cb` for each.
-fn for_each_expr(ast: &NormalizedAst, expr_id: u32, cb: &mut impl FnMut(u32, &crate::norm::Expr)) {
+fn for_each_expr(ast: &NormalizedAst, expr_id: u32, cb: &mut impl FnMut(u32, &chainvet_core::norm::Expr)) {
     let Some(expr) = ast.expressions.get(expr_id as usize) else {
         return;
     };
@@ -289,7 +289,7 @@ fn is_inside_unchecked_block(ast: &NormalizedAst, span: &Span) -> bool {
 }
 
 /// Returns `true` when an expression is a division (`/`) operation.
-fn is_division(expr: &crate::norm::Expr) -> bool {
+fn is_division(expr: &chainvet_core::norm::Expr) -> bool {
     matches!(&expr.kind, ExprKind::Binary { op, .. } if op == "/")
 }
 

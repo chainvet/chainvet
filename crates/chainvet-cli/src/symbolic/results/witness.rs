@@ -2,7 +2,7 @@ use serde::Serialize;
 use z3::ast::BV;
 use z3::Model;
 
-use crate::ir::IrVar;
+use chainvet_core::ir::IrVar;
 use crate::symbolic::state::call_context::CallContext;
 use crate::symbolic::state::variables::VariableEnv;
 

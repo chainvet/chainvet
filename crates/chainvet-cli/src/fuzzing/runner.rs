@@ -15,10 +15,11 @@ use crate::fuzzing::types::{
     build_dependency_map, extract_abis, ContractAbi, Corpus, DependencyMap, Dictionary, FuzzConfig,
     FuzzFinding, FuzzFindingKind, FuzzHybridStats, FuzzReport, FuzzSeverity,
 };
-use crate::norm::{FunctionKind, Mutability, NormalizedAst, Span};
+use chainvet_core::norm::{FunctionKind, Mutability, NormalizedAst, Span};
 use crate::surfaced;
-use crate::util::error::{Error, Result};
-use crate::{cfg, ir, meta};
+use chainvet_core::util::error::{Error, Result};
+use crate::meta;
+use chainvet_core::{cfg, ir};
 
 /// Run the fuzzer on a parsed contract.
 pub fn run(output: &FrontendOutput, config: &FuzzConfig) -> FuzzReport {
@@ -63,7 +64,7 @@ pub struct FuzzSession<'a> {
     deps: DependencyMap,
     dictionary: Dictionary,
     static_findings: Vec<analysis::detectors::Finding>,
-    meta_findings: Vec<crate::core::artifacts::Finding>,
+    meta_findings: Vec<chainvet_core::artifacts::Finding>,
     tod_allowed: std::collections::HashSet<u32>,
     sig_mall_allowed: std::collections::HashSet<u32>,
     total_blocks: usize,
@@ -479,7 +480,7 @@ fn zero_corpus_reason(abis: &[ContractAbi], corpus: &Corpus) -> Option<String> {
 }
 
 fn promoted_runtime_meta_findings(
-    meta_findings: &[crate::core::artifacts::Finding],
+    meta_findings: &[chainvet_core::artifacts::Finding],
 ) -> Vec<FuzzFinding> {
     crate::meta::runtime_promotions(meta_findings)
         .into_iter()
@@ -1076,7 +1077,7 @@ fn function_source_lower(ast: &NormalizedAst, function_id: u32) -> Option<String
     )
 }
 
-fn ast_function_by_id(ast: &NormalizedAst, function_id: u32) -> Option<&crate::norm::Function> {
+fn ast_function_by_id(ast: &NormalizedAst, function_id: u32) -> Option<&chainvet_core::norm::Function> {
     ast.functions
         .iter()
         .find(|function| function.id == function_id)
@@ -1151,14 +1152,14 @@ fn ir_function_has_ether_send(function: &ir::IrFunction) -> bool {
                 return false;
             };
             let callee_name = match callee {
-                crate::ir::IrValue::Var(crate::ir::IrVar::Named(name)) => name.to_ascii_lowercase(),
-                crate::ir::IrValue::Var(crate::ir::IrVar::Temp(id)) => format!("tmp_{id}"),
-                crate::ir::IrValue::Literal(lit) => lit.value.to_ascii_lowercase(),
-                crate::ir::IrValue::Unknown => String::new(),
+                chainvet_core::ir::IrValue::Var(chainvet_core::ir::IrVar::Named(name)) => name.to_ascii_lowercase(),
+                chainvet_core::ir::IrValue::Var(chainvet_core::ir::IrVar::Temp(id)) => format!("tmp_{id}"),
+                chainvet_core::ir::IrValue::Literal(lit) => lit.value.to_ascii_lowercase(),
+                chainvet_core::ir::IrValue::Unknown => String::new(),
             };
             let has_value = options
                 .iter()
-                .any(|opt| matches!(opt, crate::ir::IrCallOption::Value(_)));
+                .any(|opt| matches!(opt, chainvet_core::ir::IrCallOption::Value(_)));
             has_value
                 || callee_name == "send"
                 || callee_name == "transfer"
@@ -1338,7 +1339,7 @@ struct JsonFuzzReport {
     suppressed_meta_findings: usize,
     meta_finding_counts: Vec<surfaced::SurfacedCount>,
     meta_findings: Vec<surfaced::SurfacedFinding>,
-    meta_findings_raw: Vec<crate::core::artifacts::Finding>,
+    meta_findings_raw: Vec<chainvet_core::artifacts::Finding>,
 }
 
 #[derive(Debug, Serialize)]
@@ -1435,7 +1436,7 @@ fn fuzz_runtime_candidate(finding: &FuzzFinding) -> surfaced::FindingCandidate {
     }
 }
 
-fn fuzz_meta_candidate(finding: &crate::core::artifacts::Finding) -> surfaced::FindingCandidate {
+fn fuzz_meta_candidate(finding: &chainvet_core::artifacts::Finding) -> surfaced::FindingCandidate {
     surfaced::FindingCandidate {
         kind: finding.finding_type.clone(),
         canonical_kind: surfaced::canonicalize_kind(&finding.finding_type),
@@ -1482,7 +1483,7 @@ fn count_raw_fuzz_findings(findings: &[FuzzFinding]) -> std::collections::BTreeM
 }
 
 fn count_raw_meta_findings(
-    findings: &[crate::core::artifacts::Finding],
+    findings: &[chainvet_core::artifacts::Finding],
 ) -> std::collections::BTreeMap<String, usize> {
     let mut counts = std::collections::BTreeMap::<String, usize>::new();
     for finding in findings {
@@ -1515,8 +1516,8 @@ mod tests {
     };
     use crate::analysis::detectors::{Finding, FindingKind, Severity};
     use crate::fuzzing::types::{FuzzFinding, FuzzFindingKind, FuzzSeverity};
-    use crate::ir::{IrBlock, IrFunction, IrInstr, IrModule, IrValue, IrVar};
-    use crate::norm::{
+    use chainvet_core::ir::{IrBlock, IrFunction, IrInstr, IrModule, IrValue, IrVar};
+    use chainvet_core::norm::{
         Contract, ContractKind, Function, FunctionKind, Mutability, NormalizedAst, SourceFile,
         Span, StateVariable, Visibility,
     };

@@ -3,7 +3,7 @@ use sha2::{Digest, Sha256};
 use crate::fuzzing::types::{
     ExecutionTrace, FuzzFinding, FuzzFindingKind, FuzzSeverity, TraceEventKind, Transaction,
 };
-use crate::norm::{NormalizedAst, Visibility};
+use chainvet_core::norm::{NormalizedAst, Visibility};
 
 /// Run all oracle checks on an execution trace.
 pub fn check_all(
@@ -684,7 +684,7 @@ fn check_tx_origin(trace: &ExecutionTrace, tx_sequence: &[Transaction]) -> Vec<F
     findings
 }
 
-fn source_span_lower(ast: &NormalizedAst, span: crate::norm::Span) -> Option<String> {
+fn source_span_lower(ast: &NormalizedAst, span: chainvet_core::norm::Span) -> Option<String> {
     let file = ast.files.get(span.file as usize)?;
     file.source
         .get(span.start as usize..span.end as usize)
@@ -1542,7 +1542,7 @@ fn function_is_public_sender_payout(function_id: u32, ast: Option<&NormalizedAst
     crate::frontend::has_public_sender_payout_hint(function, ast)
 }
 
-fn ast_function_by_id(ast: &NormalizedAst, function_id: u32) -> Option<&crate::norm::Function> {
+fn ast_function_by_id(ast: &NormalizedAst, function_id: u32) -> Option<&chainvet_core::norm::Function> {
     ast.functions
         .iter()
         .find(|function| function.id == function_id)
@@ -1596,7 +1596,7 @@ pub fn deduplicate(findings: Vec<FuzzFinding>) -> Vec<FuzzFinding> {
 mod tests {
     use super::*;
     use crate::fuzzing::types::{FuzzValue, TraceEvent};
-    use crate::norm::{
+    use chainvet_core::norm::{
         Contract, ContractKind, Function, FunctionKind, Mutability, NormalizedAst, SourceFile,
         Span, Visibility,
     };
@@ -2249,7 +2249,7 @@ mod tests {
 
     #[test]
     fn exploit_helper_cleanup_selfdestruct_is_suppressed() {
-        let ast = crate::frontend::parser::load_via_parser_sources(vec![crate::norm::SourceFile {
+        let ast = crate::frontend::parser::load_via_parser_sources(vec![chainvet_core::norm::SourceFile {
             id: 0,
             path: "ReentrancyExploit.sol".to_string(),
             source: r#"

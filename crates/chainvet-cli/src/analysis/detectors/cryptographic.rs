@@ -26,7 +26,7 @@
 //!      to replay / double-spend attacks when the signature is used as
 //!      a unique identifier (e.g. as a mapping key or nonce guard).
 
-use crate::norm::{
+use chainvet_core::norm::{
     CallOption, CallTarget, ChainSegment, ExprKind, NormalizedAst, StmtKind, Visibility,
 };
 
@@ -71,7 +71,7 @@ pub fn detect_all(ast: &NormalizedAst) -> Vec<Finding> {
 fn for_each_expr_in_stmt(
     ast: &NormalizedAst,
     stmt_id: u32,
-    cb: &mut impl FnMut(u32, &crate::norm::Expr),
+    cb: &mut impl FnMut(u32, &chainvet_core::norm::Expr),
 ) {
     let Some(stmt) = ast.statements.get(stmt_id as usize) else {
         return;
@@ -146,7 +146,7 @@ fn for_each_expr_in_stmt(
 }
 
 /// Walk every sub-expression under `expr_id`, calling `cb` for each.
-fn for_each_expr(ast: &NormalizedAst, expr_id: u32, cb: &mut impl FnMut(u32, &crate::norm::Expr)) {
+fn for_each_expr(ast: &NormalizedAst, expr_id: u32, cb: &mut impl FnMut(u32, &chainvet_core::norm::Expr)) {
     let Some(expr) = ast.expressions.get(expr_id as usize) else {
         return;
     };
@@ -204,7 +204,7 @@ fn for_each_expr(ast: &NormalizedAst, expr_id: u32, cb: &mut impl FnMut(u32, &cr
 }
 
 /// Walk every statement under `stmt_id`, calling `cb` for each.
-fn for_each_stmt(ast: &NormalizedAst, stmt_id: u32, cb: &mut impl FnMut(u32, &crate::norm::Stmt)) {
+fn for_each_stmt(ast: &NormalizedAst, stmt_id: u32, cb: &mut impl FnMut(u32, &chainvet_core::norm::Stmt)) {
     let Some(stmt) = ast.statements.get(stmt_id as usize) else {
         return;
     };
@@ -246,7 +246,7 @@ fn for_each_stmt(ast: &NormalizedAst, stmt_id: u32, cb: &mut impl FnMut(u32, &cr
 
 /// Returns `true` if the expression is a call to the built-in `ecrecover`.
 /// Checks both the call metadata and the callee identifier by name.
-fn is_ecrecover_call(ast: &NormalizedAst, expr: &crate::norm::Expr) -> bool {
+fn is_ecrecover_call(ast: &NormalizedAst, expr: &chainvet_core::norm::Expr) -> bool {
     // Strategy 1: Check call metadata resolved by the normalizer.
     // The normalizer populates `expr.meta.call` with a `CallTarget::Direct`
     // when it can resolve the callee to a known function name.
@@ -593,7 +593,7 @@ fn contains_msg_sender(ast: &NormalizedAst, expr_id: u32) -> bool {
 /// Returns `true` if a function's parameter names suggest it handles
 /// signature data.  We look for common parameter names associated with
 /// ECDSA signatures.
-fn function_has_signature_params(func: &crate::norm::Function) -> bool {
+fn function_has_signature_params(func: &chainvet_core::norm::Function) -> bool {
     // Common signature-related parameter name fragments.
     const SIG_HINTS: &[&str] = &["signature", "sig", "v", "r", "s", "hash", "digest"];
 

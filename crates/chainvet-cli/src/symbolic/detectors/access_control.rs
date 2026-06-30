@@ -2,11 +2,11 @@ use z3::SatResult;
 use z3::ast::Bool;
 
 use crate::analysis::detectors::Severity;
-use crate::cfg::BlockId;
-use crate::ir::{
+use chainvet_core::cfg::BlockId;
+use chainvet_core::ir::{
     ControlKind, IrCallOption, IrInstr, IrPlace, IrValue, IrVar, PlaceClass,
 };
-use crate::norm::Span;
+use chainvet_core::norm::Span;
 use crate::symbolic::detectors::{make_finding, place_matches, value_has_origin, CalleeTracker, Detector};
 use crate::symbolic::results::finding::{Confidence, SeFinding, SeVulnKind};
 use crate::symbolic::results::witness::Witness;
@@ -228,8 +228,8 @@ impl AccessControlDetector {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ir::{ControlKind, IrCallOption, IrInstr, IrPlace, IrValue, IrVar, PlaceClass};
-    use crate::norm::Span;
+    use chainvet_core::ir::{ControlKind, IrCallOption, IrInstr, IrPlace, IrValue, IrVar, PlaceClass};
+    use chainvet_core::norm::Span;
     use crate::symbolic::results::finding::SeVulnKind;
     use crate::symbolic::solver::z3_backend::Z3Backend;
     use crate::symbolic::state::call_context::CallContext;

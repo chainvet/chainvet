@@ -1,7 +1,7 @@
 use z3::ast::{BV, Bool};
 
 use super::SymbolicValue;
-use crate::util::error::{Error, Result};
+use chainvet_core::util::error::{Error, Result};
 
 /// Apply an IR binary operator to two BV operands.
 ///

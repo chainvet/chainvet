@@ -10,8 +10,8 @@ use std::time::Instant;
 use z3::ast::Bool;
 use z3::SatResult;
 
-use crate::cfg::{BlockId, CfgFunction};
-use crate::norm::NormalizedAst;
+use chainvet_core::cfg::{BlockId, CfgFunction};
+use chainvet_core::norm::NormalizedAst;
 use crate::symbolic::detectors::DetectorRegistry;
 use crate::symbolic::results::coverage::{CoverageReport, CoverageTracker};
 use crate::symbolic::results::SeFinding;
@@ -169,8 +169,8 @@ pub fn run_engine(
     }
 
     // Global dedup: keep first (highest-confidence) finding per (function, kind, span).
-    let default_span = crate::norm::Span::default();
-    let mut seen: HashSet<(u32, crate::symbolic::results::finding::SeVulnKind, crate::norm::Span)> = HashSet::new();
+    let default_span = chainvet_core::norm::Span::default();
+    let mut seen: HashSet<(u32, crate::symbolic::results::finding::SeVulnKind, chainvet_core::norm::Span)> = HashSet::new();
     findings.retain(|f| {
         // Don't dedup findings with fallback/zero spans — they'd all collide.
         if f.span == default_span {
@@ -208,7 +208,7 @@ fn explore_function(
     // into the witness for hybrid seeding.
     if let Some(func) = run_ctx.ast.functions.iter().find(|f| f.id == cfg_func.id) {
         for param_name in &func.params {
-            let var = crate::ir::IrVar::Named(param_name.clone());
+            let var = chainvet_core::ir::IrVar::Named(param_name.clone());
             if initial_state.variables.get(&var).is_none() {
                 let fresh = crate::symbolic::types::fresh_bv(param_name, 256);
                 initial_state.variables.set(var, fresh);
@@ -282,7 +282,7 @@ fn run_worklist(
 
         // Flush unchecked low-level calls at terminal blocks.
         if matches!(outcome, BlockOutcome::Return { .. } | BlockOutcome::Revert { .. } | BlockOutcome::Stop) {
-            let fallback_span = crate::norm::Span { file: 0, start: 0, end: 0 };
+            let fallback_span = chainvet_core::norm::Span { file: 0, start: 0, end: 0 };
             flush_pending_calls(&mut entry.state, acc.findings, fallback_span);
         }
 
@@ -473,9 +473,9 @@ fn collect_base_constraints(state: &SymbolicState) -> Vec<Bool> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cfg::{Block, CfgFunction, Edge};
-    use crate::ir::{ControlKind, IrBlock, IrFunction, IrInstr, IrModule, IrValue, IrVar};
-    use crate::norm::{NormalizedAst, Span};
+    use chainvet_core::cfg::{Block, CfgFunction, Edge};
+    use chainvet_core::ir::{ControlKind, IrBlock, IrFunction, IrInstr, IrModule, IrValue, IrVar};
+    use chainvet_core::norm::{NormalizedAst, Span};
     use crate::symbolic::solver::z3_backend::Z3Backend;
     use scheduler::SeConfig;
 
@@ -495,7 +495,7 @@ mod tests {
                 blocks: vec![IrBlock { id: 0, instrs }],
             }],
         };
-        let mut cfgs = crate::cfg::build_from_ir(&module);
+        let mut cfgs = chainvet_core::cfg::build_from_ir(&module);
         cfgs.remove(0)
     }
 
@@ -632,7 +632,7 @@ mod tests {
     fn test_infeasible_branch_is_pruned() {
         // When an If condition is the concrete literal `false`, the true-branch is
         // UNSAT and must be pruned. Only entry + false-branch block are explored.
-        use crate::norm::Literal;
+        use chainvet_core::norm::Literal;
         let false_lit = IrValue::Literal(Literal {
             kind: "bool".to_string(),
             value: "false".to_string(),

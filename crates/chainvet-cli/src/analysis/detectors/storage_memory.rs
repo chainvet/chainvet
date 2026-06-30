@@ -8,7 +8,7 @@
 //!   SM-06 – Modifying Storage Array by Value
 //!   SM-07 – Payable Functions using `delegatecall` inside a Loop
 
-use crate::norm::{
+use chainvet_core::norm::{
     CallOption, CallTarget, ChainSegment, ExprKind, Mutability, NormalizedAst, StmtKind,
 };
 
@@ -43,7 +43,7 @@ pub fn detect_all(ast: &NormalizedAst) -> Vec<Finding> {
 fn for_each_expr_in_stmt(
     ast: &NormalizedAst,
     stmt_id: u32,
-    cb: &mut impl FnMut(u32, &crate::norm::Expr),
+    cb: &mut impl FnMut(u32, &chainvet_core::norm::Expr),
 ) {
     let Some(stmt) = ast.statements.get(stmt_id as usize) else {
         return;
@@ -107,7 +107,7 @@ fn for_each_expr_in_stmt(
 }
 
 /// Walk every sub-expression under `expr_id`, calling `cb` for each.
-fn for_each_expr(ast: &NormalizedAst, expr_id: u32, cb: &mut impl FnMut(u32, &crate::norm::Expr)) {
+fn for_each_expr(ast: &NormalizedAst, expr_id: u32, cb: &mut impl FnMut(u32, &chainvet_core::norm::Expr)) {
     let Some(expr) = ast.expressions.get(expr_id as usize) else {
         return;
     };
@@ -165,7 +165,7 @@ fn for_each_expr(ast: &NormalizedAst, expr_id: u32, cb: &mut impl FnMut(u32, &cr
 }
 
 /// Walk every statement under `stmt_id`, calling `cb` for each.
-fn for_each_stmt(ast: &NormalizedAst, stmt_id: u32, cb: &mut impl FnMut(u32, &crate::norm::Stmt)) {
+fn for_each_stmt(ast: &NormalizedAst, stmt_id: u32, cb: &mut impl FnMut(u32, &chainvet_core::norm::Stmt)) {
     let Some(stmt) = ast.statements.get(stmt_id as usize) else {
         return;
     };
@@ -315,7 +315,7 @@ fn contains_delegatecall(ast: &NormalizedAst, expr_id: u32) -> bool {
 /// `pred` is the specific predicate that checks a *single* expression.
 fn recurse_contains(
     ast: &NormalizedAst,
-    expr: &crate::norm::Expr,
+    expr: &chainvet_core::norm::Expr,
     pred: fn(&NormalizedAst, u32) -> bool,
 ) -> bool {
     match &expr.kind {
@@ -346,7 +346,7 @@ fn recurse_contains(
 }
 
 /// Extract the simple name from a `CallTarget`.
-fn call_target_name(call: &crate::norm::CallMeta) -> &str {
+fn call_target_name(call: &chainvet_core::norm::CallMeta) -> &str {
     match &call.target {
         CallTarget::Direct { name } => name.as_str(),
         CallTarget::Member { name, .. } => name.as_str(),
@@ -362,7 +362,7 @@ fn call_target_name(call: &crate::norm::CallMeta) -> &str {
 fn for_each_expr_in_loop_bodies(
     ast: &NormalizedAst,
     stmt_id: u32,
-    cb: &mut impl FnMut(u32, &crate::norm::Expr, &crate::norm::Span),
+    cb: &mut impl FnMut(u32, &chainvet_core::norm::Expr, &chainvet_core::norm::Span),
 ) {
     let Some(stmt) = ast.statements.get(stmt_id as usize) else {
         return;
@@ -420,7 +420,7 @@ fn for_each_expr_in_loop_bodies(
 fn for_each_nested_loops(
     ast: &NormalizedAst,
     stmt_id: u32,
-    cb: &mut impl FnMut(u32, &crate::norm::Expr, &crate::norm::Span),
+    cb: &mut impl FnMut(u32, &chainvet_core::norm::Expr, &chainvet_core::norm::Span),
 ) {
     let Some(stmt) = ast.statements.get(stmt_id as usize) else {
         return;

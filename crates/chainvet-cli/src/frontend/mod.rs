@@ -8,8 +8,8 @@ use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 
-use crate::norm::{Function, FunctionKind, Mutability, NormalizedAst, SourceFile, Visibility};
-use crate::util::error::Result;
+use chainvet_core::norm::{Function, FunctionKind, Mutability, NormalizedAst, SourceFile, Visibility};
+use chainvet_core::util::error::Result;
 
 #[derive(Debug, Clone, Copy)]
 pub enum FrontendMode {
@@ -544,7 +544,7 @@ fn lookup_target_manifest(input: &Path) -> Result<Option<Vec<PathBuf>>> {
 
     let raw = fs::read_to_string(&manifest_path)?;
     let manifest: TargetManifest = serde_json::from_str(&raw)
-        .map_err(|err| crate::util::error::Error::msg(format!("invalid target manifest: {err}")))?;
+        .map_err(|err| chainvet_core::util::error::Error::msg(format!("invalid target manifest: {err}")))?;
     let input_norm = normalize_manifest_path(input);
 
     for entry in manifest.targets {
@@ -581,7 +581,7 @@ fn normalize_manifest_path(path: &Path) -> PathBuf {
 mod tests {
     use super::*;
     use crate::frontend::parser::load_via_parser_sources;
-    use crate::norm::{Function, NormalizedAst, SourceFile, Span};
+    use chainvet_core::norm::{Function, NormalizedAst, SourceFile, Span};
 
     fn function(kind: FunctionKind, visibility: Visibility, mutability: Mutability) -> Function {
         Function {

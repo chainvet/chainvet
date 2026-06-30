@@ -6,7 +6,7 @@
 
 use std::collections::HashSet;
 
-use crate::norm::{
+use chainvet_core::norm::{
     CallOption, CallTarget, ChainSegment, ExprKind, FunctionKind, NormalizedAst, Span, StmtKind,
     Visibility,
 };
@@ -68,7 +68,7 @@ pub fn detect_all(ast: &NormalizedAst) -> Vec<Finding> {
 mod tests {
     use super::*;
     use crate::frontend::parser::load_via_parser_sources;
-    use crate::norm::SourceFile;
+    use chainvet_core::norm::SourceFile;
 
     fn parse(source: &str) -> NormalizedAst {
         load_via_parser_sources(vec![SourceFile {
@@ -202,7 +202,7 @@ mod tests {
 fn for_each_expr_in_stmt(
     ast: &NormalizedAst,
     stmt_id: u32,
-    cb: &mut impl FnMut(u32, &crate::norm::Expr),
+    cb: &mut impl FnMut(u32, &chainvet_core::norm::Expr),
 ) {
     let Some(stmt) = ast.statements.get(stmt_id as usize) else {
         return;
@@ -266,7 +266,7 @@ fn for_each_expr_in_stmt(
 }
 
 /// Walk every sub-expression under `expr_id`, calling `cb` for each.
-fn for_each_expr(ast: &NormalizedAst, expr_id: u32, cb: &mut impl FnMut(u32, &crate::norm::Expr)) {
+fn for_each_expr(ast: &NormalizedAst, expr_id: u32, cb: &mut impl FnMut(u32, &chainvet_core::norm::Expr)) {
     let Some(expr) = ast.expressions.get(expr_id as usize) else {
         return;
     };
@@ -324,7 +324,7 @@ fn for_each_expr(ast: &NormalizedAst, expr_id: u32, cb: &mut impl FnMut(u32, &cr
 }
 
 /// Walk every statement under `stmt_id`, calling `cb` for each.
-fn for_each_stmt(ast: &NormalizedAst, stmt_id: u32, cb: &mut impl FnMut(u32, &crate::norm::Stmt)) {
+fn for_each_stmt(ast: &NormalizedAst, stmt_id: u32, cb: &mut impl FnMut(u32, &chainvet_core::norm::Stmt)) {
     let Some(stmt) = ast.statements.get(stmt_id as usize) else {
         return;
     };
@@ -375,7 +375,7 @@ fn get_source_at_span<'a>(ast: &'a NormalizedAst, span: &Span) -> Option<&'a str
     }
 }
 
-fn function_source_lower(ast: &NormalizedAst, func: &crate::norm::Function) -> Option<String> {
+fn function_source_lower(ast: &NormalizedAst, func: &chainvet_core::norm::Function) -> Option<String> {
     get_source_at_span(ast, &func.span).map(|source| source.to_ascii_lowercase())
 }
 
@@ -561,7 +561,7 @@ fn contains_any_block_value(ast: &NormalizedAst, expr_id: u32) -> bool {
 /// `pred` is the specific predicate that checks a *single* expression.
 fn recurse_contains(
     ast: &NormalizedAst,
-    expr: &crate::norm::Expr,
+    expr: &chainvet_core::norm::Expr,
     pred: fn(&NormalizedAst, u32) -> bool,
 ) -> bool {
     match &expr.kind {
@@ -592,7 +592,7 @@ fn recurse_contains(
 }
 
 /// Extract the simple name from a `CallTarget`.
-fn call_target_name(call: &crate::norm::CallMeta) -> &str {
+fn call_target_name(call: &chainvet_core::norm::CallMeta) -> &str {
     match &call.target {
         CallTarget::Direct { name } => name.as_str(),
         CallTarget::Member { name, .. } => name.as_str(),

@@ -8,7 +8,7 @@ pub use budget::HybridBudget;
 
 use crate::frontend::FrontendOutput;
 use crate::report::OutputFormat;
-use crate::util::error::Result;
+use chainvet_core::util::error::Result;
 
 /// Run the hybrid engine with the default budget.
 pub fn run(output: &FrontendOutput, format: OutputFormat) -> Result<()> {

@@ -2,8 +2,8 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use std::sync::Arc;
 
-use crate::cfg::BlockId;
-use crate::norm::Span;
+use chainvet_core::cfg::BlockId;
+use chainvet_core::norm::Span;
 use crate::symbolic::detectors::DetectorRegistry;
 use crate::symbolic::state::storage::StorageLayout;
 use crate::symbolic::state::SymbolicState;

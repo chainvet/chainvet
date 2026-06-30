@@ -1,6 +1,6 @@
-use crate::core::artifacts::{Seed, TxEnv, TxSeed};
+use chainvet_core::artifacts::{Seed, TxEnv, TxSeed};
 use crate::fuzzing::types::{ContractAbi, Environment, FuzzValue, Individual, Transaction};
-use crate::norm::NormalizedAst;
+use chainvet_core::norm::NormalizedAst;
 use crate::symbolic::results::{SeFinding, Witness};
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -162,16 +162,16 @@ mod tests {
     use super::*;
     use crate::analysis::detectors::Severity;
     use crate::fuzzing::types::{FunctionAbi, ParamInfo};
-    use crate::norm::{FunctionKind, Mutability, Span, Visibility};
+    use chainvet_core::norm::{FunctionKind, Mutability, Span, Visibility};
     use crate::symbolic::results::finding::{Confidence, SeFinding, SeVulnKind};
 
     fn sample_ast() -> NormalizedAst {
-        let mut ast = NormalizedAst::from_sources(vec![crate::norm::SourceFile {
+        let mut ast = NormalizedAst::from_sources(vec![chainvet_core::norm::SourceFile {
             id: 0,
             path: "seed.sol".to_string(),
             source: String::new(),
         }]);
-        ast.functions.push(crate::norm::Function {
+        ast.functions.push(chainvet_core::norm::Function {
             id: 7,
             contract: None,
             name: Some("withdraw".to_string()),

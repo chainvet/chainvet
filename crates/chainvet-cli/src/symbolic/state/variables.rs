@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::ir::IrVar;
+use chainvet_core::ir::IrVar;
 use crate::symbolic::types::SymbolicValue;
 
 /// Maps IR variables to their current symbolic values.
@@ -64,7 +64,7 @@ impl Default for VariableEnv {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ir::IrVar;
+    use chainvet_core::ir::IrVar;
     use crate::symbolic::types::SymbolicValue;
     use z3::ast::BV;
 

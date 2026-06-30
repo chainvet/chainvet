@@ -9,8 +9,8 @@ use std::time::Duration;
 
 use serde::Deserialize;
 
-use crate::norm::SourceFile;
-use crate::util::error::{Error, Result};
+use chainvet_core::norm::SourceFile;
+use chainvet_core::util::error::{Error, Result};
 
 const SOLC_LIST_BASE: &str = "https://binaries.soliditylang.org";
 const SOLC_PATH_ENV: &str = "SOLC_PATH";
@@ -915,7 +915,7 @@ fn version_hint_components(path: &Path) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::norm::SourceFile;
+    use chainvet_core::norm::SourceFile;
 
     fn mk_source(id: u32, body: &str) -> SourceFile {
         SourceFile {

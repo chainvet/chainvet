@@ -1,21 +1,14 @@
 mod analysis;
-mod cfg;
-mod core;
-
 mod frontend;
 mod fuzzing;
 mod hybrid;
-mod ir;
 mod meta;
-mod norm;
 mod report;
-mod ssa;
 mod surfaced;
 mod symbolic;
-mod util;
 
-use crate::util::error::Error;
-use crate::util::error::Result;
+use chainvet_core::util::error::Error;
+use chainvet_core::util::error::Result;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum AnalysisMode {
@@ -110,9 +103,9 @@ fn run() -> Result<()> {
                     return Err(Error::msg("missing value for --dump-ir"));
                 };
                 let ir_format = match value.as_str() {
-                    "json" => ir::DumpFormat::Json,
-                    "text" => ir::DumpFormat::Text,
-                    "tuple" => ir::DumpFormat::Tuple,
+                    "json" => chainvet_core::ir::DumpFormat::Json,
+                    "text" => chainvet_core::ir::DumpFormat::Text,
+                    "tuple" => chainvet_core::ir::DumpFormat::Tuple,
                     _ => return Err(Error::msg(format!("unknown IR format: {value}"))),
                 };
                 dump_ir = Some(ir_format);
@@ -178,8 +171,8 @@ fn run() -> Result<()> {
         AnalysisMode::Static => {
             let output = frontend::load_project(&input)?;
             if let Some(format) = dump_ir {
-                let ir_module = ir::lower_module(&output.ast);
-                let payload = ir::dump_module(&ir_module, format);
+                let ir_module = chainvet_core::ir::lower_module(&output.ast);
+                let payload = chainvet_core::ir::dump_module(&ir_module, format);
                 println!("{payload}");
                 return Ok(());
             }

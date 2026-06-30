@@ -1,6 +1,6 @@
 use crate::analysis::detectors::Severity;
-use crate::cfg::BlockId;
-use crate::ir::IrInstr;
+use chainvet_core::cfg::BlockId;
+use chainvet_core::ir::IrInstr;
 use crate::symbolic::detectors::{make_finding, place_matches, Detector};
 use crate::symbolic::results::finding::{Confidence, SeFinding, SeVulnKind};
 use crate::symbolic::solver::SmtSolver;
@@ -94,8 +94,8 @@ impl Detector for StorageDetector {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ir::{IrInstr, IrPlace, IrVar, PlaceClass};
-    use crate::norm::Span;
+    use chainvet_core::ir::{IrInstr, IrPlace, IrVar, PlaceClass};
+    use chainvet_core::norm::Span;
     use crate::symbolic::results::finding::SeVulnKind;
     use crate::symbolic::solver::z3_backend::Z3Backend;
     use crate::symbolic::state::call_context::CallContext;
@@ -198,7 +198,7 @@ mod tests {
         // Simulates the actual IR for `msg.value` as a Member place at path_depth > 0:
         //   Load Temp(0) <- Member{base:Named("msg"), field:"value", root:Some("msg")}
         // At path_depth=1, should emit MsgValueInLoop.
-        use crate::ir::IrValue;
+        use chainvet_core::ir::IrValue;
 
         let (mut state, solver) = make_state_and_solver();
         state.path_depth = 1;
@@ -229,7 +229,7 @@ mod tests {
     #[test]
     fn test_msg_value_as_member_place_at_depth_zero_no_finding() {
         // Same Member place form but at path_depth=0 should not emit.
-        use crate::ir::IrValue;
+        use chainvet_core::ir::IrValue;
 
         let (mut state, solver) = make_state_and_solver();
         state.path_depth = 0;

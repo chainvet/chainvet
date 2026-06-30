@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
 use crate::analysis::{ResolvedCallGraph, ResolvedTarget};
-use crate::norm::{CallMeta, CallTarget, ExprKind, NormalizedAst, StmtKind};
+use chainvet_core::norm::{CallMeta, CallTarget, ExprKind, NormalizedAst, StmtKind};
 
 #[derive(Debug, Clone)]
 pub struct FunctionSummary {
@@ -177,9 +177,9 @@ fn walk_expr_for_storage(
             walk_expr_for_storage(ast, *callee, state_vars, contract_name, summary);
             for option in options {
                 let expr_id = match option {
-                    crate::norm::CallOption::Value(expr)
-                    | crate::norm::CallOption::Gas(expr)
-                    | crate::norm::CallOption::Salt(expr) => expr,
+                    chainvet_core::norm::CallOption::Value(expr)
+                    | chainvet_core::norm::CallOption::Gas(expr)
+                    | chainvet_core::norm::CallOption::Salt(expr) => expr,
                 };
                 walk_expr_for_storage(ast, *expr_id, state_vars, contract_name, summary);
             }

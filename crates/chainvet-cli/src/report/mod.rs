@@ -2,10 +2,10 @@ use crate::analysis::detectors::{self, Finding, Severity};
 use crate::analysis::{self, ResolvedTarget};
 use crate::frontend::{FrontendMode, FrontendOutput};
 use crate::meta;
-use crate::norm::{ExprKind, Function, FunctionKind, NormalizedAst};
+use chainvet_core::norm::{ExprKind, Function, FunctionKind, NormalizedAst};
 use crate::surfaced;
-use crate::util::error::Result;
-use crate::{cfg, ir, ssa};
+use chainvet_core::util::error::Result;
+use chainvet_core::{cfg, ir, ssa};
 use serde::Serialize;
 use std::collections::BTreeSet;
 use std::fs;
@@ -295,7 +295,7 @@ fn print_text(report: &Report) -> Result<()> {
 
 fn print_json(report: &Report) -> Result<()> {
     let payload = serde_json::to_string_pretty(report).map_err(|err| {
-        crate::util::error::Error::msg(format!("failed to encode JSON report: {err}"))
+        chainvet_core::util::error::Error::msg(format!("failed to encode JSON report: {err}"))
     })?;
     println!("{payload}");
     Ok(())
@@ -800,25 +800,25 @@ fn walk_stmt_exprs(ast: &NormalizedAst, stmt_id: u32, cb: &mut impl FnMut(u32)) 
         return;
     };
     match &stmt.kind {
-        crate::norm::StmtKind::Block(stmts) => {
+        chainvet_core::norm::StmtKind::Block(stmts) => {
             for child in stmts {
                 walk_stmt_exprs(ast, *child, cb);
             }
         }
-        crate::norm::StmtKind::Expr(expr) | crate::norm::StmtKind::Emit(expr) => {
+        chainvet_core::norm::StmtKind::Expr(expr) | chainvet_core::norm::StmtKind::Emit(expr) => {
             walk_expr_tree(ast, *expr, cb);
         }
-        crate::norm::StmtKind::Return(expr) | crate::norm::StmtKind::Revert(expr) => {
+        chainvet_core::norm::StmtKind::Return(expr) | chainvet_core::norm::StmtKind::Revert(expr) => {
             if let Some(expr) = expr {
                 walk_expr_tree(ast, *expr, cb);
             }
         }
-        crate::norm::StmtKind::VarDecl { init, .. } => {
+        chainvet_core::norm::StmtKind::VarDecl { init, .. } => {
             if let Some(expr) = init {
                 walk_expr_tree(ast, *expr, cb);
             }
         }
-        crate::norm::StmtKind::If {
+        chainvet_core::norm::StmtKind::If {
             cond,
             then_id,
             else_id,
@@ -829,15 +829,15 @@ fn walk_stmt_exprs(ast: &NormalizedAst, stmt_id: u32, cb: &mut impl FnMut(u32)) 
                 walk_stmt_exprs(ast, *else_id, cb);
             }
         }
-        crate::norm::StmtKind::While { cond, body } => {
+        chainvet_core::norm::StmtKind::While { cond, body } => {
             walk_expr_tree(ast, *cond, cb);
             walk_stmt_exprs(ast, *body, cb);
         }
-        crate::norm::StmtKind::DoWhile { body, cond } => {
+        chainvet_core::norm::StmtKind::DoWhile { body, cond } => {
             walk_stmt_exprs(ast, *body, cb);
             walk_expr_tree(ast, *cond, cb);
         }
-        crate::norm::StmtKind::For {
+        chainvet_core::norm::StmtKind::For {
             init,
             cond,
             step,
@@ -854,7 +854,7 @@ fn walk_stmt_exprs(ast: &NormalizedAst, stmt_id: u32, cb: &mut impl FnMut(u32)) 
             }
             walk_stmt_exprs(ast, *body, cb);
         }
-        crate::norm::StmtKind::Try { call, clauses } => {
+        chainvet_core::norm::StmtKind::Try { call, clauses } => {
             walk_expr_tree(ast, *call, cb);
             for clause in clauses {
                 walk_stmt_exprs(ast, clause.body, cb);
@@ -1010,7 +1010,7 @@ fn build_ssa_report(ssa_functions: &[ssa::SsaFunction]) -> SsaReport {
 }
 
 fn build_top_callers(
-    ast: &crate::norm::NormalizedAst,
+    ast: &chainvet_core::norm::NormalizedAst,
     resolved: &analysis::ResolvedCallGraph,
     limit: usize,
 ) -> Vec<(String, usize)> {

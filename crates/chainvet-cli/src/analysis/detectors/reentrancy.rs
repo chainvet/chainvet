@@ -11,7 +11,7 @@
 //! can callback and re-enter before the state variable is updated, which may
 //! lead to an unexpected result (e.g. draining all ETH from the contract).
 
-use crate::norm::{CallOption, CallTarget, ExprKind, NormalizedAst, StmtKind, Visibility};
+use chainvet_core::norm::{CallOption, CallTarget, ExprKind, NormalizedAst, StmtKind, Visibility};
 
 use super::{Finding, FindingKind, Severity};
 
@@ -62,7 +62,7 @@ pub fn detect_all(ast: &NormalizedAst) -> Vec<Finding> {
 
 /// A function is "trust-guarded" when a modifier marks it as reentrancy-locked
 /// or access-controlled — the caller (or the re-entrant path) is then trusted.
-fn function_is_trust_guarded(func: &crate::norm::Function) -> bool {
+fn function_is_trust_guarded(func: &chainvet_core::norm::Function) -> bool {
     const GUARD_HINTS: &[&str] = &[
         // reentrancy locks
         "nonreentrant",
@@ -98,7 +98,7 @@ fn function_is_trust_guarded(func: &crate::norm::Function) -> bool {
 fn for_each_expr_in_stmt(
     ast: &NormalizedAst,
     stmt_id: u32,
-    cb: &mut impl FnMut(u32, &crate::norm::Expr),
+    cb: &mut impl FnMut(u32, &chainvet_core::norm::Expr),
 ) {
     let Some(stmt) = ast.statements.get(stmt_id as usize) else {
         return;
@@ -162,7 +162,7 @@ fn for_each_expr_in_stmt(
 }
 
 /// Walk every sub-expression under `expr_id`, calling `cb` for each.
-fn for_each_expr(ast: &NormalizedAst, expr_id: u32, cb: &mut impl FnMut(u32, &crate::norm::Expr)) {
+fn for_each_expr(ast: &NormalizedAst, expr_id: u32, cb: &mut impl FnMut(u32, &chainvet_core::norm::Expr)) {
     let Some(expr) = ast.expressions.get(expr_id as usize) else {
         return;
     };
@@ -220,7 +220,7 @@ fn for_each_expr(ast: &NormalizedAst, expr_id: u32, cb: &mut impl FnMut(u32, &cr
 }
 
 /// Walk every statement under `stmt_id`, calling `cb` for each.
-fn for_each_stmt(ast: &NormalizedAst, stmt_id: u32, cb: &mut impl FnMut(u32, &crate::norm::Stmt)) {
+fn for_each_stmt(ast: &NormalizedAst, stmt_id: u32, cb: &mut impl FnMut(u32, &chainvet_core::norm::Stmt)) {
     let Some(stmt) = ast.statements.get(stmt_id as usize) else {
         return;
     };
@@ -271,7 +271,7 @@ struct ExternalCallInfo {
     /// Whether this is a low-level `.call` / `.delegatecall`.
     is_low_level_call: bool,
     /// The span for the finding report.
-    span: crate::norm::Span,
+    span: chainvet_core::norm::Span,
 }
 
 /// Check whether an expression is an external call and return info about it.
@@ -394,7 +394,7 @@ fn has_value_option(ast: &NormalizedAst, expr_id: u32) -> bool {
 }
 
 /// Extract the simple name from a `CallTarget`.
-fn call_target_name(call: &crate::norm::CallMeta) -> &str {
+fn call_target_name(call: &chainvet_core::norm::CallMeta) -> &str {
     match &call.target {
         CallTarget::Direct { name } => name.as_str(),
         CallTarget::Member { name, .. } => name.as_str(),
@@ -536,7 +536,7 @@ fn stmt_reads_var_named(ast: &NormalizedAst, stmt_id: u32, target_names: &[Strin
     found
 }
 
-fn get_source_at_span<'a>(ast: &'a NormalizedAst, span: &crate::norm::Span) -> Option<&'a str> {
+fn get_source_at_span<'a>(ast: &'a NormalizedAst, span: &chainvet_core::norm::Span) -> Option<&'a str> {
     let file = ast.files.get(span.file as usize)?;
     let start = span.start as usize;
     let end = span.end as usize;
@@ -547,11 +547,11 @@ fn get_source_at_span<'a>(ast: &'a NormalizedAst, span: &crate::norm::Span) -> O
     }
 }
 
-fn function_source_lower(ast: &NormalizedAst, func: &crate::norm::Function) -> Option<String> {
+fn function_source_lower(ast: &NormalizedAst, func: &chainvet_core::norm::Function) -> Option<String> {
     get_source_at_span(ast, &func.span).map(|source| source.to_ascii_lowercase())
 }
 
-fn source_guided_no_eth_reentrancy_hit(ast: &NormalizedAst, func: &crate::norm::Function) -> bool {
+fn source_guided_no_eth_reentrancy_hit(ast: &NormalizedAst, func: &chainvet_core::norm::Function) -> bool {
     let Some(source_lower) = function_source_lower(ast, func) else {
         return false;
     };
@@ -607,8 +607,8 @@ fn source_guided_no_eth_reentrancy_hit(ast: &NormalizedAst, func: &crate::norm::
 
 fn source_guided_nested_eth_reentrancy_span(
     ast: &NormalizedAst,
-    func: &crate::norm::Function,
-) -> Option<crate::norm::Span> {
+    func: &chainvet_core::norm::Function,
+) -> Option<chainvet_core::norm::Span> {
     let Some(source_lower) = function_source_lower(ast, func) else {
         return None;
     };
@@ -1080,7 +1080,7 @@ fn detect_reentrancy_no_eth_transfer(ast: &NormalizedAst) -> Vec<Finding> {
 mod tests {
     use super::*;
     use crate::frontend::parser::load_via_parser_sources;
-    use crate::norm::SourceFile;
+    use chainvet_core::norm::SourceFile;
 
     #[test]
     fn source_guided_no_eth_reentrancy_detects_approve_and_call_pattern() {

@@ -1,8 +1,8 @@
-use crate::norm::SourceFile;
+use chainvet_core::norm::SourceFile;
 use crate::report::OutputFormat;
 use crate::symbolic::results::coverage::CoverageReport;
 use crate::symbolic::results::finding::SeFinding;
-use crate::util::error::{Error, Result};
+use chainvet_core::util::error::{Error, Result};
 
 /// Render SE engine results in the requested format.
 pub fn print_se_report(
@@ -139,7 +139,7 @@ fn print_se_json(
 mod tests {
     use super::*;
     use crate::analysis::detectors::Severity;
-    use crate::norm::Span;
+    use chainvet_core::norm::Span;
     use crate::symbolic::results::finding::{Confidence, SeFinding, SeVulnKind};
     use crate::symbolic::results::witness::Witness;
 

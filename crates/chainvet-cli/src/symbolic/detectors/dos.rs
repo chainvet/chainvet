@@ -1,7 +1,7 @@
 use crate::analysis::detectors::Severity;
-use crate::cfg::BlockId;
-use crate::ir::{ControlKind, IrInstr, IrPlace, IrValue, IrVar};
-use crate::norm::Span;
+use chainvet_core::cfg::BlockId;
+use chainvet_core::ir::{ControlKind, IrInstr, IrPlace, IrValue, IrVar};
+use chainvet_core::norm::Span;
 use crate::symbolic::detectors::{make_finding, place_matches, CalleeTracker, Detector};
 use crate::symbolic::results::finding::{Confidence, SeFinding, SeVulnKind};
 use crate::symbolic::solver::SmtSolver;
@@ -251,8 +251,8 @@ impl DosDetector {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ir::{ControlKind, IrInstr, IrPlace, IrValue, IrVar, PlaceClass};
-    use crate::norm::Span;
+    use chainvet_core::ir::{ControlKind, IrInstr, IrPlace, IrValue, IrVar, PlaceClass};
+    use chainvet_core::norm::Span;
     use crate::symbolic::results::finding::SeVulnKind;
     use crate::symbolic::solver::z3_backend::Z3Backend;
     use crate::symbolic::state::call_context::CallContext;

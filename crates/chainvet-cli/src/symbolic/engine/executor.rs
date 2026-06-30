@@ -2,9 +2,9 @@ use z3::ast::{BV, Bool};
 use z3::SatResult;
 
 use crate::analysis::detectors::Severity;
-use crate::cfg::{BlockId, CfgFunction};
-use crate::ir::{ControlKind, IrCallOption, IrInstr, IrPlace, IrValue, IrVar, PlaceClass};
-use crate::norm::Span;
+use chainvet_core::cfg::{BlockId, CfgFunction};
+use chainvet_core::ir::{ControlKind, IrCallOption, IrInstr, IrPlace, IrValue, IrVar, PlaceClass};
+use chainvet_core::norm::Span;
 use crate::symbolic::detectors::DetectorRegistry;
 use crate::symbolic::results::finding::{Confidence, SeFinding, SeVulnKind};
 use crate::symbolic::results::witness::Witness;
@@ -76,7 +76,7 @@ impl std::fmt::Display for ExecutorError {
 #[allow(clippy::too_many_arguments)] // all params are distinct; Phase 6 may bundle into ExecutionContext
 pub fn execute_block(
     state: &mut SymbolicState,
-    block: &crate::cfg::Block,
+    block: &chainvet_core::cfg::Block,
     cfg_func: &CfgFunction,
     detectors: &mut DetectorRegistry,
     solver: &dyn SmtSolver,
@@ -1114,9 +1114,9 @@ pub fn pre_populate_call_context(state: &mut SymbolicState) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cfg::{Block, BlockId, CfgFunction, Edge};
-    use crate::ir::{ControlKind, IrValue, IrVar};
-    use crate::norm::{Literal, Span};
+    use chainvet_core::cfg::{Block, BlockId, CfgFunction, Edge};
+    use chainvet_core::ir::{ControlKind, IrValue, IrVar};
+    use chainvet_core::norm::{Literal, Span};
     use crate::symbolic::detectors::DetectorRegistry;
     use crate::symbolic::solver::z3_backend::Z3Backend;
     use crate::symbolic::state::call_context::CallContext;

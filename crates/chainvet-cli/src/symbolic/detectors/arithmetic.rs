@@ -3,9 +3,9 @@ use z3::SatResult;
 
 use crate::analysis::detectors::Severity;
 use crate::symbolic::solver::optimization::is_trivially_false;
-use crate::cfg::BlockId;
-use crate::ir::{IrInstr, IrPlace, IrValue, IrVar};
-use crate::norm::Span;
+use chainvet_core::cfg::BlockId;
+use chainvet_core::ir::{IrInstr, IrPlace, IrValue, IrVar};
+use chainvet_core::norm::Span;
 use crate::symbolic::detectors::{make_finding, Detector};
 use crate::symbolic::results::finding::{Confidence, SeFinding, SeVulnKind};
 use crate::symbolic::results::witness::Witness;
@@ -253,8 +253,8 @@ impl ArithmeticDetector {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ir::{IrInstr, IrPlace, IrValue, IrVar, PlaceClass};
-    use crate::norm::{Span};
+    use chainvet_core::ir::{IrInstr, IrPlace, IrValue, IrVar, PlaceClass};
+    use chainvet_core::norm::{Span};
     use crate::symbolic::results::finding::SeVulnKind;
     use crate::symbolic::solver::z3_backend::Z3Backend;
     use crate::symbolic::state::call_context::CallContext;

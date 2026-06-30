@@ -4,7 +4,7 @@ use crate::fuzzing::types::{
     ContractAbi, DependencyMap, Dictionary, Environment, FuzzConfig, FuzzValue, Individual,
     Transaction,
 };
-use crate::ir::IrModule;
+use chainvet_core::ir::IrModule;
 
 /// Magic numbers commonly effective at finding integer edge cases.
 const MAGIC_UINTS: &[u128] = &[
@@ -257,16 +257,16 @@ pub fn extract_dictionary(ir_module: &IrModule) -> Dictionary {
 
 /// Walk an IR instruction and extract numeric literals.
 fn collect_literals_from_instr(
-    instr: &crate::ir::IrInstr,
+    instr: &chainvet_core::ir::IrInstr,
     seen: &mut std::collections::HashSet<u128>,
     values: &mut Vec<u128>,
 ) {
-    use crate::ir::IrInstr;
+    use chainvet_core::ir::IrInstr;
 
-    let collect = |val: &crate::ir::IrValue,
+    let collect = |val: &chainvet_core::ir::IrValue,
                    seen: &mut std::collections::HashSet<u128>,
                    values: &mut Vec<u128>| {
-        if let crate::ir::IrValue::Literal(lit) = val {
+        if let chainvet_core::ir::IrValue::Literal(lit) = val {
             if let Ok(n) = lit.value.parse::<u128>() {
                 if seen.insert(n) {
                     values.push(n);
@@ -478,7 +478,7 @@ pub fn generate_dependency_seed_with_dict(
 mod tests {
     use super::*;
     use crate::fuzzing::types::{FunctionAbi, ParamInfo};
-    use crate::norm::{FunctionKind, Mutability, Visibility};
+    use chainvet_core::norm::{FunctionKind, Mutability, Visibility};
 
     fn sample_abi() -> ContractAbi {
         ContractAbi {

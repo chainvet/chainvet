@@ -4,7 +4,7 @@ use z3::ast::{Array, BV};
 use z3::Sort;
 
 use super::SymbolicValue;
-use crate::util::error::{Error, Result};
+use chainvet_core::util::error::{Error, Result};
 
 /// Create a fresh symbolic array (e.g., for a mapping `mapping(uint256 => uint256)`).
 #[allow(dead_code)]

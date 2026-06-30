@@ -4,7 +4,7 @@ pub mod detectors;
 pub mod summary;
 pub mod taint;
 
-use crate::norm::{CallMeta, CallTarget, ExprKind, NormalizedAst, Span, StmtKind};
+use chainvet_core::norm::{CallMeta, CallTarget, ExprKind, NormalizedAst, Span, StmtKind};
 
 #[derive(Debug, Default)]
 pub struct AnalysisFacts {
@@ -180,9 +180,9 @@ fn walk_expr(ast: &NormalizedAst, expr_id: u32, function_id: u32, sites: &mut Ve
             walk_expr(ast, *callee, function_id, sites);
             for option in options {
                 match option {
-                    crate::norm::CallOption::Value(expr)
-                    | crate::norm::CallOption::Gas(expr)
-                    | crate::norm::CallOption::Salt(expr) => {
+                    chainvet_core::norm::CallOption::Value(expr)
+                    | chainvet_core::norm::CallOption::Gas(expr)
+                    | chainvet_core::norm::CallOption::Salt(expr) => {
                         walk_expr(ast, *expr, function_id, sites);
                     }
                 }

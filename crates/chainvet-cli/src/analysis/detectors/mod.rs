@@ -10,7 +10,7 @@ pub mod storage_memory;
 use serde::Serialize;
 
 use crate::analysis::CallGraph;
-use crate::norm::{NormalizedAst, Span};
+use chainvet_core::norm::{NormalizedAst, Span};
 
 // ═══════════════════════════════════════════════════════════════════════════════
 //  Core types
@@ -360,7 +360,8 @@ pub fn run_detectors(
 #[cfg(test)]
 mod tests {
     use super::{FindingKind, run_detectors};
-    use crate::{analysis, cfg, frontend, ir};
+    use crate::{analysis, frontend};
+    use chainvet_core::{cfg, ir};
 
     fn benchmark_findings(path: &str) -> Vec<super::Finding> {
         let output = frontend::load_project(path).expect("frontend load should succeed");

@@ -1,9 +1,9 @@
 use std::collections::{HashMap, HashSet};
 
-use crate::core::artifacts::Finding;
+use chainvet_core::artifacts::Finding;
 use crate::frontend::{self, CompilerInfo};
-use crate::ir::{IrInstr, IrModule, IrPlace, IrValue, IrVar, PlaceClass};
-use crate::norm::{FunctionKind, Mutability, NormalizedAst, Span, Visibility};
+use chainvet_core::ir::{IrInstr, IrModule, IrPlace, IrValue, IrVar, PlaceClass};
+use chainvet_core::norm::{FunctionKind, Mutability, NormalizedAst, Span, Visibility};
 use serde::Serialize;
 
 // ---------------------------------------------------------------------------
@@ -696,7 +696,7 @@ pub struct FuzzReport {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::norm::{
+    use chainvet_core::norm::{
         Contract, ContractKind, Function, FunctionKind, Mutability, NormalizedAst, SourceFile,
         Span, Visibility,
     };

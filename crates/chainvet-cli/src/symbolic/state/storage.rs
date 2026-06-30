@@ -5,7 +5,7 @@ use z3::Sort;
 
 use crate::symbolic::types::symbolic_array;
 use crate::symbolic::types::SymbolicValue;
-use crate::util::error::Result;
+use chainvet_core::util::error::Result;
 
 const WORD_WIDTH: u32 = 256;
 
@@ -102,7 +102,7 @@ impl StorageLayout {
     /// Slots are assigned by declaration order within each contract.
     /// Constants and immutables do not occupy storage slots.
     /// Mappings are detected by checking `type_string` for "mapping".
-    pub fn from_ast(ast: &crate::norm::NormalizedAst) -> Self {
+    pub fn from_ast(ast: &chainvet_core::norm::NormalizedAst) -> Self {
         let mut slots = HashMap::new();
         let mut mapping_names = HashSet::new();
 
@@ -310,13 +310,13 @@ mod tests {
 
     // --- StorageLayout tests ---
 
-    fn make_test_ast() -> crate::norm::NormalizedAst {
+    fn make_test_ast() -> chainvet_core::norm::NormalizedAst {
         // Create a minimal NormalizedAst with one contract "TestContract" having:
         //  - "owner" (regular address, slot 0)
         //  - "balances" (mapping, slot 1)
         //  - "MAX_SUPPLY" (constant, no slot)
         //  - "totalSupply" (regular uint, slot 2)
-        use crate::norm::{
+        use chainvet_core::norm::{
             Contract, ContractKind, Mutability, NormalizedAst, Span, StateVariable, Visibility,
         };
 
@@ -426,7 +426,7 @@ mod tests {
     #[test]
     fn test_storage_layout_immutable_skipped() {
         // Immutable variables should also be skipped in slot assignment.
-        use crate::norm::{
+        use chainvet_core::norm::{
             Contract, ContractKind, Mutability, NormalizedAst, Span, StateVariable, Visibility,
         };
 
@@ -478,7 +478,7 @@ mod tests {
     #[test]
     fn test_storage_layout_empty_ast() {
         // An empty AST should produce an empty layout with no slots.
-        let ast = crate::norm::NormalizedAst::empty();
+        let ast = chainvet_core::norm::NormalizedAst::empty();
         let layout = StorageLayout::from_ast(&ast);
         assert_eq!(layout.get_slot("Anything", "x"), None);
         assert!(!layout.is_mapping("x"));

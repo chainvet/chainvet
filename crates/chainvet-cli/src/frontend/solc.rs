@@ -7,12 +7,12 @@ use std::process::{Command, Output, Stdio};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::norm::{
+use chainvet_core::norm::{
     CallMeta, CallOption, CallTarget, ChainSegment, Contract, ContractBase, ContractKind,
     ErrorDefinition, Event, Expr, ExprKind, ExprMeta, Function, FunctionKind, Literal, Modifier,
     Mutability, NormalizedAst, Span, StateVariable, Stmt, StmtKind, TryClause, Visibility,
 };
-use crate::util::error::{Error, Result};
+use chainvet_core::util::error::{Error, Result};
 
 use super::solc_manager::SolcManager;
 
@@ -23,7 +23,7 @@ pub fn load_via_solc(path: &str) -> Result<NormalizedAst> {
 
 pub fn load_via_solc_sources(
     path: &str,
-    sources: Vec<crate::norm::SourceFile>,
+    sources: Vec<chainvet_core::norm::SourceFile>,
 ) -> Result<NormalizedAst> {
     if sources.is_empty() {
         return Err(Error::msg("no Solidity files found"));
@@ -97,7 +97,7 @@ struct SolcError {
 }
 
 fn build_standard_json(
-    sources: &[crate::norm::SourceFile],
+    sources: &[chainvet_core::norm::SourceFile],
     remappings: Vec<String>,
 ) -> Result<SolcInput> {
     let mut map = BTreeMap::new();
@@ -326,7 +326,7 @@ fn check_solc_errors(output: &SolcOutput) -> Result<()> {
 }
 
 fn normalize_output(
-    sources: Vec<crate::norm::SourceFile>,
+    sources: Vec<chainvet_core::norm::SourceFile>,
     output: SolcOutput,
 ) -> Result<NormalizedAst> {
     let mut ast = NormalizedAst::from_sources(sources);
@@ -346,7 +346,7 @@ fn normalize_output(
 }
 
 fn build_source_id_map(
-    files: &[crate::norm::SourceFile],
+    files: &[chainvet_core::norm::SourceFile],
     sources_out: &BTreeMap<String, SolcOutputSource>,
 ) -> HashMap<u32, u32> {
     let mut path_map = HashMap::new();
@@ -408,7 +408,7 @@ fn normalize_contract(node: &Value, source_map: &HashMap<u32, u32>, ast: &mut No
         errors: Vec::new(),
         span,
     });
-    ast.items.push(crate::norm::Item::Contract(id));
+    ast.items.push(chainvet_core::norm::Item::Contract(id));
 
     let Some(children) = child_nodes(node) else {
         return;
@@ -489,7 +489,7 @@ fn normalize_function(
         body,
         span,
     });
-    ast.items.push(crate::norm::Item::Function(id));
+    ast.items.push(chainvet_core::norm::Item::Function(id));
     Some(id)
 }
 
@@ -529,7 +529,7 @@ fn normalize_state_var(
         type_string,
         span,
     });
-    ast.items.push(crate::norm::Item::StateVar(id));
+    ast.items.push(chainvet_core::norm::Item::StateVar(id));
     Some(id)
 }
 
@@ -551,7 +551,7 @@ fn normalize_modifier(
         name,
         span,
     });
-    ast.items.push(crate::norm::Item::Modifier(id));
+    ast.items.push(chainvet_core::norm::Item::Modifier(id));
     Some(id)
 }
 
@@ -573,7 +573,7 @@ fn normalize_event(
         name,
         span,
     });
-    ast.items.push(crate::norm::Item::Event(id));
+    ast.items.push(chainvet_core::norm::Item::Event(id));
     Some(id)
 }
 
@@ -595,7 +595,7 @@ fn normalize_error(
         name,
         span,
     });
-    ast.items.push(crate::norm::Item::Error(id));
+    ast.items.push(chainvet_core::norm::Item::Error(id));
     Some(id)
 }
 
