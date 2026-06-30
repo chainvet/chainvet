@@ -1,4 +1,3 @@
-mod hybrid;
 mod report;
 
 use chainvet_core::util::error::Error;
@@ -53,7 +52,7 @@ fn run() -> Result<()> {
     let mut dump_ir = None;
     let mut mode = AnalysisMode::Static;
     let mut mode_flag = None::<&'static str>;
-    let mut hybrid_budget = hybrid::HybridBudget::default();
+    let mut hybrid_budget = chainvet_hybrid::hybrid::HybridBudget::default();
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         if let Some(next_mode) = AnalysisMode::from_flag(&arg) {
@@ -183,7 +182,7 @@ fn run() -> Result<()> {
         }
         AnalysisMode::Hybrid => {
             let output = chainvet_frontend::frontend::load_project(&input)?;
-            hybrid::run_with_budget(&output, &hybrid_budget, format)?;
+            chainvet_hybrid::hybrid::run_with_budget(&output, &hybrid_budget, format)?;
         }
     }
 
