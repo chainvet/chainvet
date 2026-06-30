@@ -1,3 +1,4 @@
+pub mod ai_fallback;
 pub mod parser;
 pub mod solc;
 pub mod solc_manager;
@@ -46,16 +47,23 @@ pub fn load_project(path: &str) -> Result<FrontendOutput> {
         }),
         Err(err) => {
             eprintln!("solc frontend failed: {err}");
-            let ast = if compiler.legacy_omitted_visibility_is_public {
+            let mut ast = if compiler.legacy_omitted_visibility_is_public {
                 parser::load_via_legacy_sources(sources)?
             } else {
                 parser::load_via_parser_sources(sources)?
             };
+            // 3rd frontend tier: opt-in AI enrichment of the tree-sitter AST
+            // (local Ollama, env-gated; no-op when disabled or unreachable).
+            let ai_enriched = ai_fallback::enrich_ast_if_enabled(&mut ast);
             Ok(FrontendOutput {
                 mode: FrontendMode::Partial,
                 ast,
                 compiler: CompilerInfo {
-                    compiler_name: "tree-sitter".to_string(),
+                    compiler_name: if ai_enriched {
+                        "tree-sitter+ai".to_string()
+                    } else {
+                        "tree-sitter".to_string()
+                    },
                     compiler_version: compiler.compiler_version,
                     legacy_omitted_visibility_is_public: compiler
                         .legacy_omitted_visibility_is_public,
