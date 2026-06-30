@@ -7,6 +7,10 @@
 //!
 //! Listen address is `CHAINVET_SERVER_ADDR` (default 127.0.0.1:8080).
 
+mod web;
+
+use std::path::PathBuf;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use axum::{
@@ -20,9 +24,16 @@ use serde_json::{Value, json};
 
 #[tokio::main]
 async fn main() {
+    let root = std::env::var("CHAINVET_SERVER_ROOT")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+    let state = Arc::new(web::AppState::new(root));
+
     let app = Router::new()
         .route("/health", get(health))
-        .route("/scan", post(scan));
+        .route("/scan", post(scan))
+        .merge(web::routes(state))
+        .layer(tower_http::cors::CorsLayer::permissive());
 
     let addr =
         std::env::var("CHAINVET_SERVER_ADDR").unwrap_or_else(|_| "127.0.0.1:8080".to_string());
