@@ -10,9 +10,9 @@ pub use report::{
     HybridFindingRow, HybridJsonReport, HybridRunSummary, deduplicate_rows, print_hybrid_report,
 };
 
-use chainvet_frontend::frontend::FrontendOutput;
 use chainvet_core::OutputFormat;
 use chainvet_core::util::error::Result;
+use chainvet_frontend::frontend::FrontendOutput;
 
 /// Run the hybrid engine with the default budget.
 pub fn run(output: &FrontendOutput, format: OutputFormat) -> Result<()> {

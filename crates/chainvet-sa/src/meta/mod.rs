@@ -2,8 +2,8 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 use crate::analysis::detectors;
 use chainvet_core::artifacts::{Finding, FindingLocation};
-use chainvet_frontend::frontend::FrontendOutput;
 use chainvet_core::norm::{Contract, ContractKind};
+use chainvet_frontend::frontend::FrontendOutput;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConsumerEngine {
@@ -531,8 +531,8 @@ mod tests {
     use crate::analysis::detectors::{
         Finding as StaticFinding, FindingKind, Severity, TAXONOMY_ROW_COUNT,
     };
-    use chainvet_frontend::frontend::{CompilerInfo, FrontendMode};
     use chainvet_core::norm::{NormalizedAst, SourceFile, Span};
+    use chainvet_frontend::frontend::{CompilerInfo, FrontendMode};
 
     fn test_output() -> FrontendOutput {
         FrontendOutput {

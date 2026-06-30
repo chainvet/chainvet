@@ -1,10 +1,10 @@
 use std::collections::{HashMap, HashSet};
 
-use z3::ast::{Array, BV};
 use z3::Sort;
+use z3::ast::{Array, BV};
 
-use crate::symbolic::types::symbolic_array;
 use crate::symbolic::types::SymbolicValue;
+use crate::symbolic::types::symbolic_array;
 use chainvet_core::util::error::Result;
 
 const WORD_WIDTH: u32 = 256;
@@ -121,10 +121,7 @@ impl StorageLayout {
                     continue;
                 }
 
-                slots.insert(
-                    (contract.name.clone(), var.name.clone()),
-                    slot_counter,
-                );
+                slots.insert((contract.name.clone(), var.name.clone()), slot_counter);
 
                 // Detect mapping types from type_string.
                 let is_map = var
@@ -203,7 +200,11 @@ mod tests {
         let zero = BV::from_u64(0, W);
         let solver = Solver::new_for_logic("QF_ABV").unwrap();
         solver.assert(&bv.eq(&zero).not());
-        assert_eq!(solver.check(), SatResult::Unsat, "uninitialized slot should be zero");
+        assert_eq!(
+            solver.check(),
+            SatResult::Unsat,
+            "uninitialized slot should be zero"
+        );
     }
 
     #[test]
@@ -219,7 +220,11 @@ mod tests {
 
         let solver = Solver::new_for_logic("QF_ABV").unwrap();
         solver.assert(&bv.eq(&written).not());
-        assert_eq!(solver.check(), SatResult::Unsat, "sload after sstore should return written value");
+        assert_eq!(
+            solver.check(),
+            SatResult::Unsat,
+            "sload after sstore should return written value"
+        );
     }
 
     #[test]
@@ -228,7 +233,9 @@ mod tests {
         let mut storage = SymbolicStorage::new("s");
         storage.sstore(&BV::from_u64(0, W), &BV::from_u64(42, W));
 
-        let other = storage.sload(&BV::from_u64(1, W)).expect("sload should succeed");
+        let other = storage
+            .sload(&BV::from_u64(1, W))
+            .expect("sload should succeed");
         let bv = other.as_bv().unwrap();
 
         let zero = BV::from_u64(0, W);
@@ -245,12 +252,18 @@ mod tests {
         let val = BV::from_u64(200, W);
 
         storage.mapping_write("balances", &key, &val);
-        let read_val = storage.mapping_read("balances", &key).expect("mapping_read should succeed");
+        let read_val = storage
+            .mapping_read("balances", &key)
+            .expect("mapping_read should succeed");
         let bv = read_val.as_bv().expect("should be BitVec");
 
         let solver = Solver::new_for_logic("QF_ABV").unwrap();
         solver.assert(&bv.eq(&val).not());
-        assert_eq!(solver.check(), SatResult::Unsat, "mapping read after write should return written value");
+        assert_eq!(
+            solver.check(),
+            SatResult::Unsat,
+            "mapping read after write should return written value"
+        );
     }
 
     #[test]
@@ -271,7 +284,11 @@ mod tests {
 
         let solver = Solver::new_for_logic("QF_ABV").unwrap();
         solver.assert(&r1.as_bv().unwrap().eq(&v1).not());
-        assert_eq!(solver.check(), SatResult::Unsat, "key1 should still have value1");
+        assert_eq!(
+            solver.check(),
+            SatResult::Unsat,
+            "key1 should still have value1"
+        );
 
         let solver2 = Solver::new_for_logic("QF_ABV").unwrap();
         solver2.assert(&r2.as_bv().unwrap().eq(&v2).not());
@@ -284,7 +301,9 @@ mod tests {
         // value (not necessarily zero, since mappings use symbolic arrays).
         let mut storage = SymbolicStorage::new("s");
         let key = BV::from_u64(42, W);
-        let val = storage.mapping_read("unknown_map", &key).expect("should succeed");
+        let val = storage
+            .mapping_read("unknown_map", &key)
+            .expect("should succeed");
         assert_eq!(val.width(), 256);
     }
 
@@ -305,7 +324,11 @@ mod tests {
         // as something other than 999.
         let solver = Solver::new_for_logic("QF_ABV").unwrap();
         solver.assert(&bv_b.eq(&val).not());
-        assert_eq!(solver.check(), SatResult::Sat, "different mapping should be independent");
+        assert_eq!(
+            solver.check(),
+            SatResult::Sat,
+            "different mapping should be independent"
+        );
     }
 
     // --- StorageLayout tests ---
@@ -408,9 +431,15 @@ mod tests {
         let ast = make_test_ast();
         let layout = StorageLayout::from_ast(&ast);
 
-        assert!(layout.is_mapping("balances"), "balances should be a mapping");
+        assert!(
+            layout.is_mapping("balances"),
+            "balances should be a mapping"
+        );
         assert!(!layout.is_mapping("owner"), "owner is not a mapping");
-        assert!(!layout.is_mapping("totalSupply"), "totalSupply is not a mapping");
+        assert!(
+            !layout.is_mapping("totalSupply"),
+            "totalSupply is not a mapping"
+        );
     }
 
     #[test]
@@ -471,8 +500,16 @@ mod tests {
         };
 
         let layout = StorageLayout::from_ast(&ast);
-        assert_eq!(layout.get_slot("C", "deployTime"), None, "immutable should have no slot");
-        assert_eq!(layout.get_slot("C", "count"), Some(0), "first non-immutable should be slot 0");
+        assert_eq!(
+            layout.get_slot("C", "deployTime"),
+            None,
+            "immutable should have no slot"
+        );
+        assert_eq!(
+            layout.get_slot("C", "count"),
+            Some(0),
+            "first non-immutable should be slot 0"
+        );
     }
 
     #[test]

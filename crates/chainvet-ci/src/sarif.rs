@@ -33,7 +33,11 @@ pub fn to_sarif(result: &ScanResult) -> Value {
         }
     }
 
-    let results: Vec<Value> = result.findings.iter().map(|f| result_for(f, &sources)).collect();
+    let results: Vec<Value> = result
+        .findings
+        .iter()
+        .map(|f| result_for(f, &sources))
+        .collect();
 
     // One rule per distinct finding kind.
     let mut seen = HashMap::new();

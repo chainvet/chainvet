@@ -8,10 +8,10 @@ pub mod runner;
 pub mod scheduler;
 pub mod types;
 
-use chainvet_frontend::frontend::FrontendOutput;
 use crate::fuzzing::types::FuzzConfig;
 use chainvet_core::OutputFormat;
 use chainvet_core::util::error::Result;
+use chainvet_frontend::frontend::FrontendOutput;
 
 /// Main entry point: run the fuzzer against a parsed project.
 pub fn run_fuzzer(

@@ -1,10 +1,10 @@
-use chainvet_sa::analysis::detectors::Severity;
-use chainvet_core::cfg::BlockId;
-use chainvet_core::ir::{IrCallOption, IrInstr, IrValue, IrVar};
-use crate::symbolic::detectors::{make_finding, CalleeTracker, Detector};
+use crate::symbolic::detectors::{CalleeTracker, Detector, make_finding};
 use crate::symbolic::results::finding::{Confidence, SeFinding, SeVulnKind};
 use crate::symbolic::solver::SmtSolver;
 use crate::symbolic::state::SymbolicState;
+use chainvet_core::cfg::BlockId;
+use chainvet_core::ir::{IrCallOption, IrInstr, IrValue, IrVar};
+use chainvet_sa::analysis::detectors::Severity;
 
 /// Detects delegatecall-related vulnerabilities.
 ///
@@ -74,9 +74,7 @@ impl Detector for DelegatecallDetector {
 
         // PayableDelegatecallInLoop: delegatecall with ETH value inside a loop body.
         // path_depth > 0 serves as a proxy for being inside a loop or deep branch.
-        let has_value = options
-            .iter()
-            .any(|o| matches!(o, IrCallOption::Value(_)));
+        let has_value = options.iter().any(|o| matches!(o, IrCallOption::Value(_)));
         if has_value && state.path_depth > 0 {
             findings.push(make_finding(
                 SeVulnKind::PayableDelegatecallInLoop,
@@ -109,15 +107,19 @@ impl Detector for DelegatecallDetector {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chainvet_core::ir::{IrCallOption, IrInstr, IrValue, IrVar};
-    use chainvet_core::norm::Span;
     use crate::symbolic::results::finding::SeVulnKind;
     use crate::symbolic::solver::z3_backend::Z3Backend;
     use crate::symbolic::state::call_context::CallContext;
     use crate::symbolic::state::{StateIdGen, SymbolicState};
+    use chainvet_core::ir::{IrCallOption, IrInstr, IrValue, IrVar};
+    use chainvet_core::norm::Span;
 
     fn span() -> Span {
-        Span { file: 0, start: 0, end: 0 }
+        Span {
+            file: 0,
+            start: 0,
+            end: 0,
+        }
     }
 
     fn make_state_and_solver() -> (SymbolicState, Z3Backend) {
@@ -149,7 +151,10 @@ mod tests {
             span: span(),
         };
         let findings = det.on_instruction(&state, &instr, &solver);
-        assert!(findings.is_empty(), "non-delegatecall should produce no findings");
+        assert!(
+            findings.is_empty(),
+            "non-delegatecall should produce no findings"
+        );
     }
 
     #[test]
@@ -165,7 +170,11 @@ mod tests {
             span: span(),
         };
         let findings = det.on_instruction(&state, &instr, &solver);
-        assert_eq!(findings.len(), 1, "delegatecall to temp var should emit UnsafeDelegatecall");
+        assert_eq!(
+            findings.len(),
+            1,
+            "delegatecall to temp var should emit UnsafeDelegatecall"
+        );
         assert_eq!(findings[0].kind, SeVulnKind::UnsafeDelegatecall);
     }
 
@@ -184,7 +193,9 @@ mod tests {
         };
         let findings = det.on_instruction(&state, &instr, &solver);
         assert!(
-            findings.iter().any(|f| f.kind == SeVulnKind::PayableDelegatecallInLoop),
+            findings
+                .iter()
+                .any(|f| f.kind == SeVulnKind::PayableDelegatecallInLoop),
             "delegatecall with value at path_depth>0 should emit PayableDelegatecallInLoop"
         );
     }
@@ -204,7 +215,9 @@ mod tests {
         };
         let findings = det.on_instruction(&state, &instr, &solver);
         assert!(
-            !findings.iter().any(|f| f.kind == SeVulnKind::PayableDelegatecallInLoop),
+            !findings
+                .iter()
+                .any(|f| f.kind == SeVulnKind::PayableDelegatecallInLoop),
             "path_depth=0 should not emit PayableDelegatecallInLoop"
         );
     }
@@ -273,4 +286,3 @@ fn is_user_controlled(val: &IrValue) -> bool {
         IrValue::Literal(_) => false,
     }
 }
-

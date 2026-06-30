@@ -1291,7 +1291,7 @@ fn check_locked_ether(trace: &ExecutionTrace, tx_sequence: &[Transaction]) -> Ve
         };
         let hash = hash_finding("locked-ether", *function_id, detail);
         return vec![FuzzFinding {
-                    span: None,
+            span: None,
             kind: FuzzFindingKind::LockedEther,
             severity: FuzzSeverity::Medium,
             message: format!(
@@ -1542,7 +1542,10 @@ fn function_is_public_sender_payout(function_id: u32, ast: Option<&NormalizedAst
     chainvet_frontend::frontend::has_public_sender_payout_hint(function, ast)
 }
 
-fn ast_function_by_id(ast: &NormalizedAst, function_id: u32) -> Option<&chainvet_core::norm::Function> {
+fn ast_function_by_id(
+    ast: &NormalizedAst,
+    function_id: u32,
+) -> Option<&chainvet_core::norm::Function> {
     ast.functions
         .iter()
         .find(|function| function.id == function_id)
@@ -1808,7 +1811,7 @@ mod tests {
     fn checked_selector_wrapper_suppresses_fuzz_unchecked_call() {
         let trace = ExecutionTrace {
             events: vec![TraceEvent {
-                    span: None,
+                span: None,
                 function_id: 0,
                 kind: TraceEventKind::CallReturnUnchecked {
                     callee: "target.call.value".to_string(),
@@ -1872,7 +1875,7 @@ mod tests {
     fn detect_timestamp() {
         let trace = ExecutionTrace {
             events: vec![TraceEvent {
-                    span: None,
+                span: None,
                 function_id: 1,
                 kind: TraceEventKind::BranchOnTimestamp,
             }],
@@ -1890,7 +1893,7 @@ mod tests {
     fn detect_timestamp_from_randomness_arithmetic() {
         let trace = ExecutionTrace {
             events: vec![TraceEvent {
-                    span: None,
+                span: None,
                 function_id: 4,
                 kind: TraceEventKind::TimestampArithmetic,
             }],
@@ -1908,7 +1911,7 @@ mod tests {
     fn detect_overflow() {
         let trace = ExecutionTrace {
             events: vec![TraceEvent {
-                    span: None,
+                span: None,
                 function_id: 0,
                 kind: TraceEventKind::ArithmeticOp {
                     op: "+".to_string(),
@@ -1952,7 +1955,7 @@ mod tests {
     fn detect_arbitrary_write_with_multi_sender_evidence() {
         let trace = ExecutionTrace {
             events: vec![TraceEvent {
-                    span: None,
+                span: None,
                 function_id: 7,
                 kind: storage_write("owner", "owner", true, false),
             }],
@@ -1984,7 +1987,7 @@ mod tests {
     fn caller_keyed_balance_write_is_not_access_control_or_arbitrary_write() {
         let trace = ExecutionTrace {
             events: vec![TraceEvent {
-                    span: None,
+                span: None,
                 function_id: 9,
                 kind: storage_write("balances", "balances[msg.sender]", false, true),
             }],
@@ -2065,7 +2068,7 @@ mod tests {
         );
         let trace = ExecutionTrace {
             events: vec![TraceEvent {
-                    span: None,
+                span: None,
                 function_id: 0,
                 kind: storage_write("admin", "admin", true, false),
             }],
@@ -2098,7 +2101,7 @@ mod tests {
         let ast = authority_modifier_ast("CollectAllFees", "function CollectAllFees() onlyowner");
         let trace = ExecutionTrace {
             events: vec![TraceEvent {
-                    span: None,
+                span: None,
                 function_id: 0,
                 kind: TraceEventKind::EtherSent {
                     callee: "admin.send".to_string(),
@@ -2121,7 +2124,7 @@ mod tests {
         );
         let trace = ExecutionTrace {
             events: vec![TraceEvent {
-                    span: None,
+                span: None,
                 function_id: 0,
                 kind: TraceEventKind::EtherSent {
                     callee: "msg.sender.transfer".to_string(),
@@ -2146,7 +2149,7 @@ mod tests {
         );
         let trace = ExecutionTrace {
             events: vec![TraceEvent {
-                    span: None,
+                span: None,
                 function_id,
                 kind: TraceEventKind::EtherSent {
                     callee: "msg.sender.call.value".to_string(),
@@ -2172,7 +2175,7 @@ mod tests {
         let ast = visibility_ast("settlePayout", Visibility::Private);
         let trace = ExecutionTrace {
             events: vec![TraceEvent {
-                    span: None,
+                span: None,
                 function_id: 0,
                 kind: TraceEventKind::EtherSent {
                     callee: "admin.send".to_string(),
@@ -2191,7 +2194,7 @@ mod tests {
     fn detect_tx_origin() {
         let trace = ExecutionTrace {
             events: vec![TraceEvent {
-                    span: None,
+                span: None,
                 function_id: 0,
                 kind: TraceEventKind::TxOriginUsed,
             }],
@@ -2209,7 +2212,7 @@ mod tests {
     fn detect_selfdestruct() {
         let trace = ExecutionTrace {
             events: vec![TraceEvent {
-                    span: None,
+                span: None,
                 function_id: 0,
                 kind: TraceEventKind::SelfDestructCall,
             }],
@@ -2249,10 +2252,11 @@ mod tests {
 
     #[test]
     fn exploit_helper_cleanup_selfdestruct_is_suppressed() {
-        let ast = chainvet_frontend::frontend::parser::load_via_parser_sources(vec![chainvet_core::norm::SourceFile {
-            id: 0,
-            path: "ReentrancyExploit.sol".to_string(),
-            source: r#"
+        let ast = chainvet_frontend::frontend::parser::load_via_parser_sources(vec![
+            chainvet_core::norm::SourceFile {
+                id: 0,
+                path: "ReentrancyExploit.sol".to_string(),
+                source: r#"
                 pragma solidity ^0.4.15;
                 contract ReentranceExploit {
                     address public vulnerable_contract;
@@ -2264,8 +2268,9 @@ mod tests {
                     function get_money() public { suicide(owner); }
                 }
             "#
-            .to_string(),
-        }])
+                .to_string(),
+            },
+        ])
         .expect("parser should succeed");
         let function_id = ast
             .functions
@@ -2275,7 +2280,7 @@ mod tests {
             .expect("get_money function");
         let trace = ExecutionTrace {
             events: vec![TraceEvent {
-                    span: None,
+                span: None,
                 function_id,
                 kind: TraceEventKind::SelfDestructCall,
             }],
@@ -2318,7 +2323,7 @@ mod tests {
     fn detect_dos() {
         let trace = ExecutionTrace {
             events: vec![TraceEvent {
-                    span: None,
+                span: None,
                 function_id: 0,
                 kind: TraceEventKind::UnboundedLoop {
                     var_name: "$t3".to_string(),
@@ -2367,7 +2372,7 @@ mod tests {
     fn detect_exception_disorder() {
         let trace = ExecutionTrace {
             events: vec![TraceEvent {
-                    span: None,
+                span: None,
                 function_id: 0,
                 kind: TraceEventKind::ExternalCallThenState {
                     callee: "target".to_string(),
@@ -2388,7 +2393,7 @@ mod tests {
     fn detect_unsafe_send_in_require() {
         let trace = ExecutionTrace {
             events: vec![TraceEvent {
-                    span: None,
+                span: None,
                 function_id: 0,
                 kind: TraceEventKind::UnsafeSendInRequire {
                     callee: "send".to_string(),
@@ -2548,16 +2553,18 @@ mod tests {
             },
         ];
         let findings = check_transaction_order_dependency(&trace, &txs);
-        assert!(findings
-            .iter()
-            .any(|f| f.kind == FuzzFindingKind::TransactionOrderDependency));
+        assert!(
+            findings
+                .iter()
+                .any(|f| f.kind == FuzzFindingKind::TransactionOrderDependency)
+        );
     }
 
     #[test]
     fn detect_signature_malleability() {
         let trace = ExecutionTrace {
             events: vec![TraceEvent {
-                    span: None,
+                span: None,
                 function_id: 3,
                 kind: TraceEventKind::EcrecoverCalled,
             }],
@@ -2581,9 +2588,11 @@ mod tests {
             },
         ];
         let findings = check_cryptographic(&trace, &txs);
-        assert!(findings
-            .iter()
-            .any(|f| f.kind == FuzzFindingKind::SignatureMalleability));
+        assert!(
+            findings
+                .iter()
+                .any(|f| f.kind == FuzzFindingKind::SignatureMalleability)
+        );
     }
 
     #[test]

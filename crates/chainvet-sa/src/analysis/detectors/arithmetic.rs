@@ -214,7 +214,11 @@ fn for_each_expr_in_stmt(
 }
 
 /// Walk every sub-expression under `expr_id`, calling `cb` for each.
-fn for_each_expr(ast: &NormalizedAst, expr_id: u32, cb: &mut impl FnMut(u32, &chainvet_core::norm::Expr)) {
+fn for_each_expr(
+    ast: &NormalizedAst,
+    expr_id: u32,
+    cb: &mut impl FnMut(u32, &chainvet_core::norm::Expr),
+) {
     let Some(expr) = ast.expressions.get(expr_id as usize) else {
         return;
     };

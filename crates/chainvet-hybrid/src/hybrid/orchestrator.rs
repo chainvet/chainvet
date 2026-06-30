@@ -10,15 +10,15 @@
 use std::collections::HashSet;
 use std::time::Instant;
 
-use chainvet_sa::analysis;
-use chainvet_core::cfg;
+use chainvet_core::OutputFormat;
 use chainvet_core::artifacts::HybridReport;
+use chainvet_core::cfg;
+use chainvet_core::ir;
+use chainvet_core::util::error::Result;
 use chainvet_frontend::frontend::FrontendOutput;
 use chainvet_fuzzing::fuzzing::{self, runner::FuzzSession};
-use chainvet_core::ir;
-use chainvet_core::OutputFormat;
+use chainvet_sa::analysis;
 use chainvet_se::symbolic::{self, SymbolicOptions, results::SeFinding};
-use chainvet_core::util::error::Result;
 
 use super::budget::HybridBudget;
 use super::report::{HybridFindingRow, HybridJsonReport, HybridRunSummary, print_hybrid_report};
@@ -200,8 +200,12 @@ pub fn analyze(output: &FrontendOutput, budget: &HybridBudget) -> Result<HybridJ
         time_to_first_finding_ms,
     };
 
-    let findings =
-        HybridFindingRow::collect(ast, &static_findings, &all_se_findings, &fuzz_report.findings);
+    let findings = HybridFindingRow::collect(
+        ast,
+        &static_findings,
+        &all_se_findings,
+        &fuzz_report.findings,
+    );
     let summary = HybridRunSummary {
         static_threshold: threshold.as_str().to_string(),
         static_targets_total: targets.len(),

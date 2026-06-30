@@ -4,22 +4,22 @@ use rand::Rng;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 
-use chainvet_sa::analysis;
-use chainvet_frontend::frontend::FrontendOutput;
 use crate::fuzzing::executor;
 use crate::fuzzing::generator;
 use crate::fuzzing::mutator;
 use crate::fuzzing::oracle;
 use crate::fuzzing::scheduler::{self, CoverageMap};
 use crate::fuzzing::types::{
-    build_dependency_map, extract_abis, ContractAbi, Corpus, DependencyMap, Dictionary, FuzzConfig,
-    FuzzFinding, FuzzFindingKind, FuzzHybridStats, FuzzReport, FuzzSeverity,
+    ContractAbi, Corpus, DependencyMap, Dictionary, FuzzConfig, FuzzFinding, FuzzFindingKind,
+    FuzzHybridStats, FuzzReport, FuzzSeverity, build_dependency_map, extract_abis,
 };
 use chainvet_core::norm::{FunctionKind, Mutability, NormalizedAst, Span};
-use chainvet_sa::surfaced;
 use chainvet_core::util::error::{Error, Result};
-use chainvet_sa::meta;
 use chainvet_core::{cfg, ir};
+use chainvet_frontend::frontend::FrontendOutput;
+use chainvet_sa::analysis;
+use chainvet_sa::meta;
+use chainvet_sa::surfaced;
 
 /// Run the fuzzer on a parsed contract.
 pub fn run(output: &FrontendOutput, config: &FuzzConfig) -> FuzzReport {
@@ -1077,7 +1077,10 @@ fn function_source_lower(ast: &NormalizedAst, function_id: u32) -> Option<String
     )
 }
 
-fn ast_function_by_id(ast: &NormalizedAst, function_id: u32) -> Option<&chainvet_core::norm::Function> {
+fn ast_function_by_id(
+    ast: &NormalizedAst,
+    function_id: u32,
+) -> Option<&chainvet_core::norm::Function> {
     ast.functions
         .iter()
         .find(|function| function.id == function_id)
@@ -1152,8 +1155,12 @@ fn ir_function_has_ether_send(function: &ir::IrFunction) -> bool {
                 return false;
             };
             let callee_name = match callee {
-                chainvet_core::ir::IrValue::Var(chainvet_core::ir::IrVar::Named(name)) => name.to_ascii_lowercase(),
-                chainvet_core::ir::IrValue::Var(chainvet_core::ir::IrVar::Temp(id)) => format!("tmp_{id}"),
+                chainvet_core::ir::IrValue::Var(chainvet_core::ir::IrVar::Named(name)) => {
+                    name.to_ascii_lowercase()
+                }
+                chainvet_core::ir::IrValue::Var(chainvet_core::ir::IrVar::Temp(id)) => {
+                    format!("tmp_{id}")
+                }
                 chainvet_core::ir::IrValue::Literal(lit) => lit.value.to_ascii_lowercase(),
                 chainvet_core::ir::IrValue::Unknown => String::new(),
             };
@@ -1514,13 +1521,13 @@ mod tests {
         extract_function_id_from_message, inject_static_runtime_backstops,
         keep_locked_ether_finding,
     };
-    use chainvet_sa::analysis::detectors::{Finding, FindingKind, Severity};
     use crate::fuzzing::types::{FuzzFinding, FuzzFindingKind, FuzzSeverity};
     use chainvet_core::ir::{IrBlock, IrFunction, IrInstr, IrModule, IrValue, IrVar};
     use chainvet_core::norm::{
         Contract, ContractKind, Function, FunctionKind, Mutability, NormalizedAst, SourceFile,
         Span, StateVariable, Visibility,
     };
+    use chainvet_sa::analysis::detectors::{Finding, FindingKind, Severity};
 
     fn finding(kind: FuzzFindingKind, message: &str) -> FuzzFinding {
         FuzzFinding {
@@ -1597,15 +1604,21 @@ mod tests {
 
         let filtered = apply_static_fp_guards(findings, &tod_allowed, &sig_mall_allowed);
         assert_eq!(filtered.len(), 2);
-        assert!(filtered
-            .iter()
-            .any(|f| matches!(f.kind, FuzzFindingKind::TransactionOrderDependency)));
-        assert!(filtered
-            .iter()
-            .any(|f| matches!(f.kind, FuzzFindingKind::UncheckedCall)));
-        assert!(!filtered
-            .iter()
-            .any(|f| matches!(f.kind, FuzzFindingKind::SignatureMalleability)));
+        assert!(
+            filtered
+                .iter()
+                .any(|f| matches!(f.kind, FuzzFindingKind::TransactionOrderDependency))
+        );
+        assert!(
+            filtered
+                .iter()
+                .any(|f| matches!(f.kind, FuzzFindingKind::UncheckedCall))
+        );
+        assert!(
+            !filtered
+                .iter()
+                .any(|f| matches!(f.kind, FuzzFindingKind::SignatureMalleability))
+        );
     }
 
     #[test]
@@ -1802,12 +1815,16 @@ mod tests {
 
         let injected = inject_static_runtime_backstops(&[], &static_findings, &ast);
         assert!(injected.iter().any(|f| f.kind == FuzzFindingKind::WeakPRNG));
-        assert!(injected
-            .iter()
-            .any(|f| f.kind == FuzzFindingKind::LockedEther));
-        assert!(injected
-            .iter()
-            .any(|f| f.kind == FuzzFindingKind::UncheckedCall));
+        assert!(
+            injected
+                .iter()
+                .any(|f| f.kind == FuzzFindingKind::LockedEther)
+        );
+        assert!(
+            injected
+                .iter()
+                .any(|f| f.kind == FuzzFindingKind::UncheckedCall)
+        );
     }
 
     #[test]
@@ -1826,9 +1843,11 @@ mod tests {
         }];
 
         let injected = inject_static_runtime_backstops(&[], &static_findings, &ast);
-        assert!(injected
-            .iter()
-            .any(|f| f.kind == FuzzFindingKind::LockedEther));
+        assert!(
+            injected
+                .iter()
+                .any(|f| f.kind == FuzzFindingKind::LockedEther)
+        );
     }
 
     #[test]
@@ -1890,9 +1909,11 @@ mod tests {
         }];
 
         let injected = inject_static_runtime_backstops(&runtime_findings, &static_findings, &ast);
-        assert!(injected
-            .iter()
-            .any(|finding| finding.kind == FuzzFindingKind::DosBlockGasLimit));
+        assert!(
+            injected
+                .iter()
+                .any(|finding| finding.kind == FuzzFindingKind::DosBlockGasLimit)
+        );
     }
 
     #[test]
@@ -2004,9 +2025,11 @@ mod tests {
             finding.kind == FuzzFindingKind::TimestampDependency
                 && finding.message.contains("block.timestamp/now")
         }));
-        assert!(injected
-            .iter()
-            .any(|finding| finding.kind == FuzzFindingKind::WeakPRNG));
+        assert!(
+            injected
+                .iter()
+                .any(|finding| finding.kind == FuzzFindingKind::WeakPRNG)
+        );
     }
 
     #[test]

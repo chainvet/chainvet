@@ -38,7 +38,9 @@ fn render_text(result: &ScanResult) -> Result<()> {
         );
         println!(
             "symbolic: functions={}, findings={}, states={}",
-            h.summary.se_targeted_functions, h.summary.se_findings_total, h.symbolic_states_explored,
+            h.summary.se_targeted_functions,
+            h.summary.se_findings_total,
+            h.symbolic_states_explored,
         );
         println!(
             "fuzzing: seeds={}, corpus={}, coverage={}/{} ({:.1}%)",

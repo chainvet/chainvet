@@ -80,7 +80,12 @@ async fn scan(Json(req): Json<ScanRequest>) -> Result<Json<ScanResult>, (StatusC
         r
     })
     .await
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("scan task failed: {e}")))?
+    .map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("scan task failed: {e}"),
+        )
+    })?
     .map_err(|e| (StatusCode::UNPROCESSABLE_ENTITY, e.to_string()))?;
 
     Ok(Json(result))

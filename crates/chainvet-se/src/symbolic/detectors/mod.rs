@@ -20,14 +20,14 @@ use storage::StorageDetector;
 
 use std::collections::HashMap;
 
-use chainvet_sa::analysis::detectors::Severity;
-use chainvet_core::cfg::BlockId;
-use chainvet_core::ir::{IrInstr, IrPlace, IrValue, IrVar};
-use chainvet_core::norm::Span;
 use crate::symbolic::results::finding::{Confidence, SeFinding, SeVulnKind};
 use crate::symbolic::results::witness::Witness;
 use crate::symbolic::solver::SmtSolver;
 use crate::symbolic::state::{SymbolicState, ValueOrigin};
+use chainvet_core::cfg::BlockId;
+use chainvet_core::ir::{IrInstr, IrPlace, IrValue, IrVar};
+use chainvet_core::norm::Span;
+use chainvet_sa::analysis::detectors::Severity;
 
 /// Symbolic execution vulnerability detector.
 ///
@@ -309,12 +309,12 @@ pub(crate) fn value_has_origin(state: &SymbolicState, val: &IrValue, origin: Val
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chainvet_sa::analysis::detectors::Severity;
-    use chainvet_core::norm::Span;
     use crate::symbolic::results::finding::{Confidence, SeFinding, SeVulnKind};
     use crate::symbolic::solver::z3_backend::Z3Backend;
     use crate::symbolic::state::call_context::CallContext;
     use crate::symbolic::state::{StateIdGen, SymbolicState};
+    use chainvet_core::norm::Span;
+    use chainvet_sa::analysis::detectors::Severity;
 
     // --- Mock detector ---
 
@@ -353,7 +353,11 @@ mod tests {
                 severity: Severity::Medium,
                 confidence: Confidence::Low,
                 message: format!("mock finding from {}", self.id),
-                span: Span { file: 0, start: 0, end: 0 },
+                span: Span {
+                    file: 0,
+                    start: 0,
+                    end: 0,
+                },
                 function_id: None,
                 path_constraints: vec![],
                 witness: None,
@@ -389,7 +393,11 @@ mod tests {
     /// Build a minimal Nop IR instruction.
     fn nop_instr() -> chainvet_core::ir::IrInstr {
         chainvet_core::ir::IrInstr::Nop {
-            span: Span { file: 0, start: 0, end: 0 },
+            span: Span {
+                file: 0,
+                start: 0,
+                end: 0,
+            },
         }
     }
 
@@ -534,7 +542,8 @@ mod tests {
         // chain_contains_field with a Named("call") callee returns true for &["call"].
         let tracker = CalleeTracker::new();
         assert!(
-            tracker.chain_contains_field(&IrValue::Var(IrVar::Named("call".to_string())), &["call"]),
+            tracker
+                .chain_contains_field(&IrValue::Var(IrVar::Named("call".to_string())), &["call"]),
             "Named('call') should match &['call']"
         );
     }

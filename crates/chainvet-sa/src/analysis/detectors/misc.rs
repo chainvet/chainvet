@@ -237,8 +237,8 @@ fn detect_taint(ast: &NormalizedAst, summaries: &[TaintSummary]) -> Vec<Finding>
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chainvet_frontend::frontend::parser::load_via_parser_sources;
     use chainvet_core::norm::SourceFile;
+    use chainvet_frontend::frontend::parser::load_via_parser_sources;
 
     fn parse(source: &str) -> NormalizedAst {
         load_via_parser_sources(vec![SourceFile {

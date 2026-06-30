@@ -1,76 +1,117 @@
-# Solidity Multi-Modal Analysis Platform (Static / Symbolic / Fuzzing)
+# ChainVet
 
-This project is a modular analysis platform for Solidity smart contracts, built on a shared foundation of **Frontend (M1/M2)** and **Analysis Model (M3)**. It supports three distinct analysis approaches:
+A hybrid security analyzer for Solidity smart contracts. ChainVet combines three
+engines over a shared frontend and IR — **static analysis** (45+ detectors),
+**symbolic execution** (Z3), and **coverage-guided fuzzing** — and a **hybrid**
+mode that runs them as one feedback loop: static analysis steers symbolic
+execution, whose concrete witnesses seed the fuzzer, whose coverage stalls
+trigger further symbolic assists. Findings are merged, deduplicated, and tagged
+with a confidence tier (**confirmed** by dynamic/symbolic evidence vs **candidate**
+from static heuristics only).
 
-1.  **Static Analysis** (Implemented in `src/analysis`)
-2.  **Symbolic Execution** (Skeleton in `src/symbolic`)
-3.  **Fuzzing** (Skeleton in `src/fuzzing`)
+## Workspace
 
-## Architecture Overview
+ChainVet is a Cargo workspace. The engines are pure libraries (no I/O); one
+orchestration crate exposes a typed `scan()` facade; thin frontends render it.
 
-All engines operate on a unified Intermediate Representation (IR), Control Flow Graph (CFG), and Static Single Assignment (SSA) form.
-
-1.  **M1 (Primary Frontend):** Uses `solc` to compile and produce a rich AST.
-2.  **M2 (Fallback Frontend):** Uses `tree-sitter` for error-tolerant parsing when compilation fails.
-3.  **M3 (IR/CFG/SSA):** Lowers the AST into a SlithIR-style IR, builds CFGs, and computes SSA.
-
-For deep technical details on M1-M3, see **[M1_M2_M3_DETAILS.md](./M1_M2_M3_DETAILS.md)**.
-For usage examples and integrating new engines, see **[M1_M2_M3_USAGE.md](./M1_M2_M3_USAGE.md)**.
-
-## Project Structure
-
-```bash
-src/
-├── analysis/           # Static Analysis Engine (Taint, Call Graph, Detectors)
-│   ├── detectors/      # Security detectors (e.g., tx.origin, reentrancy)
-│   └── ...
-├── symbolic/           # Symbolic Execution Engine (Start implementation here!)
-├── fuzzing/            # Fuzzing Engine (Start implementation here!)
-├── frontend/           # M1/M2 Frontends (solc + parser)
-├── ir/                 # M3 Intermediate Representation definition & lowering
-├── cfg/                # M3 Control Flow Graph construction
-├── ssa/                # M3 SSA construction
-└── main.rs             # CLI Entry point
+```
+crates/
+  chainvet-core          shared types: normalized AST, IR, CFG, SSA, findings
+  chainvet-frontend      load Solidity: solc → tree-sitter → optional AI fallback
+  chainvet-ai            local-LLM (Ollama) transport, shared by frontend + reports
+  chainvet-sa            static analysis: call graph, taint, detectors
+  chainvet-se            symbolic execution (Z3)
+  chainvet-fuzzing       coverage-guided greybox fuzzer
+  chainvet-hybrid        the hybrid control loop
+  chainvet-orchestrator  scan(config) -> ScanResult (merge/dedup/tier + AI review)
+  chainvet-cli           binary: chainvet
+  chainvet-ci            binary: chainvet-ci  (SARIF + fail-on-severity)
+  chainvet-server        binary: chainvet-server (REST API)
+  chainvet-lsp           binary: chainvet-lsp (language server)
 ```
 
-## Getting Started
+Integrations live in their own repositories: **chainvet-vscode** (VS Code
+extension → LSP), **chainvet-web** (web UI → server), **chainvet-action**
+(GitHub Action → CI).
 
-### Prerequisites
-- Rust (latest stable)
-- `solc` (managed automatically, but having it installed helps)
+## Install
 
-### Build & Run
+Requires a Rust toolchain and the **Z3** system library.
 
 ```bash
-# Build the project
-cargo build
-
-# Run Static Analysis (default)
-cargo run -- <path-to-solidity-file-or-project>
-
-# Run with JSON output
-cargo run -- <path> --json
-
-# Dump IR for debugging
-cargo run -- <path> --dump-ir text
-cargo run -- <path> --dump-ir tuple
+# Debian/Ubuntu: sudo apt-get install libz3-dev
+# macOS:         brew install z3
+git clone https://github.com/chainvet/chainvet
+cd chainvet
+cargo build --release
 ```
 
-## Contributor Guide
+Binaries land in `target/release/`: `chainvet`, `chainvet-ci`, `chainvet-server`,
+`chainvet-lsp`.
 
-### Static Analysis Team
-- Detectors are located in `src/analysis/detectors/`.
-- Core analysis logic (taint, summaries) is in `src/analysis/`.
+## Usage
 
-### Symbolic Execution Team
-- Your workspace is **`src/symbolic/`**.
-- Refer to **Example B** in `M1_M2_M3_USAGE.md` for how to consume the IR/CFG/SSA.
-- Goal: Implement an interpreter that executes IR instructions over symbolic values.
+### CLI
 
-### Fuzzing Team
-- Your workspace is **`src/fuzzing/`**.
-- Refer to **Example C** in `M1_M2_M3_USAGE.md`.
-- Goal: Use CFG and Call Graph to generate harnesses and guide fuzzer inputs.
+```bash
+chainvet <path.sol>                 # static analysis (default)
+chainvet --hybrid <path.sol>        # full hybrid analysis
+chainvet --symbolic <path.sol>      # symbolic execution
+chainvet --fuzzing <path.sol>       # fuzzing
+chainvet --hybrid <path.sol> --json # machine-readable output
+chainvet <path.sol> --dump-ir text  # inspect the IR (text|json|tuple)
+```
+
+Hybrid budget overrides (epochs, time caps, SE depth, fuzz iters, seed) are
+available as flags — run `chainvet --help`.
+
+### CI (SARIF)
+
+```bash
+chainvet-ci contracts/ --mode hybrid --fail-on high --sarif chainvet.sarif
+```
+
+Emits a SARIF 2.1.0 report and exits non-zero when a finding meets `--fail-on`
+(`high`/`medium`/`low`/`none`). See **chainvet-action** for a ready-made GitHub
+workflow that uploads the SARIF to code scanning.
+
+### Server (REST)
+
+```bash
+CHAINVET_SERVER_ROOT=./contracts chainvet-server   # listens on 127.0.0.1:8080
+```
+
+`GET /health`, `POST /scan {source, mode}` → `ScanResult`, plus a project API
+(`/api/files`, `/api/file`, `/api/analyze` + status/cancel) consumed by
+**chainvet-web**.
+
+### Editor (LSP)
+
+`chainvet-lsp` is a stdio language server that publishes findings as diagnostics.
+Point any LSP client at it (the **chainvet-vscode** extension does this for you).
+
+## Optional AI features
+
+Both are **opt-in** and call a local [Ollama](https://ollama.com) server — with
+them off (the default), ChainVet runs fully offline and deterministically.
+
+| Env var | Effect |
+|---|---|
+| `CHAINVET_AI_FALLBACK_PARSER=1` | AI-assisted parsing when solc and tree-sitter both fail |
+| `CHAINVET_AI_REPORT=1` | LLM review of findings: drop false positives, annotate the rest |
+| `CHAINVET_AI_ENDPOINT`, `CHAINVET_AI_MODEL` | Ollama endpoint/model (default `http://127.0.0.1:11434`, `qwen2.5-coder:7b`) |
+
+## Development
+
+```bash
+cargo build              # build the workspace
+cargo test               # run tests
+cargo clippy -- -D warnings
+cargo fmt
+```
+
+See [CONTRIBUTING.md](./CONTRIBUTING.md) and [CLAUDE.md](./CLAUDE.md).
 
 ## License
-[Add License Here]
+
+MIT — see [LICENSE](./LICENSE).

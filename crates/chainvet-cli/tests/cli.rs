@@ -7,7 +7,10 @@
 use std::process::Command;
 
 const SE_TEST: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/se_test.sol");
-const REENTRANCY: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/vuln_reentrancy.sol");
+const REENTRANCY: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/tests/fixtures/vuln_reentrancy.sol"
+);
 
 /// Run the analysis binary with the given arguments and return the output.
 fn run(args: &[&str]) -> std::process::Output {

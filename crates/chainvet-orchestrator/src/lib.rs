@@ -12,10 +12,10 @@ use chainvet_core::cfg;
 use chainvet_core::ir;
 use chainvet_core::util::error::Result;
 use chainvet_frontend::frontend::{self, FrontendOutput};
-use chainvet_sa::analysis;
-use chainvet_se::symbolic::{self, SymbolicOptions};
 use chainvet_fuzzing::fuzzing::{self, types::FuzzConfig};
 use chainvet_hybrid::hybrid::{self, HybridFindingRow, HybridJsonReport};
+use chainvet_sa::analysis;
+use chainvet_se::symbolic::{self, SymbolicOptions};
 
 pub use chainvet_hybrid::hybrid::{HybridBudget, HybridFindingRow as ScanFinding};
 

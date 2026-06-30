@@ -1,10 +1,10 @@
-use chainvet_sa::analysis::detectors::Severity;
-use chainvet_core::cfg::BlockId;
-use chainvet_core::ir::IrInstr;
-use crate::symbolic::detectors::{make_finding, place_matches, Detector};
+use crate::symbolic::detectors::{Detector, make_finding, place_matches};
 use crate::symbolic::results::finding::{Confidence, SeFinding, SeVulnKind};
 use crate::symbolic::solver::SmtSolver;
 use crate::symbolic::state::SymbolicState;
+use chainvet_core::cfg::BlockId;
+use chainvet_core::ir::IrInstr;
+use chainvet_sa::analysis::detectors::Severity;
 
 /// Detects storage and memory vulnerabilities.
 ///
@@ -94,15 +94,19 @@ impl Detector for StorageDetector {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chainvet_core::ir::{IrInstr, IrPlace, IrVar, PlaceClass};
-    use chainvet_core::norm::Span;
     use crate::symbolic::results::finding::SeVulnKind;
     use crate::symbolic::solver::z3_backend::Z3Backend;
     use crate::symbolic::state::call_context::CallContext;
     use crate::symbolic::state::{StateIdGen, SymbolicState};
+    use chainvet_core::ir::{IrInstr, IrPlace, IrVar, PlaceClass};
+    use chainvet_core::norm::Span;
 
     fn span() -> Span {
-        Span { file: 0, start: 0, end: 0 }
+        Span {
+            file: 0,
+            start: 0,
+            end: 0,
+        }
     }
 
     fn make_state_and_solver() -> (SymbolicState, Z3Backend) {
@@ -146,7 +150,10 @@ mod tests {
         state.path_depth = 0;
         let mut det = StorageDetector;
         let findings = det.on_instruction(&state, &msg_value_load_instr(), &solver);
-        assert!(findings.is_empty(), "msg.value at depth=0 should not trigger MsgValueInLoop");
+        assert!(
+            findings.is_empty(),
+            "msg.value at depth=0 should not trigger MsgValueInLoop"
+        );
     }
 
     #[test]
@@ -156,7 +163,11 @@ mod tests {
         state.path_depth = 1;
         let mut det = StorageDetector;
         let findings = det.on_instruction(&state, &msg_value_load_instr(), &solver);
-        assert_eq!(findings.len(), 1, "msg.value inside loop should emit MsgValueInLoop");
+        assert_eq!(
+            findings.len(),
+            1,
+            "msg.value inside loop should emit MsgValueInLoop"
+        );
         assert_eq!(findings[0].kind, SeVulnKind::MsgValueInLoop);
     }
 
@@ -167,7 +178,9 @@ mod tests {
         let mut det = StorageDetector;
         let findings = det.on_instruction(&state, &inline_asm_instr(), &solver);
         assert!(
-            findings.iter().any(|f| f.kind == SeVulnKind::UnsafeAssembly),
+            findings
+                .iter()
+                .any(|f| f.kind == SeVulnKind::UnsafeAssembly),
             "inline assembly should emit UnsafeAssembly"
         );
     }
@@ -179,7 +192,9 @@ mod tests {
         let mut det = StorageDetector;
         let findings = det.on_instruction(&state, &inline_asm_instr(), &solver);
         assert!(
-            findings.iter().any(|f| f.kind == SeVulnKind::ArbitraryFunctionJump),
+            findings
+                .iter()
+                .any(|f| f.kind == SeVulnKind::ArbitraryFunctionJump),
             "inline assembly should emit ArbitraryFunctionJump"
         );
     }
@@ -190,7 +205,11 @@ mod tests {
         let (state, solver) = make_state_and_solver();
         let mut det = StorageDetector;
         let findings = det.on_instruction(&state, &inline_asm_instr(), &solver);
-        assert_eq!(findings.len(), 2, "InlineAsm should produce exactly two findings");
+        assert_eq!(
+            findings.len(),
+            2,
+            "InlineAsm should produce exactly two findings"
+        );
     }
 
     #[test]
@@ -255,4 +274,3 @@ mod tests {
         );
     }
 }
-

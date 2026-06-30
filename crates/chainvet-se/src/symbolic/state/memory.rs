@@ -1,8 +1,8 @@
-use z3::ast::{Array, BV};
 use z3::Sort;
+use z3::ast::{Array, BV};
 
-use crate::symbolic::types::symbolic_array;
 use crate::symbolic::types::SymbolicValue;
+use crate::symbolic::types::symbolic_array;
 use chainvet_core::util::error::Result;
 
 /// Word-addressed symbolic memory: `Array<BV256, BV256>`.
@@ -68,7 +68,11 @@ mod tests {
         let solver = Solver::new_for_logic("QF_ABV").unwrap();
         // Assert that the read value is NOT zero; if unsatisfiable, then it must be zero.
         solver.assert(&bv.eq(&zero).not());
-        assert_eq!(solver.check(), SatResult::Unsat, "uninitialized memory should read as zero");
+        assert_eq!(
+            solver.check(),
+            SatResult::Unsat,
+            "uninitialized memory should read as zero"
+        );
     }
 
     #[test]
@@ -85,7 +89,11 @@ mod tests {
         let solver = Solver::new_for_logic("QF_ABV").unwrap();
         // Assert that the read value differs from the written value; should be unsat.
         solver.assert(&bv.eq(&written).not());
-        assert_eq!(solver.check(), SatResult::Unsat, "read after write to same address should return written value");
+        assert_eq!(
+            solver.check(),
+            SatResult::Unsat,
+            "read after write to same address should return written value"
+        );
     }
 
     #[test]
@@ -105,7 +113,11 @@ mod tests {
         let zero = BV::from_u64(0, WORD_WIDTH);
         let solver = Solver::new_for_logic("QF_ABV").unwrap();
         solver.assert(&bv_b.eq(&zero).not());
-        assert_eq!(solver.check(), SatResult::Unsat, "unwritten address should still be zero");
+        assert_eq!(
+            solver.check(),
+            SatResult::Unsat,
+            "unwritten address should still be zero"
+        );
     }
 
     #[test]
@@ -124,7 +136,11 @@ mod tests {
 
         let solver = Solver::new_for_logic("QF_ABV").unwrap();
         solver.assert(&bv.eq(&second).not());
-        assert_eq!(solver.check(), SatResult::Unsat, "second write should overwrite the first");
+        assert_eq!(
+            solver.check(),
+            SatResult::Unsat,
+            "second write should overwrite the first"
+        );
     }
 
     #[test]
@@ -141,7 +157,11 @@ mod tests {
 
         let solver = Solver::new_for_logic("QF_ABV").unwrap();
         solver.assert(&bv.eq(&val).not());
-        assert_eq!(solver.check(), SatResult::Unsat, "symbolic addr write-read roundtrip should match");
+        assert_eq!(
+            solver.check(),
+            SatResult::Unsat,
+            "symbolic addr write-read roundtrip should match"
+        );
     }
 
     #[test]

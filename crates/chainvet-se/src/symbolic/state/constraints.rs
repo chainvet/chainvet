@@ -120,7 +120,11 @@ mod tests {
         original.add(Bool::from_bool(false), "after clone".into());
 
         assert_eq!(original.len(), 2);
-        assert_eq!(cloned.len(), 1, "clone should not see additions to original");
+        assert_eq!(
+            cloned.len(),
+            1,
+            "clone should not see additions to original"
+        );
     }
 
     #[test]

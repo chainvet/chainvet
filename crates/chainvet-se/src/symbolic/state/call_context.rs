@@ -67,12 +67,30 @@ impl CallContext {
         let max_u64 = BV::from_u64(u64::MAX, 256);
 
         vec![
-            (self.msg_sender.eq(&zero_160).not(), "msg.sender is non-zero address".into()),
-            (self.tx_origin.eq(&zero_160).not(), "tx.origin is non-zero address".into()),
-            (self.block_timestamp.bvugt(&zero_256), "block.timestamp is positive".into()),
-            (self.block_timestamp.bvule(&max_u64), "block.timestamp fits in u64".into()),
-            (self.block_number.bvugt(&zero_256), "block.number is positive".into()),
-            (self.block_number.bvule(&max_u64), "block.number fits in u64".into()),
+            (
+                self.msg_sender.eq(&zero_160).not(),
+                "msg.sender is non-zero address".into(),
+            ),
+            (
+                self.tx_origin.eq(&zero_160).not(),
+                "tx.origin is non-zero address".into(),
+            ),
+            (
+                self.block_timestamp.bvugt(&zero_256),
+                "block.timestamp is positive".into(),
+            ),
+            (
+                self.block_timestamp.bvule(&max_u64),
+                "block.timestamp fits in u64".into(),
+            ),
+            (
+                self.block_number.bvugt(&zero_256),
+                "block.number is positive".into(),
+            ),
+            (
+                self.block_number.bvule(&max_u64),
+                "block.number fits in u64".into(),
+            ),
         ]
     }
 }
@@ -150,7 +168,11 @@ mod tests {
         for (c, _desc) in &constraints {
             solver.assert(c);
         }
-        assert_eq!(solver.check(), SatResult::Sat, "initial constraints should be satisfiable");
+        assert_eq!(
+            solver.check(),
+            SatResult::Sat,
+            "initial constraints should be satisfiable"
+        );
     }
 
     #[test]
@@ -163,7 +185,11 @@ mod tests {
         }
         let zero_160 = BV::from_u64(0, 160);
         solver.assert(&ctx.msg_sender.eq(&zero_160));
-        assert_eq!(solver.check(), SatResult::Unsat, "msg_sender == 0 should be unsat with initial constraints");
+        assert_eq!(
+            solver.check(),
+            SatResult::Unsat,
+            "msg_sender == 0 should be unsat with initial constraints"
+        );
     }
 
     #[test]
@@ -176,7 +202,11 @@ mod tests {
             solver.assert(c);
         }
         solver.assert(&ctx.tx_origin.eq(&ctx.msg_sender).not());
-        assert_eq!(solver.check(), SatResult::Sat, "tx_origin and msg_sender should be independent");
+        assert_eq!(
+            solver.check(),
+            SatResult::Sat,
+            "tx_origin and msg_sender should be independent"
+        );
     }
 
     #[test]
@@ -184,7 +214,10 @@ mod tests {
         // Each constraint should have a non-empty human-readable description.
         let (_ctx, constraints) = CallContext::new_symbolic();
         for (_c, desc) in &constraints {
-            assert!(!desc.is_empty(), "constraint description should not be empty");
+            assert!(
+                !desc.is_empty(),
+                "constraint description should not be empty"
+            );
         }
     }
 }

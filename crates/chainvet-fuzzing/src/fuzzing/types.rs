@@ -1,9 +1,9 @@
 use std::collections::{HashMap, HashSet};
 
 use chainvet_core::artifacts::Finding;
-use chainvet_frontend::frontend::{self, CompilerInfo};
 use chainvet_core::ir::{IrInstr, IrModule, IrPlace, IrValue, IrVar, PlaceClass};
 use chainvet_core::norm::{FunctionKind, Mutability, NormalizedAst, Span, Visibility};
+use chainvet_frontend::frontend::{self, CompilerInfo};
 use serde::Serialize;
 
 // ---------------------------------------------------------------------------

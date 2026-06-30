@@ -13,10 +13,19 @@ use z3::ast::{Array, BV, Bool};
 /// mappings/storage to `SymArray`, and dynamic bytes/strings to `SymBytes`.
 #[derive(Debug, Clone)]
 pub enum SymbolicValue {
-    BitVec { width: u32, val: BV },
-    Bool { val: Bool },
+    BitVec {
+        width: u32,
+        val: BV,
+    },
+    Bool {
+        val: Bool,
+    },
     #[allow(dead_code)] // Phase 6: mapping/array storage type
-    SymArray { key_width: u32, val_width: u32, val: Array },
+    SymArray {
+        key_width: u32,
+        val_width: u32,
+        val: Array,
+    },
     #[allow(dead_code)] // Phase 6: dynamic bytes/string type
     SymBytes {
         #[allow(dead_code)]
@@ -65,12 +74,8 @@ impl SymbolicValue {
             SymbolicValue::Bool { val } => {
                 Ok(val.ite(&BV::from_u64(1, width), &BV::from_u64(0, width)))
             }
-            SymbolicValue::SymArray { .. } => {
-                Err(Error::msg("cannot coerce SymArray to BV"))
-            }
-            SymbolicValue::SymBytes { .. } => {
-                Err(Error::msg("cannot coerce SymBytes to BV"))
-            }
+            SymbolicValue::SymArray { .. } => Err(Error::msg("cannot coerce SymArray to BV")),
+            SymbolicValue::SymBytes { .. } => Err(Error::msg("cannot coerce SymBytes to BV")),
         }
     }
 
@@ -79,15 +84,9 @@ impl SymbolicValue {
     pub fn to_bool(&self) -> Result<Bool> {
         match self {
             SymbolicValue::Bool { val } => Ok(val.clone()),
-            SymbolicValue::BitVec { val, width } => {
-                Ok(val.eq(BV::from_u64(0, *width)).not())
-            }
-            SymbolicValue::SymArray { .. } => {
-                Err(Error::msg("cannot coerce SymArray to Bool"))
-            }
-            SymbolicValue::SymBytes { .. } => {
-                Err(Error::msg("cannot coerce SymBytes to Bool"))
-            }
+            SymbolicValue::BitVec { val, width } => Ok(val.eq(BV::from_u64(0, *width)).not()),
+            SymbolicValue::SymArray { .. } => Err(Error::msg("cannot coerce SymArray to Bool")),
+            SymbolicValue::SymBytes { .. } => Err(Error::msg("cannot coerce SymBytes to Bool")),
         }
     }
 

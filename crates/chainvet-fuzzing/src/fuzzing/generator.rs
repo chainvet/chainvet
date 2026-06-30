@@ -338,7 +338,11 @@ pub fn generate_initial_population_with_dict(
         .collect();
     let target_population_size = config.population_size.max(callable_functions.len());
     let mut population = Vec::with_capacity(target_population_size);
-    let abi_function_ids = abi.functions.iter().map(|func| func.id).collect::<std::collections::HashSet<_>>();
+    let abi_function_ids = abi
+        .functions
+        .iter()
+        .map(|func| func.id)
+        .collect::<std::collections::HashSet<_>>();
 
     for seed in &config.seed_corpus {
         if seed.transactions.is_empty() {

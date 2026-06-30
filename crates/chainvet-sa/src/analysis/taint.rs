@@ -3,7 +3,9 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use crate::analysis::{ResolvedCallGraph, ResolvedTarget};
 use chainvet_core::cfg::{Block, CfgFunction};
 use chainvet_core::ir::{IrCallOption, IrInstr, IrPlace, IrValue, IrVar};
-use chainvet_core::norm::{CallOption, ExprKind, Function, NormalizedAst, Span, StmtKind, Visibility};
+use chainvet_core::norm::{
+    CallOption, ExprKind, Function, NormalizedAst, Span, StmtKind, Visibility,
+};
 
 #[derive(Debug, Clone)]
 pub struct TaintSummary {

@@ -1,6 +1,8 @@
 use chainvet_core::artifacts::{Seed, TxEnv, TxSeed};
-use chainvet_fuzzing::fuzzing::types::{ContractAbi, Environment, FuzzValue, Individual, Transaction};
 use chainvet_core::norm::NormalizedAst;
+use chainvet_fuzzing::fuzzing::types::{
+    ContractAbi, Environment, FuzzValue, Individual, Transaction,
+};
 use chainvet_se::symbolic::results::{SeFinding, Witness};
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -53,7 +55,9 @@ fn to_seed(
         })
         .collect::<Vec<_>>();
     let sender = witness.map(address_index_from_witness).unwrap_or(1);
-    let value = witness.map(|witness| u128_from_be_bytes(&witness.msg_value)).unwrap_or(0);
+    let value = witness
+        .map(|witness| u128_from_be_bytes(&witness.msg_value))
+        .unwrap_or(0);
     let environment = Environment {
         block_timestamp: witness
             .map(|witness| witness.block_timestamp as u128)
@@ -160,9 +164,9 @@ fn infer_function_id(ast: &NormalizedAst, finding: &SeFinding) -> Option<u32> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chainvet_sa::analysis::detectors::Severity;
-    use chainvet_fuzzing::fuzzing::types::{FunctionAbi, ParamInfo};
     use chainvet_core::norm::{FunctionKind, Mutability, Span, Visibility};
+    use chainvet_fuzzing::fuzzing::types::{FunctionAbi, ParamInfo};
+    use chainvet_sa::analysis::detectors::Severity;
     use chainvet_se::symbolic::results::finding::{Confidence, SeFinding, SeVulnKind};
 
     fn sample_ast() -> NormalizedAst {
@@ -182,7 +186,11 @@ mod tests {
             returns: Vec::new(),
             modifiers: Vec::new(),
             body: None,
-            span: Span { file: 0, start: 0, end: 100 },
+            span: Span {
+                file: 0,
+                start: 0,
+                end: 100,
+            },
         });
         ast
     }
@@ -223,7 +231,11 @@ mod tests {
             severity: Severity::High,
             confidence: Confidence::High,
             message: "seed me".to_string(),
-            span: Span { file: 0, start: 0, end: 0 },
+            span: Span {
+                file: 0,
+                start: 0,
+                end: 0,
+            },
             function_id: Some(7),
             path_constraints: vec!["balance > 0".to_string()],
             witness: Some(sample_witness()),

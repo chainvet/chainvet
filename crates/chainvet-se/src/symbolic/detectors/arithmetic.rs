@@ -1,17 +1,17 @@
-use z3::ast::{BV, Bool};
 use z3::SatResult;
+use z3::ast::{BV, Bool};
 
-use chainvet_sa::analysis::detectors::Severity;
-use crate::symbolic::solver::optimization::is_trivially_false;
-use chainvet_core::cfg::BlockId;
-use chainvet_core::ir::{IrInstr, IrPlace, IrValue, IrVar};
-use chainvet_core::norm::Span;
-use crate::symbolic::detectors::{make_finding, Detector};
+use crate::symbolic::detectors::{Detector, make_finding};
 use crate::symbolic::results::finding::{Confidence, SeFinding, SeVulnKind};
 use crate::symbolic::results::witness::Witness;
 use crate::symbolic::solver::SmtSolver;
+use crate::symbolic::solver::optimization::is_trivially_false;
 use crate::symbolic::state::SymbolicState;
 use crate::symbolic::types::literal_to_symbolic;
+use chainvet_core::cfg::BlockId;
+use chainvet_core::ir::{IrInstr, IrPlace, IrValue, IrVar};
+use chainvet_core::norm::Span;
+use chainvet_sa::analysis::detectors::Severity;
 
 /// Detects arithmetic vulnerabilities: integer overflow/underflow,
 /// division before multiplication, and unsafe array length assignment.
@@ -154,8 +154,7 @@ impl ArithmeticDetector {
             return vec![f];
         }
 
-        let (Some(lhs_bv), Some(rhs_bv)) = (eval_to_bv(state, lhs), eval_to_bv(state, rhs))
-        else {
+        let (Some(lhs_bv), Some(rhs_bv)) = (eval_to_bv(state, lhs), eval_to_bv(state, rhs)) else {
             return vec![];
         };
         let lhs_512 = lhs_bv.zero_ext(256);
@@ -182,8 +181,7 @@ impl ArithmeticDetector {
         rhs: &IrValue,
         span: &Span,
     ) -> Vec<SeFinding> {
-        let (Some(lhs_bv), Some(rhs_bv)) = (eval_to_bv(state, lhs), eval_to_bv(state, rhs))
-        else {
+        let (Some(lhs_bv), Some(rhs_bv)) = (eval_to_bv(state, lhs), eval_to_bv(state, rhs)) else {
             return vec![];
         };
         let result_bv = lhs_bv.bvadd(&rhs_bv);
@@ -207,8 +205,7 @@ impl ArithmeticDetector {
         rhs: &IrValue,
         span: &Span,
     ) -> Vec<SeFinding> {
-        let (Some(lhs_bv), Some(rhs_bv)) = (eval_to_bv(state, lhs), eval_to_bv(state, rhs))
-        else {
+        let (Some(lhs_bv), Some(rhs_bv)) = (eval_to_bv(state, lhs), eval_to_bv(state, rhs)) else {
             return vec![];
         };
         let underflow_cond = lhs_bv.bvult(&rhs_bv);
@@ -253,17 +250,21 @@ impl ArithmeticDetector {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chainvet_core::ir::{IrInstr, IrPlace, IrValue, IrVar, PlaceClass};
-    use chainvet_core::norm::{Span};
     use crate::symbolic::results::finding::SeVulnKind;
     use crate::symbolic::solver::z3_backend::Z3Backend;
     use crate::symbolic::state::call_context::CallContext;
     use crate::symbolic::state::{StateIdGen, SymbolicState};
     use crate::symbolic::types::SymbolicValue;
+    use chainvet_core::ir::{IrInstr, IrPlace, IrValue, IrVar, PlaceClass};
+    use chainvet_core::norm::Span;
     use z3::ast::BV;
 
     fn span() -> Span {
-        Span { file: 0, start: 0, end: 0 }
+        Span {
+            file: 0,
+            start: 0,
+            end: 0,
+        }
     }
 
     fn make_state_and_solver() -> (SymbolicState, Z3Backend) {
@@ -302,11 +303,17 @@ mod tests {
         let (mut state, solver) = make_state_and_solver();
         state.variables.set(
             IrVar::Named("a".to_string()),
-            SymbolicValue::BitVec { width: 256, val: BV::new_const("a", 256) },
+            SymbolicValue::BitVec {
+                width: 256,
+                val: BV::new_const("a", 256),
+            },
         );
         state.variables.set(
             IrVar::Named("b".to_string()),
-            SymbolicValue::BitVec { width: 256, val: BV::new_const("b", 256) },
+            SymbolicValue::BitVec {
+                width: 256,
+                val: BV::new_const("b", 256),
+            },
         );
         let instr = binary_instr(
             "+",
@@ -316,7 +323,11 @@ mod tests {
         );
         let mut det = ArithmeticDetector::new();
         let findings = det.on_instruction(&state, &instr, &solver);
-        assert_eq!(findings.len(), 1, "symbolic add should emit overflow finding");
+        assert_eq!(
+            findings.len(),
+            1,
+            "symbolic add should emit overflow finding"
+        );
         assert_eq!(findings[0].kind, SeVulnKind::IntegerOverflow);
     }
 
@@ -326,11 +337,17 @@ mod tests {
         let (mut state, solver) = make_state_and_solver();
         state.variables.set(
             IrVar::Named("a".to_string()),
-            SymbolicValue::BitVec { width: 256, val: BV::from_u64(0, 256) },
+            SymbolicValue::BitVec {
+                width: 256,
+                val: BV::from_u64(0, 256),
+            },
         );
         state.variables.set(
             IrVar::Named("b".to_string()),
-            SymbolicValue::BitVec { width: 256, val: BV::from_u64(0, 256) },
+            SymbolicValue::BitVec {
+                width: 256,
+                val: BV::from_u64(0, 256),
+            },
         );
         let instr = binary_instr(
             "+",
@@ -349,11 +366,17 @@ mod tests {
         let (mut state, solver) = make_state_and_solver();
         state.variables.set(
             IrVar::Named("a".to_string()),
-            SymbolicValue::BitVec { width: 256, val: BV::new_const("a_sub", 256) },
+            SymbolicValue::BitVec {
+                width: 256,
+                val: BV::new_const("a_sub", 256),
+            },
         );
         state.variables.set(
             IrVar::Named("b".to_string()),
-            SymbolicValue::BitVec { width: 256, val: BV::new_const("b_sub", 256) },
+            SymbolicValue::BitVec {
+                width: 256,
+                val: BV::new_const("b_sub", 256),
+            },
         );
         let instr = binary_instr(
             "-",
@@ -363,7 +386,11 @@ mod tests {
         );
         let mut det = ArithmeticDetector::new();
         let findings = det.on_instruction(&state, &instr, &solver);
-        assert_eq!(findings.len(), 1, "symbolic sub should emit underflow finding");
+        assert_eq!(
+            findings.len(),
+            1,
+            "symbolic sub should emit underflow finding"
+        );
         assert_eq!(findings[0].kind, SeVulnKind::IntegerUnderflow);
     }
 
@@ -373,11 +400,17 @@ mod tests {
         let (mut state, solver) = make_state_and_solver();
         state.variables.set(
             IrVar::Named("a".to_string()),
-            SymbolicValue::BitVec { width: 256, val: BV::new_const("a_mul", 256) },
+            SymbolicValue::BitVec {
+                width: 256,
+                val: BV::new_const("a_mul", 256),
+            },
         );
         state.variables.set(
             IrVar::Named("b".to_string()),
-            SymbolicValue::BitVec { width: 256, val: BV::new_const("b_mul", 256) },
+            SymbolicValue::BitVec {
+                width: 256,
+                val: BV::new_const("b_mul", 256),
+            },
         );
         let instr = binary_instr(
             "*",
@@ -387,7 +420,11 @@ mod tests {
         );
         let mut det = ArithmeticDetector::new();
         let findings = det.on_instruction(&state, &instr, &solver);
-        assert_eq!(findings.len(), 1, "symbolic mul should emit overflow finding");
+        assert_eq!(
+            findings.len(),
+            1,
+            "symbolic mul should emit overflow finding"
+        );
         assert_eq!(findings[0].kind, SeVulnKind::IntegerOverflow);
     }
 
@@ -397,11 +434,17 @@ mod tests {
         let (mut state, solver) = make_state_and_solver();
         state.variables.set(
             IrVar::Named("x".to_string()),
-            SymbolicValue::BitVec { width: 256, val: BV::new_const("x_dbm", 256) },
+            SymbolicValue::BitVec {
+                width: 256,
+                val: BV::new_const("x_dbm", 256),
+            },
         );
         state.variables.set(
             IrVar::Named("y".to_string()),
-            SymbolicValue::BitVec { width: 256, val: BV::new_const("y_dbm", 256) },
+            SymbolicValue::BitVec {
+                width: 256,
+                val: BV::new_const("y_dbm", 256),
+            },
         );
         let div_instr = binary_instr(
             "/",
@@ -412,7 +455,7 @@ mod tests {
         let mul_instr = binary_instr(
             "*",
             IrVar::Temp(2),
-            IrValue::Var(IrVar::Temp(1)),   // uses division result
+            IrValue::Var(IrVar::Temp(1)), // uses division result
             IrValue::Var(IrVar::Named("y".to_string())),
         );
         let mut det = ArithmeticDetector::new();
@@ -420,7 +463,9 @@ mod tests {
         let findings = det.on_instruction(&state, &mul_instr, &solver);
         // The DivisionBeforeMultiplication finding should be present.
         assert!(
-            findings.iter().any(|f| f.kind == SeVulnKind::DivisionBeforeMultiplication),
+            findings
+                .iter()
+                .any(|f| f.kind == SeVulnKind::DivisionBeforeMultiplication),
             "div before mul should emit DivisionBeforeMultiplication"
         );
     }
@@ -431,11 +476,17 @@ mod tests {
         let (mut state, solver) = make_state_and_solver();
         state.variables.set(
             IrVar::Named("x".to_string()),
-            SymbolicValue::BitVec { width: 256, val: BV::new_const("x_div", 256) },
+            SymbolicValue::BitVec {
+                width: 256,
+                val: BV::new_const("x_div", 256),
+            },
         );
         state.variables.set(
             IrVar::Named("y".to_string()),
-            SymbolicValue::BitVec { width: 256, val: BV::new_const("y_div", 256) },
+            SymbolicValue::BitVec {
+                width: 256,
+                val: BV::new_const("y_div", 256),
+            },
         );
         let instr = binary_instr(
             "/",
@@ -445,7 +496,10 @@ mod tests {
         );
         let mut det = ArithmeticDetector::new();
         let findings = det.on_instruction(&state, &instr, &solver);
-        assert!(findings.is_empty(), "division alone should not emit a finding");
+        assert!(
+            findings.is_empty(),
+            "division alone should not emit a finding"
+        );
     }
 
     #[test]
@@ -464,7 +518,11 @@ mod tests {
         };
         let mut det = ArithmeticDetector::new();
         let findings = det.on_instruction(&state, &instr, &solver);
-        assert_eq!(findings.len(), 1, "store to .length should emit UnsafeArrayLength");
+        assert_eq!(
+            findings.len(),
+            1,
+            "store to .length should emit UnsafeArrayLength"
+        );
         assert_eq!(findings[0].kind, SeVulnKind::UnsafeArrayLength);
     }
 
@@ -474,11 +532,17 @@ mod tests {
         let (mut state, solver) = make_state_and_solver();
         state.variables.set(
             IrVar::Named("x".to_string()),
-            SymbolicValue::BitVec { width: 256, val: BV::new_const("x_rst", 256) },
+            SymbolicValue::BitVec {
+                width: 256,
+                val: BV::new_const("x_rst", 256),
+            },
         );
         state.variables.set(
             IrVar::Named("y".to_string()),
-            SymbolicValue::BitVec { width: 256, val: BV::new_const("y_rst", 256) },
+            SymbolicValue::BitVec {
+                width: 256,
+                val: BV::new_const("y_rst", 256),
+            },
         );
         let div_instr = binary_instr(
             "/",
@@ -498,7 +562,9 @@ mod tests {
         let findings = det.on_instruction(&state, &mul_instr, &solver);
         // After reset, div result should no longer be tracked → no DivisionBeforeMultiplication.
         assert!(
-            !findings.iter().any(|f| f.kind == SeVulnKind::DivisionBeforeMultiplication),
+            !findings
+                .iter()
+                .any(|f| f.kind == SeVulnKind::DivisionBeforeMultiplication),
             "reset should clear div-before-mul tracking"
         );
     }
@@ -509,11 +575,17 @@ mod tests {
         let (mut state, solver) = make_state_and_solver();
         state.variables.set(
             IrVar::Named("a".to_string()),
-            SymbolicValue::BitVec { width: 256, val: BV::new_const("a_mod", 256) },
+            SymbolicValue::BitVec {
+                width: 256,
+                val: BV::new_const("a_mod", 256),
+            },
         );
         state.variables.set(
             IrVar::Named("b".to_string()),
-            SymbolicValue::BitVec { width: 256, val: BV::new_const("b_mod", 256) },
+            SymbolicValue::BitVec {
+                width: 256,
+                val: BV::new_const("b_mod", 256),
+            },
         );
         let instr = binary_instr(
             "%",
@@ -523,7 +595,10 @@ mod tests {
         );
         let mut det = ArithmeticDetector::new();
         let findings = det.on_instruction(&state, &instr, &solver);
-        assert!(findings.is_empty(), "modulo op should not be detected as arithmetic vulnerability");
+        assert!(
+            findings.is_empty(),
+            "modulo op should not be detected as arithmetic vulnerability"
+        );
     }
 }
 
@@ -554,7 +629,9 @@ fn check_sat_and_emit(
                 w.populate_variables(&m, &state.variables);
                 w
             });
-            vec![make_finding(kind, severity, confidence, message, span, state, witness)]
+            vec![make_finding(
+                kind, severity, confidence, message, span, state, witness,
+            )]
         }
         // Unknown (timeout) or Unsat — not a confirmed finding.
         _ => vec![],

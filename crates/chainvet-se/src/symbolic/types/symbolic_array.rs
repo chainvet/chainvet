@@ -1,7 +1,7 @@
 // Array-theory helpers for mapping and storage access.
 
-use z3::ast::{Array, BV};
 use z3::Sort;
+use z3::ast::{Array, BV};
 
 use super::SymbolicValue;
 use chainvet_core::util::error::{Error, Result};
@@ -270,8 +270,20 @@ mod tests {
         let k3 = BV::from_u64(3, 256);
 
         let a1 = array_store(arr, &k1, &BV::from_u64(100, 256), 256, 256);
-        let a2 = array_store(a1.as_array().unwrap(), &k2, &BV::from_u64(200, 256), 256, 256);
-        let a3 = array_store(a2.as_array().unwrap(), &k3, &BV::from_u64(300, 256), 256, 256);
+        let a2 = array_store(
+            a1.as_array().unwrap(),
+            &k2,
+            &BV::from_u64(200, 256),
+            256,
+            256,
+        );
+        let a3 = array_store(
+            a2.as_array().unwrap(),
+            &k3,
+            &BV::from_u64(300, 256),
+            256,
+            256,
+        );
         let final_arr = a3.as_array().unwrap();
 
         for (key, expected) in [(1u64, 100u64), (2, 200), (3, 300)] {

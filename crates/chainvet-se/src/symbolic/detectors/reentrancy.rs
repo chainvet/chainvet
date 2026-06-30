@@ -1,12 +1,12 @@
 use std::collections::HashMap;
 
-use chainvet_sa::analysis::detectors::Severity;
-use chainvet_core::cfg::BlockId;
-use chainvet_core::ir::{IrCallOption, IrInstr, IrPlace, IrValue, PlaceClass};
-use crate::symbolic::detectors::{make_finding, CalleeTracker, Detector};
+use crate::symbolic::detectors::{CalleeTracker, Detector, make_finding};
 use crate::symbolic::results::finding::{Confidence, SeFinding, SeVulnKind};
 use crate::symbolic::solver::SmtSolver;
 use crate::symbolic::state::{StateId, SymbolicState};
+use chainvet_core::cfg::BlockId;
+use chainvet_core::ir::{IrCallOption, IrInstr, IrPlace, IrValue, PlaceClass};
+use chainvet_sa::analysis::detectors::Severity;
 
 /// Detects reentrancy vulnerabilities by tracking CEI (Checks-Effects-Interactions) violations.
 ///
@@ -74,9 +74,7 @@ impl ReentrancyDetector {
     /// Checks both `IrCallOption::Value` and `.value()` in the member chain
     /// (the IR may represent `.call.value(amt)()` as a member load, not an option).
     fn sends_eth(&self, callee: &IrValue, options: &[IrCallOption]) -> bool {
-        options
-            .iter()
-            .any(|o| matches!(o, IrCallOption::Value(_)))
+        options.iter().any(|o| matches!(o, IrCallOption::Value(_)))
             || self.tracker.chain_contains_field(callee, &["value"])
     }
 }
@@ -103,9 +101,7 @@ impl Detector for ReentrancyDetector {
         match instr {
             // External call seen — record it for CEI checking.
             IrInstr::Call {
-                callee,
-                options,
-                ..
+                callee, options, ..
             } if self.is_external_call(callee, options) => {
                 self.call_seen.insert(
                     state.id,
@@ -118,11 +114,7 @@ impl Detector for ReentrancyDetector {
             }
 
             // Storage write after an external call → CEI violation.
-            IrInstr::Store {
-                dest,
-                span,
-                ..
-            } if is_storage_place(dest) => {
+            IrInstr::Store { dest, span, .. } if is_storage_place(dest) => {
                 if let Some(info) = self.find_ancestor_call(state)
                     && state.instruction_count > info.call_instruction_count
                 {
@@ -190,15 +182,19 @@ fn is_storage_place(place: &IrPlace) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chainvet_core::ir::{IrCallOption, IrInstr, IrPlace, IrValue, IrVar, PlaceClass};
-    use chainvet_core::norm::Span;
     use crate::symbolic::results::finding::SeVulnKind;
     use crate::symbolic::solver::z3_backend::Z3Backend;
     use crate::symbolic::state::call_context::CallContext;
     use crate::symbolic::state::{StateIdGen, SymbolicState};
+    use chainvet_core::ir::{IrCallOption, IrInstr, IrPlace, IrValue, IrVar, PlaceClass};
+    use chainvet_core::norm::Span;
 
     fn span() -> Span {
-        Span { file: 0, start: 0, end: 0 }
+        Span {
+            file: 0,
+            start: 0,
+            end: 0,
+        }
     }
 
     fn make_state_and_solver() -> (SymbolicState, Z3Backend) {
@@ -256,7 +252,10 @@ mod tests {
         let (state, solver) = make_state_and_solver();
         let mut det = ReentrancyDetector::new();
         let findings = det.on_instruction(&state, &external_call_instr(), &solver);
-        assert!(findings.is_empty(), "external call alone should not emit a finding");
+        assert!(
+            findings.is_empty(),
+            "external call alone should not emit a finding"
+        );
     }
 
     #[test]
@@ -272,7 +271,11 @@ mod tests {
         // Increment instruction_count to simulate instructions after the call.
         state.instruction_count = 1;
         let findings = det.on_instruction(&state, &storage_write_instr(), &solver);
-        assert_eq!(findings.len(), 1, "storage write after external call should emit Reentrancy");
+        assert_eq!(
+            findings.len(),
+            1,
+            "storage write after external call should emit Reentrancy"
+        );
         assert_eq!(findings[0].kind, SeVulnKind::Reentrancy);
     }
 
@@ -286,7 +289,10 @@ mod tests {
         // Storage write with no prior external call → no reentrancy.
         state.instruction_count = 0;
         let findings = det.on_instruction(&state, &storage_write_instr(), &solver);
-        assert!(findings.is_empty(), "storage write with no prior call should not emit finding");
+        assert!(
+            findings.is_empty(),
+            "storage write with no prior call should not emit finding"
+        );
     }
 
     #[test]
@@ -308,7 +314,10 @@ mod tests {
         // Storage write after a non-external call should not trigger reentrancy.
         state.instruction_count = 1;
         let findings = det.on_instruction(&state, &storage_write_instr(), &solver);
-        assert!(findings.is_empty(), "require call should not be tracked as external call");
+        assert!(
+            findings.is_empty(),
+            "require call should not be tracked as external call"
+        );
     }
 
     #[test]
@@ -323,7 +332,10 @@ mod tests {
 
         state.instruction_count = 1;
         let findings = det.on_instruction(&state, &storage_write_instr(), &solver);
-        assert!(findings.is_empty(), "reset should clear external call tracking");
+        assert!(
+            findings.is_empty(),
+            "reset should clear external call tracking"
+        );
     }
 
     #[test]
@@ -337,7 +349,10 @@ mod tests {
 
         state.instruction_count = 1;
         let findings = det.on_instruction(&state, &memory_write_instr(), &solver);
-        assert!(findings.is_empty(), "memory write should not trigger reentrancy");
+        assert!(
+            findings.is_empty(),
+            "memory write should not trigger reentrancy"
+        );
     }
 
     #[test]
@@ -415,7 +430,10 @@ mod tests {
             },
             &solver,
         );
-        assert!(findings.is_empty(), "external call alone should not emit finding");
+        assert!(
+            findings.is_empty(),
+            "external call alone should not emit finding"
+        );
 
         // Storage write after the call -> should trigger Reentrancy
         state.instruction_count = 4;

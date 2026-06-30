@@ -1,5 +1,5 @@
-use chainvet_sa::analysis::detectors::{Finding, FindingKind, Severity};
 use chainvet_core::norm::{NormalizedAst, Span};
+use chainvet_sa::analysis::detectors::{Finding, FindingKind, Severity};
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct HybridTarget {
@@ -21,7 +21,10 @@ pub struct HybridSpan {
 }
 
 pub fn classify_threshold(targets: &[HybridTarget]) -> Severity {
-    if targets.iter().any(|target| target.severity == Severity::High.as_str()) {
+    if targets
+        .iter()
+        .any(|target| target.severity == Severity::High.as_str())
+    {
         Severity::High
     } else {
         Severity::Medium
@@ -69,7 +72,9 @@ fn to_target(ast: &NormalizedAst, finding: &Finding) -> Option<HybridTarget> {
 }
 
 fn file_for_span(ast: &NormalizedAst, span: Span) -> Option<String> {
-    ast.files.get(span.file as usize).map(|file| file.path.clone())
+    ast.files
+        .get(span.file as usize)
+        .map(|file| file.path.clone())
 }
 
 fn constraint_hints(finding: &Finding) -> Vec<String> {
@@ -126,8 +131,8 @@ fn is_high_signal_kind(kind: FindingKind) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chainvet_sa::analysis::detectors::{Finding, FindingKind, Severity};
     use chainvet_core::norm::{NormalizedAst, SourceFile, Span};
+    use chainvet_sa::analysis::detectors::{Finding, FindingKind, Severity};
 
     fn ast() -> NormalizedAst {
         NormalizedAst::from_sources(vec![SourceFile {
@@ -143,7 +148,11 @@ mod tests {
             kind: FindingKind::UnsafeDelegatecall,
             severity: Severity::High,
             message: "delegatecall sink".to_string(),
-            span: Span { file: 0, start: 4, end: 9 },
+            span: Span {
+                file: 0,
+                start: 4,
+                end: 9,
+            },
             function: None,
         };
         let targets = build_targets(&ast(), &[finding]);
@@ -157,7 +166,11 @@ mod tests {
             kind: FindingKind::Shadowing,
             severity: Severity::High,
             message: "shadowing".to_string(),
-            span: Span { file: 0, start: 1, end: 2 },
+            span: Span {
+                file: 0,
+                start: 1,
+                end: 2,
+            },
             function: None,
         };
         assert!(build_targets(&ast(), &[finding]).is_empty());

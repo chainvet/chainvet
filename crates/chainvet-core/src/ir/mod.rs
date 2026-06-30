@@ -1,7 +1,7 @@
 pub mod dump;
 pub mod lower;
 
-pub use dump::{dump_module, DumpFormat};
+pub use dump::{DumpFormat, dump_module};
 pub use lower::lower_module;
 
 use crate::norm::{Literal, Span};

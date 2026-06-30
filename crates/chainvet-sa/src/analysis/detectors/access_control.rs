@@ -101,7 +101,10 @@ fn has_access_control_guard(ast: &NormalizedAst, func: &chainvet_core::norm::Fun
     chainvet_frontend::frontend::has_sender_authority_check_hint(func, ast)
 }
 
-fn has_public_sender_payout_hint(ast: &NormalizedAst, func: &chainvet_core::norm::Function) -> bool {
+fn has_public_sender_payout_hint(
+    ast: &NormalizedAst,
+    func: &chainvet_core::norm::Function,
+) -> bool {
     chainvet_frontend::frontend::has_public_sender_payout_hint(func, ast)
 }
 
@@ -251,7 +254,11 @@ fn initializer_mentions_authority_context(
 }
 
 /// Returns `true` if the function body calls a method with the given name.
-fn function_calls_method(ast: &NormalizedAst, func: &chainvet_core::norm::Function, method: &str) -> bool {
+fn function_calls_method(
+    ast: &NormalizedAst,
+    func: &chainvet_core::norm::Function,
+    method: &str,
+) -> bool {
     let Some(body) = func.body else { return false };
     let mut found = false;
     for_each_expr_in_stmt(ast, body, &mut |_eid, expr| {
@@ -442,7 +449,11 @@ fn for_each_expr_in_stmt(
 }
 
 /// Walk every sub-expression under `expr_id`, calling `cb` for each.
-fn for_each_expr(ast: &NormalizedAst, expr_id: u32, cb: &mut impl FnMut(u32, &chainvet_core::norm::Expr)) {
+fn for_each_expr(
+    ast: &NormalizedAst,
+    expr_id: u32,
+    cb: &mut impl FnMut(u32, &chainvet_core::norm::Expr),
+) {
     let Some(expr) = ast.expressions.get(expr_id as usize) else {
         return;
     };
@@ -500,7 +511,11 @@ fn for_each_expr(ast: &NormalizedAst, expr_id: u32, cb: &mut impl FnMut(u32, &ch
 }
 
 /// Walk every statement under `stmt_id`, calling `cb` for each.
-fn for_each_stmt(ast: &NormalizedAst, stmt_id: u32, cb: &mut impl FnMut(u32, &chainvet_core::norm::Stmt)) {
+fn for_each_stmt(
+    ast: &NormalizedAst,
+    stmt_id: u32,
+    cb: &mut impl FnMut(u32, &chainvet_core::norm::Stmt),
+) {
     let Some(stmt) = ast.statements.get(stmt_id as usize) else {
         return;
     };
@@ -1487,8 +1502,8 @@ fn detect_arbitrary_storage_write(ast: &NormalizedAst) -> Vec<Finding> {
 mod tests {
     use super::*;
     use crate::analysis;
-    use chainvet_frontend::frontend::parser::load_via_parser_sources;
     use chainvet_core::norm::SourceFile;
+    use chainvet_frontend::frontend::parser::load_via_parser_sources;
 
     fn parse(source: &str) -> NormalizedAst {
         load_via_parser_sources(vec![SourceFile {

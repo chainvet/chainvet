@@ -8,7 +8,9 @@ use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 
-use chainvet_core::norm::{Function, FunctionKind, Mutability, NormalizedAst, SourceFile, Visibility};
+use chainvet_core::norm::{
+    Function, FunctionKind, Mutability, NormalizedAst, SourceFile, Visibility,
+};
 use chainvet_core::util::error::Result;
 
 #[derive(Debug, Clone, Copy)]
@@ -543,8 +545,9 @@ fn lookup_target_manifest(input: &Path) -> Result<Option<Vec<PathBuf>>> {
     }
 
     let raw = fs::read_to_string(&manifest_path)?;
-    let manifest: TargetManifest = serde_json::from_str(&raw)
-        .map_err(|err| chainvet_core::util::error::Error::msg(format!("invalid target manifest: {err}")))?;
+    let manifest: TargetManifest = serde_json::from_str(&raw).map_err(|err| {
+        chainvet_core::util::error::Error::msg(format!("invalid target manifest: {err}"))
+    })?;
     let input_norm = normalize_manifest_path(input);
 
     for entry in manifest.targets {

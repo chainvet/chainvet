@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
-use chainvet_core::ir::IrVar;
 use crate::symbolic::types::SymbolicValue;
+use chainvet_core::ir::IrVar;
 
 /// Maps IR variables to their current symbolic values.
 ///
@@ -64,8 +64,8 @@ impl Default for VariableEnv {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chainvet_core::ir::IrVar;
     use crate::symbolic::types::SymbolicValue;
+    use chainvet_core::ir::IrVar;
     use z3::ast::BV;
 
     fn make_bv256(val: u64) -> SymbolicValue {
@@ -153,7 +153,11 @@ mod tests {
         original.set(IrVar::Named("y".into()), make_bv256(20));
 
         assert_eq!(original.len(), 2);
-        assert_eq!(cloned.len(), 1, "clone should not see additions to original");
+        assert_eq!(
+            cloned.len(),
+            1,
+            "clone should not see additions to original"
+        );
         assert!(!cloned.contains(&IrVar::Named("y".into())));
     }
 }

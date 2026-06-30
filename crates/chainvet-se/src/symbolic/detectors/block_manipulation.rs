@@ -1,12 +1,12 @@
 use std::collections::HashSet;
 
-use chainvet_sa::analysis::detectors::Severity;
-use chainvet_core::cfg::BlockId;
-use chainvet_core::ir::{ControlKind, IrInstr, IrPlace, IrVar, IrValue};
-use crate::symbolic::detectors::{make_finding, place_matches, value_has_origin, Detector};
+use crate::symbolic::detectors::{Detector, make_finding, place_matches, value_has_origin};
 use crate::symbolic::results::finding::{Confidence, SeFinding, SeVulnKind};
 use crate::symbolic::solver::SmtSolver;
 use crate::symbolic::state::{SymbolicState, ValueOrigin};
+use chainvet_core::cfg::BlockId;
+use chainvet_core::ir::{ControlKind, IrInstr, IrPlace, IrValue, IrVar};
+use chainvet_sa::analysis::detectors::Severity;
 
 /// Detects block-environment manipulation vulnerabilities.
 ///
@@ -82,11 +82,7 @@ impl Detector for BlockManipulationDetector {
 
             // Arithmetic on block vars propagates the taint.
             IrInstr::Binary {
-                dest,
-                op,
-                lhs,
-                rhs,
-                ..
+                dest, op, lhs, rhs, ..
             } => {
                 let lhs_is_block = Self::value_in_set(lhs, &self.block_vars)
                     || Self::value_in_set(lhs, &self.timestamp_vars);
@@ -167,15 +163,19 @@ impl Detector for BlockManipulationDetector {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chainvet_core::ir::{ControlKind, IrInstr, IrPlace, IrValue, IrVar, PlaceClass};
-    use chainvet_core::norm::Span;
     use crate::symbolic::results::finding::SeVulnKind;
     use crate::symbolic::solver::z3_backend::Z3Backend;
     use crate::symbolic::state::call_context::CallContext;
     use crate::symbolic::state::{StateIdGen, SymbolicState};
+    use chainvet_core::ir::{ControlKind, IrInstr, IrPlace, IrValue, IrVar, PlaceClass};
+    use chainvet_core::norm::Span;
 
     fn span() -> Span {
-        Span { file: 0, start: 0, end: 0 }
+        Span {
+            file: 0,
+            start: 0,
+            end: 0,
+        }
     }
 
     fn make_state_and_solver() -> (SymbolicState, Z3Backend) {
@@ -198,7 +198,9 @@ mod tests {
 
     fn if_cond(var: IrVar) -> IrInstr {
         IrInstr::Control {
-            kind: ControlKind::If { cond: IrValue::Var(var) },
+            kind: ControlKind::If {
+                cond: IrValue::Var(var),
+            },
             span: span(),
         }
     }
@@ -218,9 +220,17 @@ mod tests {
         let (state, solver) = make_state_and_solver();
         let mut det = BlockManipulationDetector::new();
 
-        det.on_instruction(&state, &load_named(IrVar::Temp(0), "block.timestamp"), &solver);
+        det.on_instruction(
+            &state,
+            &load_named(IrVar::Temp(0), "block.timestamp"),
+            &solver,
+        );
         let findings = det.on_instruction(&state, &if_cond(IrVar::Temp(0)), &solver);
-        assert_eq!(findings.len(), 1, "timestamp used in branch should emit TimestampDependency");
+        assert_eq!(
+            findings.len(),
+            1,
+            "timestamp used in branch should emit TimestampDependency"
+        );
         assert_eq!(findings[0].kind, SeVulnKind::TimestampDependency);
     }
 
@@ -256,9 +266,16 @@ mod tests {
         let (state, solver) = make_state_and_solver();
         let mut det = BlockManipulationDetector::new();
 
-        det.on_instruction(&state, &load_named(IrVar::Temp(0), "some_random_var"), &solver);
+        det.on_instruction(
+            &state,
+            &load_named(IrVar::Temp(0), "some_random_var"),
+            &solver,
+        );
         let findings = det.on_instruction(&state, &if_cond(IrVar::Temp(0)), &solver);
-        assert!(findings.is_empty(), "non-block variable in branch should not produce findings");
+        assert!(
+            findings.is_empty(),
+            "non-block variable in branch should not produce findings"
+        );
     }
 
     #[test]
@@ -267,12 +284,18 @@ mod tests {
         let (state, solver) = make_state_and_solver();
         let mut det = BlockManipulationDetector::new();
 
-        det.on_instruction(&state, &load_named(IrVar::Temp(0), "block.timestamp"), &solver);
+        det.on_instruction(
+            &state,
+            &load_named(IrVar::Temp(0), "block.timestamp"),
+            &solver,
+        );
         det.reset();
 
         let findings = det.on_instruction(&state, &if_cond(IrVar::Temp(0)), &solver);
         assert!(
-            !findings.iter().any(|f| f.kind == SeVulnKind::TimestampDependency),
+            !findings
+                .iter()
+                .any(|f| f.kind == SeVulnKind::TimestampDependency),
             "reset should clear timestamp_vars set"
         );
     }
@@ -310,4 +333,3 @@ mod tests {
         assert_eq!(findings[0].kind, SeVulnKind::TimestampDependency);
     }
 }
-

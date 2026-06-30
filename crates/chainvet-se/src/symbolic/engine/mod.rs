@@ -7,21 +7,23 @@ use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::time::Instant;
 
-use z3::ast::Bool;
 use z3::SatResult;
+use z3::ast::Bool;
 
-use chainvet_core::cfg::{BlockId, CfgFunction};
-use chainvet_core::norm::NormalizedAst;
 use crate::symbolic::detectors::DetectorRegistry;
-use crate::symbolic::results::coverage::{CoverageReport, CoverageTracker};
 use crate::symbolic::results::SeFinding;
+use crate::symbolic::results::coverage::{CoverageReport, CoverageTracker};
 use crate::symbolic::solver::SmtSolver;
 use crate::symbolic::state::call_context::CallContext;
 use crate::symbolic::state::storage::StorageLayout;
 use crate::symbolic::state::{StateIdGen, SymbolicState};
 use crate::symbolic::types::hash::KeccakContext;
+use chainvet_core::cfg::{BlockId, CfgFunction};
+use chainvet_core::norm::NormalizedAst;
 
-use executor::{BlockOutcome, ExecutorError, execute_block, flush_pending_calls, pre_populate_call_context};
+use executor::{
+    BlockOutcome, ExecutorError, execute_block, flush_pending_calls, pre_populate_call_context,
+};
 use explorer::{ExplorationStrategy, make_strategy};
 use scheduler::{SeConfig, WorklistEntry};
 
@@ -79,7 +81,8 @@ struct RunContext<'a> {
     solver: &'a dyn SmtSolver,
     layout: &'a StorageLayout,
     contract_name: &'a str,
-    #[allow(dead_code)] // Used by callback simulation (Item 1), arithmetic (Item 3), authority profiling (Item 5)
+    #[allow(dead_code)]
+    // Used by callback simulation (Item 1), arithmetic (Item 3), authority profiling (Item 5)
     ast: &'a NormalizedAst,
     #[allow(dead_code)] // Used by callback simulation (Item 1) for cross-function CFG lookup
     all_cfgs: &'a [CfgFunction],
@@ -132,10 +135,19 @@ pub fn run_engine(
     let mut states_explored: usize = 0;
 
     let SeConfig {
-        max_path_depth, max_instructions, max_loop_unrolling,
-        max_states, solver_timeout_ms: _, total_timeout_s,
-        dynamic_bytes_bound: _, exploration_strategy,
-        mut detectors, storage_layout, contract_name, target_function_ids, preferred_sink_span: _,
+        max_path_depth,
+        max_instructions,
+        max_loop_unrolling,
+        max_states,
+        solver_timeout_ms: _,
+        total_timeout_s,
+        dynamic_bytes_bound: _,
+        exploration_strategy,
+        mut detectors,
+        storage_layout,
+        contract_name,
+        target_function_ids,
+        preferred_sink_span: _,
     } = config;
 
     let run_ctx = RunContext {
@@ -145,8 +157,12 @@ pub fn run_engine(
         ast,
         all_cfgs: cfgs,
         solver_cache: SolverCache::new(),
-        max_path_depth, max_instructions, max_loop_unrolling,
-        max_states, total_timeout_s, start_time: Instant::now(),
+        max_path_depth,
+        max_instructions,
+        max_loop_unrolling,
+        max_states,
+        total_timeout_s,
+        start_time: Instant::now(),
     };
 
     for cfg_func in cfgs {
@@ -165,12 +181,24 @@ pub fn run_engine(
             keccak_ctx: &mut keccak_ctx,
             states_explored: &mut states_explored,
         };
-        explore_function(cfg_func, cfgs, &mut detectors, &mut id_gen, &mut acc, &run_ctx, exploration_strategy);
+        explore_function(
+            cfg_func,
+            cfgs,
+            &mut detectors,
+            &mut id_gen,
+            &mut acc,
+            &run_ctx,
+            exploration_strategy,
+        );
     }
 
     // Global dedup: keep first (highest-confidence) finding per (function, kind, span).
     let default_span = chainvet_core::norm::Span::default();
-    let mut seen: HashSet<(u32, crate::symbolic::results::finding::SeVulnKind, chainvet_core::norm::Span)> = HashSet::new();
+    let mut seen: HashSet<(
+        u32,
+        crate::symbolic::results::finding::SeVulnKind,
+        chainvet_core::norm::Span,
+    )> = HashSet::new();
     findings.retain(|f| {
         // Don't dedup findings with fallback/zero spans — they'd all collide.
         if f.span == default_span {
@@ -179,7 +207,11 @@ pub fn run_engine(
         seen.insert((f.function_id.unwrap_or(0), f.kind, f.span))
     });
 
-    EngineResult { findings, coverage: coverage.report(), states_explored }
+    EngineResult {
+        findings,
+        coverage: coverage.report(),
+        states_explored,
+    }
 }
 
 /// Symbolically explore one CFG function to completion.
@@ -247,9 +279,15 @@ fn run_worklist(
         {
             break;
         }
-        if *acc.states_explored >= run_ctx.max_states { break; }
-        if entry.state.path_depth >= run_ctx.max_path_depth { continue; }
-        if entry.state.instruction_count >= run_ctx.max_instructions { continue; }
+        if *acc.states_explored >= run_ctx.max_states {
+            break;
+        }
+        if entry.state.path_depth >= run_ctx.max_path_depth {
+            continue;
+        }
+        if entry.state.instruction_count >= run_ctx.max_instructions {
+            continue;
+        }
 
         *acc.states_explored += 1;
 
@@ -258,16 +296,28 @@ fn run_worklist(
             .iter()
             .find(|c| c.id == entry.cfg_func_id)
             .unwrap_or(cfg_func);
-        acc.coverage.record_block(current_cfg.id, entry.state.current_block);
+        acc.coverage
+            .record_block(current_cfg.id, entry.state.current_block);
 
-        let block = match current_cfg.blocks.iter().find(|b| b.id == entry.state.current_block) {
+        let block = match current_cfg
+            .blocks
+            .iter()
+            .find(|b| b.id == entry.state.current_block)
+        {
             Some(b) => b,
             None => continue,
         };
 
         let outcome = match execute_block(
-            &mut entry.state, block, current_cfg, detectors,
-            run_ctx.solver, acc.keccak_ctx, run_ctx.layout, run_ctx.contract_name, acc.findings,
+            &mut entry.state,
+            block,
+            current_cfg,
+            detectors,
+            run_ctx.solver,
+            acc.keccak_ctx,
+            run_ctx.layout,
+            run_ctx.contract_name,
+            acc.findings,
         ) {
             Ok(o) => o,
             Err(ExecutorError::UnsupportedInstruction(msg)) => {
@@ -281,8 +331,15 @@ fn run_worklist(
         };
 
         // Flush unchecked low-level calls at terminal blocks.
-        if matches!(outcome, BlockOutcome::Return { .. } | BlockOutcome::Revert { .. } | BlockOutcome::Stop) {
-            let fallback_span = chainvet_core::norm::Span { file: 0, start: 0, end: 0 };
+        if matches!(
+            outcome,
+            BlockOutcome::Return { .. } | BlockOutcome::Revert { .. } | BlockOutcome::Stop
+        ) {
+            let fallback_span = chainvet_core::norm::Span {
+                file: 0,
+                start: 0,
+                end: 0,
+            };
             flush_pending_calls(&mut entry.state, acc.findings, fallback_span);
         }
 
@@ -332,14 +389,19 @@ fn dispatch_outcome(
             next.state.path_depth += 1;
             sink.strategy.push(next);
         }
-        BlockOutcome::Branch { cond, true_block, false_block } => {
+        BlockOutcome::Branch {
+            cond,
+            true_block,
+            false_block,
+        } => {
             handle_branch(&entry, cond, true_block, false_block, run_ctx, sink);
         }
-        BlockOutcome::LoopHeader { cond, body_block, exit_block } => {
-            handle_loop_header(
-                entry, cond, body_block, exit_block,
-                run_ctx, sink,
-            );
+        BlockOutcome::LoopHeader {
+            cond,
+            body_block,
+            exit_block,
+        } => {
+            handle_loop_header(entry, cond, body_block, exit_block, run_ctx, sink);
         }
         BlockOutcome::Return { .. } | BlockOutcome::Revert { .. } | BlockOutcome::Stop => {}
     }
@@ -358,20 +420,21 @@ fn handle_branch(
     if run_ctx.solver_cache.probe(run_ctx.solver, &base, &cond) {
         sink.coverage.record_edge(sink.from_block, true_block);
         let mut fork = entry.fork_to(true_block);
-        fork.state.path_constraints.add(
-            cond.clone(),
-            format!("branch true → block {true_block}"),
-        );
+        fork.state
+            .path_constraints
+            .add(cond.clone(), format!("branch true → block {true_block}"));
         fork.state.path_depth += 1;
         sink.strategy.push(fork);
     }
-    if run_ctx.solver_cache.probe(run_ctx.solver, &base, &cond.not()) {
+    if run_ctx
+        .solver_cache
+        .probe(run_ctx.solver, &base, &cond.not())
+    {
         sink.coverage.record_edge(sink.from_block, false_block);
         let mut fork = entry.fork_to(false_block);
-        fork.state.path_constraints.add(
-            cond.not(),
-            format!("branch false → block {false_block}"),
-        );
+        fork.state
+            .path_constraints
+            .add(cond.not(), format!("branch false → block {false_block}"));
         fork.state.path_depth += 1;
         sink.strategy.push(fork);
     }
@@ -414,7 +477,9 @@ fn push_loop_exit_fork(
             sink.coverage.record_edge(sink.from_block, exit);
             let mut fork = entry.fork_to(exit);
             if let Some(ec) = exit_cond {
-                fork.state.path_constraints.add(ec, format!("loop exit → block {exit}"));
+                fork.state
+                    .path_constraints
+                    .add(ec, format!("loop exit → block {exit}"));
             }
             fork.state.path_depth += 1;
             sink.strategy.push(fork);
@@ -440,7 +505,9 @@ fn push_loop_forks(
         sink.coverage.record_edge(sink.from_block, body_block);
         let mut fork = entry.fork_to(body_block);
         if let Some(c) = cond.clone() {
-            fork.state.path_constraints.add(c, format!("loop body → block {body_block}"));
+            fork.state
+                .path_constraints
+                .add(c, format!("loop body → block {body_block}"));
         }
         *fork.loop_counts.entry(body_block).or_insert(0) += 1;
         fork.state.path_depth += 1;
@@ -456,7 +523,9 @@ fn push_loop_forks(
             sink.coverage.record_edge(sink.from_block, exit);
             let mut fork = entry.fork_to(exit);
             if let Some(c) = cond {
-                fork.state.path_constraints.add(c.not(), format!("loop exit → block {exit}"));
+                fork.state
+                    .path_constraints
+                    .add(c.not(), format!("loop exit → block {exit}"));
             }
             fork.state.path_depth += 1;
             fork.state.inside_loop = false;
@@ -467,20 +536,29 @@ fn push_loop_forks(
 
 /// Collect current path constraints as a flat `Vec<Bool>` for SAT assumptions.
 fn collect_base_constraints(state: &SymbolicState) -> Vec<Bool> {
-    state.path_constraints.constraints().iter().map(|(c, _)| c.clone()).collect()
+    state
+        .path_constraints
+        .constraints()
+        .iter()
+        .map(|(c, _)| c.clone())
+        .collect()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::symbolic::solver::z3_backend::Z3Backend;
     use chainvet_core::cfg::{Block, CfgFunction, Edge};
     use chainvet_core::ir::{ControlKind, IrBlock, IrFunction, IrInstr, IrModule, IrValue, IrVar};
     use chainvet_core::norm::{NormalizedAst, Span};
-    use crate::symbolic::solver::z3_backend::Z3Backend;
     use scheduler::SeConfig;
 
     fn span() -> Span {
-        Span { file: 0, start: 0, end: 0 }
+        Span {
+            file: 0,
+            start: 0,
+            end: 0,
+        }
     }
 
     /// Build a CfgFunction from a flat list of IR instructions using the real CFG builder.
@@ -527,8 +605,14 @@ mod tests {
         let config = SeConfig::default();
         let ast = empty_ast();
         let result = run_engine(&[], &ast, config, &solver);
-        assert!(result.findings.is_empty(), "no findings expected for empty CFGs");
-        assert_eq!(result.states_explored, 0, "no states should be explored for empty CFGs");
+        assert!(
+            result.findings.is_empty(),
+            "no findings expected for empty CFGs"
+        );
+        assert_eq!(
+            result.states_explored, 0,
+            "no states should be explored for empty CFGs"
+        );
     }
 
     #[test]
@@ -560,14 +644,20 @@ mod tests {
         let cfg = CfgFunction {
             id: 0,
             blocks: vec![
-                Block { id: 0, instrs: vec![nop.clone()] },
-                Block { id: 1, instrs: vec![nop.clone()] },
-                Block { id: 2, instrs: vec![nop.clone()] },
+                Block {
+                    id: 0,
+                    instrs: vec![nop.clone()],
+                },
+                Block {
+                    id: 1,
+                    instrs: vec![nop.clone()],
+                },
+                Block {
+                    id: 2,
+                    instrs: vec![nop.clone()],
+                },
             ],
-            edges: vec![
-                Edge { from: 0, to: 1 },
-                Edge { from: 1, to: 2 },
-            ],
+            edges: vec![Edge { from: 0, to: 1 }, Edge { from: 1, to: 2 }],
         };
 
         let solver = Z3Backend::new(0);
@@ -591,21 +681,29 @@ mod tests {
         // Build the If-block by hand: Control::If with two edges.
         let cond_var = IrVar::Named("cond".to_string());
         let if_instr = IrInstr::Control {
-            kind: ControlKind::If { cond: IrValue::Var(cond_var) },
+            kind: ControlKind::If {
+                cond: IrValue::Var(cond_var),
+            },
             span: span(),
         };
         let nop = IrInstr::Nop { span: span() };
         let cfg = CfgFunction {
             id: 0,
             blocks: vec![
-                Block { id: 0, instrs: vec![if_instr] },
-                Block { id: 1, instrs: vec![nop.clone()] }, // true branch
-                Block { id: 2, instrs: vec![nop.clone()] }, // false branch
+                Block {
+                    id: 0,
+                    instrs: vec![if_instr],
+                },
+                Block {
+                    id: 1,
+                    instrs: vec![nop.clone()],
+                }, // true branch
+                Block {
+                    id: 2,
+                    instrs: vec![nop.clone()],
+                }, // false branch
             ],
-            edges: vec![
-                Edge { from: 0, to: 1 },
-                Edge { from: 0, to: 2 },
-            ],
+            edges: vec![Edge { from: 0, to: 1 }, Edge { from: 0, to: 2 }],
         };
 
         let solver = Z3Backend::new(0);
@@ -644,14 +742,20 @@ mod tests {
         let cfg = make_cfg(
             0,
             vec![
-                Block { id: 0, instrs: vec![if_instr] },
-                Block { id: 1, instrs: vec![nop()] }, // true-branch  — must be pruned
-                Block { id: 2, instrs: vec![nop()] }, // false-branch — must be explored
+                Block {
+                    id: 0,
+                    instrs: vec![if_instr],
+                },
+                Block {
+                    id: 1,
+                    instrs: vec![nop()],
+                }, // true-branch  — must be pruned
+                Block {
+                    id: 2,
+                    instrs: vec![nop()],
+                }, // false-branch — must be explored
             ],
-            vec![
-                Edge { from: 0, to: 1 },
-                Edge { from: 0, to: 2 },
-            ],
+            vec![Edge { from: 0, to: 1 }, Edge { from: 0, to: 2 }],
         );
         let result = run_engine(&[cfg], &empty_ast(), SeConfig::default(), &default_solver());
         assert_eq!(
@@ -677,14 +781,23 @@ mod tests {
         let cfg = make_cfg(
             0,
             vec![
-                Block { id: 0, instrs: vec![nop()] },
-                Block { id: 1, instrs: vec![revert_instr] },
+                Block {
+                    id: 0,
+                    instrs: vec![nop()],
+                },
+                Block {
+                    id: 1,
+                    instrs: vec![revert_instr],
+                },
             ],
             vec![Edge { from: 0, to: 1 }],
         );
         let result = run_engine(&[cfg], &empty_ast(), SeConfig::default(), &default_solver());
         assert_eq!(result.states_explored, 2, "entry + revert block = 2 states");
-        assert!(result.findings.is_empty(), "no findings expected for a plain revert");
+        assert!(
+            result.findings.is_empty(),
+            "no findings expected for a plain revert"
+        );
     }
 
     #[test]
@@ -694,15 +807,26 @@ mod tests {
         use crate::symbolic::engine::explorer::ExplorationStrategyKind;
         let build = || {
             let if_instr = IrInstr::Control {
-                kind: ControlKind::If { cond: IrValue::Var(IrVar::Named("x".into())) },
+                kind: ControlKind::If {
+                    cond: IrValue::Var(IrVar::Named("x".into())),
+                },
                 span: span(),
             };
             make_cfg(
                 0,
                 vec![
-                    Block { id: 0, instrs: vec![if_instr] },
-                    Block { id: 1, instrs: vec![nop()] },
-                    Block { id: 2, instrs: vec![nop()] },
+                    Block {
+                        id: 0,
+                        instrs: vec![if_instr],
+                    },
+                    Block {
+                        id: 1,
+                        instrs: vec![nop()],
+                    },
+                    Block {
+                        id: 2,
+                        instrs: vec![nop()],
+                    },
                 ],
                 vec![Edge { from: 0, to: 1 }, Edge { from: 0, to: 2 }],
             )
@@ -711,13 +835,19 @@ mod tests {
         let dfs = run_engine(
             &[build()],
             &ast,
-            SeConfig { exploration_strategy: ExplorationStrategyKind::Dfs, ..SeConfig::default() },
+            SeConfig {
+                exploration_strategy: ExplorationStrategyKind::Dfs,
+                ..SeConfig::default()
+            },
             &default_solver(),
         );
         let bfs = run_engine(
             &[build()],
             &ast,
-            SeConfig { exploration_strategy: ExplorationStrategyKind::Bfs, ..SeConfig::default() },
+            SeConfig {
+                exploration_strategy: ExplorationStrategyKind::Bfs,
+                ..SeConfig::default()
+            },
             &default_solver(),
         );
         assert_eq!(dfs.coverage.blocks_visited, bfs.coverage.blocks_visited);
@@ -728,10 +858,18 @@ mod tests {
     fn test_max_path_depth_stops_deep_chains() {
         // An 8-block linear chain with max_path_depth=3 must stop after at most
         // 3 executed states (the check skips states at depth >= limit).
-        let blocks: Vec<Block> = (0u32..8).map(|i| Block { id: i, instrs: vec![nop()] }).collect();
+        let blocks: Vec<Block> = (0u32..8)
+            .map(|i| Block {
+                id: i,
+                instrs: vec![nop()],
+            })
+            .collect();
         let edges: Vec<Edge> = (0u32..7).map(|i| Edge { from: i, to: i + 1 }).collect();
         let cfg = make_cfg(0, blocks, edges);
-        let config = SeConfig { max_path_depth: 3, ..SeConfig::default() };
+        let config = SeConfig {
+            max_path_depth: 3,
+            ..SeConfig::default()
+        };
         let result = run_engine(&[cfg], &empty_ast(), config, &default_solver());
         assert!(
             result.states_explored <= 3,
@@ -745,27 +883,56 @@ mod tests {
         // A 3-level binary tree (7 blocks) with symbolic conditions. With
         // max_states=3 the engine must stop at or before 3 states_explored.
         let sym_if = || IrInstr::Control {
-            kind: ControlKind::If { cond: IrValue::Var(IrVar::Named("x".into())) },
+            kind: ControlKind::If {
+                cond: IrValue::Var(IrVar::Named("x".into())),
+            },
             span: span(),
         };
         let cfg = make_cfg(
             0,
             vec![
-                Block { id: 0, instrs: vec![sym_if()] },
-                Block { id: 1, instrs: vec![sym_if()] },
-                Block { id: 2, instrs: vec![sym_if()] },
-                Block { id: 3, instrs: vec![nop()] },
-                Block { id: 4, instrs: vec![nop()] },
-                Block { id: 5, instrs: vec![nop()] },
-                Block { id: 6, instrs: vec![nop()] },
+                Block {
+                    id: 0,
+                    instrs: vec![sym_if()],
+                },
+                Block {
+                    id: 1,
+                    instrs: vec![sym_if()],
+                },
+                Block {
+                    id: 2,
+                    instrs: vec![sym_if()],
+                },
+                Block {
+                    id: 3,
+                    instrs: vec![nop()],
+                },
+                Block {
+                    id: 4,
+                    instrs: vec![nop()],
+                },
+                Block {
+                    id: 5,
+                    instrs: vec![nop()],
+                },
+                Block {
+                    id: 6,
+                    instrs: vec![nop()],
+                },
             ],
             vec![
-                Edge { from: 0, to: 1 }, Edge { from: 0, to: 2 },
-                Edge { from: 1, to: 3 }, Edge { from: 1, to: 4 },
-                Edge { from: 2, to: 5 }, Edge { from: 2, to: 6 },
+                Edge { from: 0, to: 1 },
+                Edge { from: 0, to: 2 },
+                Edge { from: 1, to: 3 },
+                Edge { from: 1, to: 4 },
+                Edge { from: 2, to: 5 },
+                Edge { from: 2, to: 6 },
             ],
         );
-        let config = SeConfig { max_states: 3, ..SeConfig::default() };
+        let config = SeConfig {
+            max_states: 3,
+            ..SeConfig::default()
+        };
         let result = run_engine(&[cfg], &empty_ast(), config, &default_solver());
         assert!(
             result.states_explored <= 3,
@@ -785,13 +952,25 @@ mod tests {
         let cfg = make_cfg(
             0,
             vec![
-                Block { id: 0, instrs: vec![loop_instr] },
-                Block { id: 1, instrs: vec![nop()] }, // body  (first successor)
-                Block { id: 2, instrs: vec![nop()] }, // exit  (second successor)
+                Block {
+                    id: 0,
+                    instrs: vec![loop_instr],
+                },
+                Block {
+                    id: 1,
+                    instrs: vec![nop()],
+                }, // body  (first successor)
+                Block {
+                    id: 2,
+                    instrs: vec![nop()],
+                }, // exit  (second successor)
             ],
             vec![Edge { from: 0, to: 1 }, Edge { from: 0, to: 2 }],
         );
-        let config = SeConfig { max_loop_unrolling: 2, ..SeConfig::default() };
+        let config = SeConfig {
+            max_loop_unrolling: 2,
+            ..SeConfig::default()
+        };
         let result = run_engine(&[cfg], &empty_ast(), config, &default_solver());
         // Termination is proved by reaching this assertion at all.
         assert!(
@@ -805,9 +984,28 @@ mod tests {
     #[test]
     fn test_multi_function_cfgs_explored_independently() {
         // Two CFG functions, each with one entry block, must each be explored.
-        let cfg0 = make_cfg(0, vec![Block { id: 0, instrs: vec![nop()] }], vec![]);
-        let cfg1 = make_cfg(1, vec![Block { id: 0, instrs: vec![nop()] }], vec![]);
-        let result = run_engine(&[cfg0, cfg1], &empty_ast(), SeConfig::default(), &default_solver());
+        let cfg0 = make_cfg(
+            0,
+            vec![Block {
+                id: 0,
+                instrs: vec![nop()],
+            }],
+            vec![],
+        );
+        let cfg1 = make_cfg(
+            1,
+            vec![Block {
+                id: 0,
+                instrs: vec![nop()],
+            }],
+            vec![],
+        );
+        let result = run_engine(
+            &[cfg0, cfg1],
+            &empty_ast(),
+            SeConfig::default(),
+            &default_solver(),
+        );
         assert_eq!(result.states_explored, 2);
         assert_eq!(result.coverage.blocks_visited, 2);
         assert_eq!(result.coverage.functions_visited, 2);
@@ -817,15 +1015,26 @@ mod tests {
     fn test_coverage_percentage_nonzero_after_execution() {
         // After executing any block the block_coverage_pct must be positive.
         let if_instr = IrInstr::Control {
-            kind: ControlKind::If { cond: IrValue::Var(IrVar::Named("x".into())) },
+            kind: ControlKind::If {
+                cond: IrValue::Var(IrVar::Named("x".into())),
+            },
             span: span(),
         };
         let cfg = make_cfg(
             0,
             vec![
-                Block { id: 0, instrs: vec![if_instr] },
-                Block { id: 1, instrs: vec![nop()] },
-                Block { id: 2, instrs: vec![nop()] },
+                Block {
+                    id: 0,
+                    instrs: vec![if_instr],
+                },
+                Block {
+                    id: 1,
+                    instrs: vec![nop()],
+                },
+                Block {
+                    id: 2,
+                    instrs: vec![nop()],
+                },
             ],
             vec![Edge { from: 0, to: 1 }, Edge { from: 0, to: 2 }],
         );
@@ -840,7 +1049,10 @@ mod tests {
         // The engine does `None => continue` on the missing-block lookup.
         let cfg = make_cfg(
             0,
-            vec![Block { id: 0, instrs: vec![nop()] }],
+            vec![Block {
+                id: 0,
+                instrs: vec![nop()],
+            }],
             vec![Edge { from: 0, to: 99 }],
         );
         let result = run_engine(&[cfg], &empty_ast(), SeConfig::default(), &default_solver());

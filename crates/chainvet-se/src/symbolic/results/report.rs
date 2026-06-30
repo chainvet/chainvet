@@ -1,7 +1,7 @@
-use chainvet_core::norm::SourceFile;
-use chainvet_core::OutputFormat;
 use crate::symbolic::results::coverage::CoverageReport;
 use crate::symbolic::results::finding::SeFinding;
+use chainvet_core::OutputFormat;
+use chainvet_core::norm::SourceFile;
 use chainvet_core::util::error::{Error, Result};
 
 /// Render SE engine results in the requested format.
@@ -22,11 +22,7 @@ pub fn print_se_report(
 ///
 /// Prints a header with exploration stats, then one line per finding.
 /// Short-circuits with "No findings." when the slice is empty.
-fn print_se_text(
-    findings: &[SeFinding],
-    coverage: &CoverageReport,
-    states: usize,
-) -> Result<()> {
+fn print_se_text(findings: &[SeFinding], coverage: &CoverageReport, states: usize) -> Result<()> {
     println!("=== Symbolic Execution Results ===");
     println!("States explored : {states}");
     println!(
@@ -70,9 +66,7 @@ fn print_se_text(
 
 /// Resolve a numeric file ID to its path string.
 fn resolve_file(files: &[SourceFile], file_id: u32) -> Option<String> {
-    files
-        .get(file_id as usize)
-        .map(|f| f.path.clone())
+    files.get(file_id as usize).map(|f| f.path.clone())
 }
 
 /// Render results as a JSON object.
@@ -128,9 +122,12 @@ fn print_se_json(
         coverage: &'a CoverageReport,
         findings: Vec<ResolvedFinding<'a>>,
     }
-    let report = SeReport { states_explored: states, coverage, findings: resolved };
-    let json =
-        serde_json::to_string_pretty(&report).map_err(|e| Error::msg(e.to_string()))?;
+    let report = SeReport {
+        states_explored: states,
+        coverage,
+        findings: resolved,
+    };
+    let json = serde_json::to_string_pretty(&report).map_err(|e| Error::msg(e.to_string()))?;
     println!("{json}");
     Ok(())
 }
@@ -138,10 +135,10 @@ fn print_se_json(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chainvet_sa::analysis::detectors::Severity;
-    use chainvet_core::norm::Span;
     use crate::symbolic::results::finding::{Confidence, SeFinding, SeVulnKind};
     use crate::symbolic::results::witness::Witness;
+    use chainvet_core::norm::Span;
+    use chainvet_sa::analysis::detectors::Severity;
 
     // ── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -172,13 +169,21 @@ mod tests {
     }
 
     /// Build a minimal SeFinding with no path constraints and no witness.
-    fn make_finding_bare(kind: SeVulnKind, severity: Severity, confidence: Confidence) -> SeFinding {
+    fn make_finding_bare(
+        kind: SeVulnKind,
+        severity: Severity,
+        confidence: Confidence,
+    ) -> SeFinding {
         SeFinding {
             kind,
             severity,
             confidence,
             message: "test finding message".to_string(),
-            span: Span { file: 0, start: 0, end: 0 },
+            span: Span {
+                file: 0,
+                start: 0,
+                end: 0,
+            },
             function_id: None,
             path_constraints: vec![],
             witness: None,
@@ -194,12 +199,13 @@ mod tests {
             severity: Severity::High,
             confidence: Confidence::High,
             message: "overflow on addition".to_string(),
-            span: Span { file: 0, start: 10, end: 20 },
+            span: Span {
+                file: 0,
+                start: 10,
+                end: 20,
+            },
             function_id: Some(3),
-            path_constraints: vec![
-                "x > 0".to_string(),
-                "y < MAX_UINT256".to_string(),
-            ],
+            path_constraints: vec!["x > 0".to_string(), "y < MAX_UINT256".to_string()],
             witness: None,
             state_id: 42,
             path_depth: 5,
@@ -210,8 +216,8 @@ mod tests {
     fn make_finding_with_witness() -> SeFinding {
         let witness = Witness {
             msg_sender: [
-                0xde, 0xad, 0xbe, 0xef, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01,
+                0xde, 0xad, 0xbe, 0xef, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x01,
             ],
             msg_value: [0u8; 32],
             tx_origin: [0u8; 20],
@@ -225,7 +231,11 @@ mod tests {
             severity: Severity::High,
             confidence: Confidence::High,
             message: "reentrancy via fallback".to_string(),
-            span: Span { file: 0, start: 100, end: 200 },
+            span: Span {
+                file: 0,
+                start: 100,
+                end: 200,
+            },
             function_id: Some(7),
             path_constraints: vec!["balance > 0".to_string()],
             witness: Some(witness),
@@ -275,7 +285,11 @@ mod tests {
     fn test_print_se_report_text_multiple_findings_returns_ok() {
         // Multiple diverse findings (different kinds, severities, confidences) must succeed.
         let findings = vec![
-            make_finding_bare(SeVulnKind::IntegerUnderflow, Severity::Medium, Confidence::Medium),
+            make_finding_bare(
+                SeVulnKind::IntegerUnderflow,
+                Severity::Medium,
+                Confidence::Medium,
+            ),
             make_finding_with_constraints(),
             make_finding_with_witness(),
             make_finding_bare(SeVulnKind::AssertionFailure, Severity::Low, Confidence::Low),
@@ -355,13 +369,34 @@ mod tests {
         // CoverageReport must serialize to JSON containing the documented field names.
         let report = sample_coverage();
         let json = serde_json::to_string(&report).expect("serialization must succeed");
-        assert!(json.contains("\"blocks_visited\""), "missing blocks_visited key");
-        assert!(json.contains("\"blocks_total\""), "missing blocks_total key");
-        assert!(json.contains("\"block_coverage_pct\""), "missing block_coverage_pct key");
-        assert!(json.contains("\"edges_visited\""), "missing edges_visited key");
-        assert!(json.contains("\"functions_visited\""), "missing functions_visited key");
-        assert!(json.contains("\"functions_total\""), "missing functions_total key");
-        assert!(json.contains("\"function_coverage_pct\""), "missing function_coverage_pct key");
+        assert!(
+            json.contains("\"blocks_visited\""),
+            "missing blocks_visited key"
+        );
+        assert!(
+            json.contains("\"blocks_total\""),
+            "missing blocks_total key"
+        );
+        assert!(
+            json.contains("\"block_coverage_pct\""),
+            "missing block_coverage_pct key"
+        );
+        assert!(
+            json.contains("\"edges_visited\""),
+            "missing edges_visited key"
+        );
+        assert!(
+            json.contains("\"functions_visited\""),
+            "missing functions_visited key"
+        );
+        assert!(
+            json.contains("\"functions_total\""),
+            "missing functions_total key"
+        );
+        assert!(
+            json.contains("\"function_coverage_pct\""),
+            "missing function_coverage_pct key"
+        );
     }
 
     #[test]
@@ -378,11 +413,26 @@ mod tests {
         };
         let json = serde_json::to_string(&report).expect("serialization must succeed");
         // Key/value pairs as they appear in compact JSON
-        assert!(json.contains("\"blocks_visited\":7"), "blocks_visited value mismatch");
-        assert!(json.contains("\"blocks_total\":10"), "blocks_total value mismatch");
-        assert!(json.contains("\"edges_visited\":5"), "edges_visited value mismatch");
-        assert!(json.contains("\"functions_visited\":2"), "functions_visited value mismatch");
-        assert!(json.contains("\"functions_total\":4"), "functions_total value mismatch");
+        assert!(
+            json.contains("\"blocks_visited\":7"),
+            "blocks_visited value mismatch"
+        );
+        assert!(
+            json.contains("\"blocks_total\":10"),
+            "blocks_total value mismatch"
+        );
+        assert!(
+            json.contains("\"edges_visited\":5"),
+            "edges_visited value mismatch"
+        );
+        assert!(
+            json.contains("\"functions_visited\":2"),
+            "functions_visited value mismatch"
+        );
+        assert!(
+            json.contains("\"functions_total\":4"),
+            "functions_total value mismatch"
+        );
     }
 
     // ── serde_json serialization of SeFinding ────────────────────────────────
@@ -396,8 +446,14 @@ mod tests {
             Confidence::High,
         );
         let json = serde_json::to_string(&finding).expect("serialization must succeed");
-        assert!(json.contains("\"kind\""), "missing kind field in SeFinding JSON");
-        assert!(json.contains("\"IntegerOverflow\""), "kind value should be IntegerOverflow");
+        assert!(
+            json.contains("\"kind\""),
+            "missing kind field in SeFinding JSON"
+        );
+        assert!(
+            json.contains("\"IntegerOverflow\""),
+            "kind value should be IntegerOverflow"
+        );
     }
 
     #[test]
@@ -406,17 +462,16 @@ mod tests {
         let finding = make_finding_bare(SeVulnKind::Reentrancy, Severity::Medium, Confidence::Low);
         let json = serde_json::to_string(&finding).expect("serialization must succeed");
         assert!(json.contains("\"severity\""), "missing severity field");
-        assert!(json.contains("\"Medium\""), "severity value should be Medium");
+        assert!(
+            json.contains("\"Medium\""),
+            "severity value should be Medium"
+        );
     }
 
     #[test]
     fn test_sefinding_serializes_confidence_field() {
         // Confidence must appear in the JSON output.
-        let finding = make_finding_bare(
-            SeVulnKind::UncheckedCall,
-            Severity::Low,
-            Confidence::Low,
-        );
+        let finding = make_finding_bare(SeVulnKind::UncheckedCall, Severity::Low, Confidence::Low);
         let json = serde_json::to_string(&finding).expect("serialization must succeed");
         assert!(json.contains("\"confidence\""), "missing confidence field");
         assert!(json.contains("\"Low\""), "confidence value should be Low");
@@ -425,14 +480,14 @@ mod tests {
     #[test]
     fn test_sefinding_serializes_message_field() {
         // The "message" field must be present and contain the original string.
-        let finding = make_finding_bare(
-            SeVulnKind::TxOriginAuth,
-            Severity::High,
-            Confidence::Medium,
-        );
+        let finding =
+            make_finding_bare(SeVulnKind::TxOriginAuth, Severity::High, Confidence::Medium);
         let json = serde_json::to_string(&finding).expect("serialization must succeed");
         assert!(json.contains("\"message\""), "missing message field");
-        assert!(json.contains("test finding message"), "message value mismatch");
+        assert!(
+            json.contains("test finding message"),
+            "message value mismatch"
+        );
     }
 
     #[test]
@@ -440,7 +495,10 @@ mod tests {
         // When path_constraints is non-empty the field must appear in the JSON.
         let finding = make_finding_with_constraints();
         let json = serde_json::to_string(&finding).expect("serialization must succeed");
-        assert!(json.contains("\"path_constraints\""), "missing path_constraints field");
+        assert!(
+            json.contains("\"path_constraints\""),
+            "missing path_constraints field"
+        );
         assert!(json.contains("x > 0"), "first constraint missing from JSON");
     }
 
@@ -451,19 +509,22 @@ mod tests {
         let json = serde_json::to_string(&finding).expect("serialization must succeed");
         assert!(json.contains("\"witness\""), "missing witness field");
         // The witness should not serialize as null when Some(_) is present.
-        assert!(!json.contains("\"witness\":null"), "witness should not be null");
+        assert!(
+            !json.contains("\"witness\":null"),
+            "witness should not be null"
+        );
     }
 
     #[test]
     fn test_sefinding_serializes_null_witness_when_absent() {
         // When witness is None the field should serialize as null.
-        let finding = make_finding_bare(
-            SeVulnKind::AssertionFailure,
-            Severity::Low,
-            Confidence::Low,
-        );
+        let finding =
+            make_finding_bare(SeVulnKind::AssertionFailure, Severity::Low, Confidence::Low);
         let json = serde_json::to_string(&finding).expect("serialization must succeed");
-        assert!(json.contains("\"witness\":null"), "absent witness should serialize as null");
+        assert!(
+            json.contains("\"witness\":null"),
+            "absent witness should serialize as null"
+        );
     }
 
     // ── Top-level JSON structure (states_explored key) ────────────────────────
@@ -481,11 +542,20 @@ mod tests {
         }
         let cov = sample_coverage();
         let findings: Vec<SeFinding> = vec![];
-        let report = SeReport { states_explored: 77, coverage: &cov, findings: &findings };
-        let json =
-            serde_json::to_string_pretty(&report).expect("serialization must succeed");
-        assert!(json.contains("\"states_explored\""), "states_explored key must be present");
-        assert!(json.contains("77"), "states_explored value must appear in JSON");
+        let report = SeReport {
+            states_explored: 77,
+            coverage: &cov,
+            findings: &findings,
+        };
+        let json = serde_json::to_string_pretty(&report).expect("serialization must succeed");
+        assert!(
+            json.contains("\"states_explored\""),
+            "states_explored key must be present"
+        );
+        assert!(
+            json.contains("77"),
+            "states_explored value must appear in JSON"
+        );
     }
 
     #[test]
@@ -499,9 +569,16 @@ mod tests {
         }
         let cov = sample_coverage();
         let findings: Vec<SeFinding> = vec![];
-        let report = SeReport { states_explored: 0, coverage: &cov, findings: &findings };
+        let report = SeReport {
+            states_explored: 0,
+            coverage: &cov,
+            findings: &findings,
+        };
         let json = serde_json::to_string_pretty(&report).expect("serialization must succeed");
-        assert!(json.contains("\"coverage\""), "coverage key must be present at top level");
+        assert!(
+            json.contains("\"coverage\""),
+            "coverage key must be present at top level"
+        );
     }
 
     #[test]
@@ -519,9 +596,16 @@ mod tests {
             Severity::Low,
             Confidence::Low,
         )];
-        let report = SeReport { states_explored: 1, coverage: &cov, findings: &findings };
+        let report = SeReport {
+            states_explored: 1,
+            coverage: &cov,
+            findings: &findings,
+        };
         let json = serde_json::to_string_pretty(&report).expect("serialization must succeed");
-        assert!(json.contains("\"findings\""), "findings key must be present at top level");
+        assert!(
+            json.contains("\"findings\""),
+            "findings key must be present at top level"
+        );
     }
 
     // ── Witness hex rendering (msg_sender byte layout) ────────────────────────
@@ -541,7 +625,11 @@ mod tests {
         };
         let hex: String = w.msg_sender.iter().map(|b| format!("{b:02x}")).collect();
         assert_eq!(hex.len(), 40, "20-byte address must produce 40 hex chars");
-        assert_eq!(hex, "0".repeat(40), "all-zero sender must produce 40 zero hex chars");
+        assert_eq!(
+            hex,
+            "0".repeat(40),
+            "all-zero sender must produce 40 zero hex chars"
+        );
     }
 
     #[test]
@@ -561,7 +649,10 @@ mod tests {
             variables: vec![],
         };
         let hex: String = w.msg_sender.iter().map(|b| format!("{b:02x}")).collect();
-        assert!(hex.ends_with("cafe"), "last two bytes must appear as 'cafe'");
+        assert!(
+            hex.ends_with("cafe"),
+            "last two bytes must appear as 'cafe'"
+        );
         assert_eq!(hex.len(), 40);
     }
 }

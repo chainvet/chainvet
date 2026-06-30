@@ -1,17 +1,17 @@
 use z3::SatResult;
 use z3::ast::Bool;
 
-use chainvet_sa::analysis::detectors::Severity;
-use chainvet_core::cfg::BlockId;
-use chainvet_core::ir::{
-    ControlKind, IrCallOption, IrInstr, IrPlace, IrValue, IrVar, PlaceClass,
+use crate::symbolic::detectors::{
+    CalleeTracker, Detector, make_finding, place_matches, value_has_origin,
 };
-use chainvet_core::norm::Span;
-use crate::symbolic::detectors::{make_finding, place_matches, value_has_origin, CalleeTracker, Detector};
 use crate::symbolic::results::finding::{Confidence, SeFinding, SeVulnKind};
 use crate::symbolic::results::witness::Witness;
 use crate::symbolic::solver::SmtSolver;
 use crate::symbolic::state::{SymbolicState, ValueOrigin};
+use chainvet_core::cfg::BlockId;
+use chainvet_core::ir::{ControlKind, IrCallOption, IrInstr, IrPlace, IrValue, IrVar, PlaceClass};
+use chainvet_core::norm::Span;
+use chainvet_sa::analysis::detectors::Severity;
 
 /// Detects access control vulnerabilities.
 ///
@@ -83,9 +83,7 @@ impl Detector for AccessControlDetector {
             {
                 self.handle_eth_transfer(callee, state, solver, *span)
             }
-            IrInstr::Store { dest, span, .. } => {
-                Self::handle_store(dest, state, solver, *span)
-            }
+            IrInstr::Store { dest, span, .. } => Self::handle_store(dest, state, solver, *span),
             _ => vec![],
         }
     }
@@ -228,15 +226,21 @@ impl AccessControlDetector {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chainvet_core::ir::{ControlKind, IrCallOption, IrInstr, IrPlace, IrValue, IrVar, PlaceClass};
-    use chainvet_core::norm::Span;
     use crate::symbolic::results::finding::SeVulnKind;
     use crate::symbolic::solver::z3_backend::Z3Backend;
     use crate::symbolic::state::call_context::CallContext;
     use crate::symbolic::state::{StateIdGen, SymbolicState};
+    use chainvet_core::ir::{
+        ControlKind, IrCallOption, IrInstr, IrPlace, IrValue, IrVar, PlaceClass,
+    };
+    use chainvet_core::norm::Span;
 
     fn span() -> Span {
-        Span { file: 0, start: 0, end: 0 }
+        Span {
+            file: 0,
+            start: 0,
+            end: 0,
+        }
     }
 
     fn make_state_and_solver() -> (SymbolicState, Z3Backend) {
@@ -268,7 +272,11 @@ mod tests {
             span: span(),
         };
         let findings = det.on_instruction(&state, &instr, &solver);
-        assert_eq!(findings.len(), 1, "selfdestruct without sender check should emit finding");
+        assert_eq!(
+            findings.len(),
+            1,
+            "selfdestruct without sender check should emit finding"
+        );
         assert_eq!(findings[0].kind, SeVulnKind::UnprotectedSelfdestruct);
     }
 
@@ -295,7 +303,11 @@ mod tests {
             span: span(),
         };
         let findings = det.on_instruction(&state, &if_instr, &solver);
-        assert_eq!(findings.len(), 1, "tx.origin load then branch should emit TxOriginAuth");
+        assert_eq!(
+            findings.len(),
+            1,
+            "tx.origin load then branch should emit TxOriginAuth"
+        );
         assert_eq!(findings[0].kind, SeVulnKind::TxOriginAuth);
     }
 
@@ -313,7 +325,9 @@ mod tests {
         };
         let findings = det.on_instruction(&state, &instr, &solver);
         assert!(
-            findings.iter().any(|f| f.kind == SeVulnKind::AccessControlMissing),
+            findings
+                .iter()
+                .any(|f| f.kind == SeVulnKind::AccessControlMissing),
             "ETH transfer without sender check should emit AccessControlMissing"
         );
     }
@@ -334,7 +348,11 @@ mod tests {
             span: span(),
         };
         let findings = det.on_instruction(&state, &instr, &solver);
-        assert_eq!(findings.len(), 1, "user-controlled storage index should emit ArbitraryStorageWrite");
+        assert_eq!(
+            findings.len(),
+            1,
+            "user-controlled storage index should emit ArbitraryStorageWrite"
+        );
         assert_eq!(findings[0].kind, SeVulnKind::ArbitraryStorageWrite);
     }
 
@@ -394,7 +412,9 @@ mod tests {
         };
         let findings = det.on_instruction(&state, &call_instr, &solver);
         assert!(
-            !findings.iter().any(|f| f.kind == SeVulnKind::AccessControlMissing),
+            !findings
+                .iter()
+                .any(|f| f.kind == SeVulnKind::AccessControlMissing),
             "after loading msg.sender, AccessControlMissing should not be emitted"
         );
     }
@@ -450,17 +470,13 @@ fn is_selfdestruct(callee: &IrValue) -> bool {
 }
 
 fn has_value_option(options: &[IrCallOption]) -> bool {
-    options
-        .iter()
-        .any(|o| matches!(o, IrCallOption::Value(_)))
+    options.iter().any(|o| matches!(o, IrCallOption::Value(_)))
 }
 
 /// Returns true if the callee is not a known constant (not `this`, not a literal).
 fn is_user_controlled_recipient(callee: &IrValue) -> bool {
     match callee {
-        IrValue::Var(IrVar::Named(n)) => {
-            n != "this" && n != "address(this)"
-        }
+        IrValue::Var(IrVar::Named(n)) => n != "this" && n != "address(this)",
         IrValue::Var(IrVar::Temp(_)) => true,
         IrValue::Unknown => true,
         IrValue::Literal(_) => false,
@@ -499,7 +515,9 @@ fn check_reachable_and_emit(
                 w.populate_variables(&m, &state.variables);
                 w
             });
-            vec![make_finding(kind, severity, confidence, message, span, state, witness)]
+            vec![make_finding(
+                kind, severity, confidence, message, span, state, witness,
+            )]
         }
         _ => vec![],
     }

@@ -1,10 +1,10 @@
 use serde::Serialize;
-use z3::ast::BV;
 use z3::Model;
+use z3::ast::BV;
 
-use chainvet_core::ir::IrVar;
 use crate::symbolic::state::call_context::CallContext;
 use crate::symbolic::state::variables::VariableEnv;
+use chainvet_core::ir::IrVar;
 
 /// Concrete counterexample extracted from a Z3 model.
 ///
@@ -209,8 +209,7 @@ mod tests {
         let witness = Witness::from_model(&model, &call_ctx);
 
         assert_eq!(
-            witness.msg_value,
-            [0u8; 32],
+            witness.msg_value, [0u8; 32],
             "all 32 bytes of msg_value should be zero"
         );
     }

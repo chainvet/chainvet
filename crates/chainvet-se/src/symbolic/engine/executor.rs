@@ -1,10 +1,6 @@
-use z3::ast::{BV, Bool};
 use z3::SatResult;
+use z3::ast::{BV, Bool};
 
-use chainvet_sa::analysis::detectors::Severity;
-use chainvet_core::cfg::{BlockId, CfgFunction};
-use chainvet_core::ir::{ControlKind, IrCallOption, IrInstr, IrPlace, IrValue, IrVar, PlaceClass};
-use chainvet_core::norm::Span;
 use crate::symbolic::detectors::DetectorRegistry;
 use crate::symbolic::results::finding::{Confidence, SeFinding, SeVulnKind};
 use crate::symbolic::results::witness::Witness;
@@ -12,7 +8,11 @@ use crate::symbolic::solver::SmtSolver;
 use crate::symbolic::state::storage::StorageLayout;
 use crate::symbolic::state::{PendingCallInfo, SymbolicState, ValueOrigin};
 use crate::symbolic::types::hash::KeccakContext;
-use crate::symbolic::types::{bitvec, fresh_bv, literal_to_symbolic, zero_bv, SymbolicValue};
+use crate::symbolic::types::{SymbolicValue, bitvec, fresh_bv, literal_to_symbolic, zero_bv};
+use chainvet_core::cfg::{BlockId, CfgFunction};
+use chainvet_core::ir::{ControlKind, IrCallOption, IrInstr, IrPlace, IrValue, IrVar, PlaceClass};
+use chainvet_core::norm::Span;
+use chainvet_sa::analysis::detectors::Severity;
 
 /// Outcome returned by `execute_block`.
 ///
@@ -126,7 +126,13 @@ pub fn execute_block(
                 }
             }
 
-            IrInstr::Binary { dest, op, lhs, rhs, span } => {
+            IrInstr::Binary {
+                dest,
+                op,
+                lhs,
+                rhs,
+                span,
+            } => {
                 let lv = eval_value(state, lhs, keccak_ctx);
                 let rv = eval_value(state, rhs, keccak_ctx);
                 let width = lv.width().max(rv.width()).max(256);
@@ -150,7 +156,13 @@ pub fn execute_block(
                 }
             }
 
-            IrInstr::Unary { dest, op, expr, prefix, .. } => {
+            IrInstr::Unary {
+                dest,
+                op,
+                expr,
+                prefix,
+                ..
+            } => {
                 let val = eval_value(state, expr, keccak_ctx);
                 let width = val.width().max(256);
                 let bv = val.to_bv(width).unwrap_or_else(|_| BV::from_u64(0, width));
@@ -162,22 +174,41 @@ pub fn execute_block(
                 }
             }
 
-            IrInstr::Select { dest, cond, then_val, else_val, .. } => {
+            IrInstr::Select {
+                dest,
+                cond,
+                then_val,
+                else_val,
+                ..
+            } => {
                 let cond_sv = eval_value(state, cond, keccak_ctx);
                 // Fallback: fresh unconstrained symbolic Bool keeps both branches reachable.
-                let cond_bool = cond_sv.to_bool().unwrap_or_else(|_| fresh_symbolic_bool("select_cond"));
+                let cond_bool = cond_sv
+                    .to_bool()
+                    .unwrap_or_else(|_| fresh_symbolic_bool("select_cond"));
                 let then_sv = eval_value(state, then_val, keccak_ctx);
                 let else_sv = eval_value(state, else_val, keccak_ctx);
 
                 let width = then_sv.width().max(else_sv.width()).max(256);
-                let then_bv = then_sv.to_bv(width).unwrap_or_else(|_| BV::from_u64(0, width));
-                let else_bv = else_sv.to_bv(width).unwrap_or_else(|_| BV::from_u64(0, width));
+                let then_bv = then_sv
+                    .to_bv(width)
+                    .unwrap_or_else(|_| BV::from_u64(0, width));
+                let else_bv = else_sv
+                    .to_bv(width)
+                    .unwrap_or_else(|_| BV::from_u64(0, width));
                 let result_bv = cond_bool.ite(&then_bv, &else_bv);
-                state
-                    .variables
-                    .set(dest.clone(), SymbolicValue::BitVec { width, val: result_bv });
+                state.variables.set(
+                    dest.clone(),
+                    SymbolicValue::BitVec {
+                        width,
+                        val: result_bv,
+                    },
+                );
                 // Union origins from both branches.
-                let srcs: Vec<&IrVar> = [then_val, else_val].iter().filter_map(|v| value_var(v)).collect();
+                let srcs: Vec<&IrVar> = [then_val, else_val]
+                    .iter()
+                    .filter_map(|v| value_var(v))
+                    .collect();
                 state.union_origins(&srcs, dest);
             }
 
@@ -203,18 +234,16 @@ pub fn execute_block(
                 resolve_place_write(state, dest, val, layout, contract_name, keccak_ctx);
             }
 
-            IrInstr::Call { dest, callee, args, options, .. } => {
+            IrInstr::Call {
+                dest,
+                callee,
+                args,
+                options,
+                ..
+            } => {
                 let span = instr_span(instr);
                 handle_call(
-                    state,
-                    callee,
-                    args,
-                    options,
-                    dest,
-                    solver,
-                    keccak_ctx,
-                    findings,
-                    span,
+                    state, callee, args, options, dest, solver, keccak_ctx, findings, span,
                 );
             }
 
@@ -229,8 +258,10 @@ pub fn execute_block(
             }
 
             IrInstr::Return { values, .. } => {
-                let vals: Vec<SymbolicValue> =
-                    values.iter().map(|v| eval_value(state, v, keccak_ctx)).collect();
+                let vals: Vec<SymbolicValue> = values
+                    .iter()
+                    .map(|v| eval_value(state, v, keccak_ctx))
+                    .collect();
                 outcome = Some(BlockOutcome::Return { values: vals });
                 break;
             }
@@ -282,8 +313,9 @@ fn handle_control(
             }
             let cond_sv = eval_value(state, cond, keccak_ctx);
             // Fallback: fresh unconstrained Bool keeps both branches reachable.
-            let cond_bool =
-                cond_sv.to_bool().unwrap_or_else(|_| fresh_symbolic_bool("if_cond"));
+            let cond_bool = cond_sv
+                .to_bool()
+                .unwrap_or_else(|_| fresh_symbolic_bool("if_cond"));
             let succs = cfg_successors(cfg_func, block_id);
             if succs.len() >= 2 {
                 BlockOutcome::Branch {
@@ -302,7 +334,8 @@ fn handle_control(
             let cond_bool = cond.as_ref().map(|c| {
                 let sv = eval_value(state, c, keccak_ctx);
                 // Fallback: fresh unconstrained Bool keeps both body/exit reachable.
-                sv.to_bool().unwrap_or_else(|_| fresh_symbolic_bool("loop_cond"))
+                sv.to_bool()
+                    .unwrap_or_else(|_| fresh_symbolic_bool("loop_cond"))
             });
             let succs = cfg_successors(cfg_func, block_id);
             if let Some(&body) = succs.first() {
@@ -416,7 +449,10 @@ fn handle_call(
                 if low_level && i == 0 {
                     state.register_pending_call(
                         d.clone(),
-                        PendingCallInfo { callee: cname.clone(), span },
+                        PendingCallInfo {
+                            callee: cname.clone(),
+                            span,
+                        },
                     );
                     if let Some(origin) = call_origin(&cname) {
                         state.set_origin(d.clone(), origin);
@@ -449,7 +485,9 @@ fn handle_require(
         let sv = eval_value(state, cond_val, keccak_ctx);
         if let Ok(b) = sv.to_bool() {
             let desc = format!("require at {:?}", span);
-            if desc.to_ascii_lowercase().contains("sender") || desc.to_ascii_lowercase().contains("owner") {
+            if desc.to_ascii_lowercase().contains("sender")
+                || desc.to_ascii_lowercase().contains("owner")
+            {
                 state.sender_checked = true;
             }
             state.path_constraints.add(b, desc);
@@ -475,7 +513,9 @@ fn handle_assert(
         if let Ok(cond_bool) = sv.to_bool() {
             check_assert_violation(state, &cond_bool, solver, findings, span);
             // Continue on the "assert holds" path.
-            state.path_constraints.add(cond_bool, format!("assert at {:?}", span));
+            state
+                .path_constraints
+                .add(cond_bool, format!("assert at {:?}", span));
         }
     }
 }
@@ -539,11 +579,19 @@ fn check_arithmetic_overflow(
         "+" => {
             // Unsigned wrap: (lhs + rhs) < lhs
             let sum = lbv.bvadd(rbv);
-            Some((sum.bvult(lbv), SeVulnKind::IntegerOverflow, "addition overflow"))
+            Some((
+                sum.bvult(lbv),
+                SeVulnKind::IntegerOverflow,
+                "addition overflow",
+            ))
         }
         "-" => {
             // Unsigned underflow: rhs > lhs
-            Some((rbv.bvugt(lbv), SeVulnKind::IntegerUnderflow, "subtraction underflow"))
+            Some((
+                rbv.bvugt(lbv),
+                SeVulnKind::IntegerUnderflow,
+                "subtraction underflow",
+            ))
         }
         "*" => {
             // Wrap detection: lhs != 0 && (lhs * rhs) / lhs != rhs
@@ -552,7 +600,11 @@ fn check_arithmetic_overflow(
             let product = lbv.bvmul(rbv);
             let div_back = product.bvudiv(lbv);
             let wraps = div_back.eq(rbv).not();
-            Some((Bool::and(&[&lhs_nonzero, &wraps]), SeVulnKind::IntegerOverflow, "multiplication overflow"))
+            Some((
+                Bool::and(&[&lhs_nonzero, &wraps]),
+                SeVulnKind::IntegerOverflow,
+                "multiplication overflow",
+            ))
         }
         _ => None,
     };
@@ -603,7 +655,9 @@ fn handle_keccak_call(
             state.variables.set(d.clone(), hash);
         }
     } else if let Some(d) = dest.first() {
-        state.variables.set(d.clone(), fresh_bv("keccak_result", 256));
+        state
+            .variables
+            .set(d.clone(), fresh_bv("keccak_result", 256));
     }
 }
 
@@ -618,15 +672,20 @@ pub fn resolve_place_read(
     keccak_ctx: &mut KeccakContext,
 ) -> SymbolicValue {
     match place {
-        IrPlace::Var { var, class } => {
-            read_var(state, var, *class, layout, contract_name)
-        }
-        IrPlace::Index { base: _, index, root, class } => {
+        IrPlace::Var { var, class } => read_var(state, var, *class, layout, contract_name),
+        IrPlace::Index {
+            base: _,
+            index,
+            root,
+            class,
+        } => {
             let root_name = root.as_deref().unwrap_or("");
             let idx_bv = eval_optional_index(state, index.as_ref(), keccak_ctx);
             read_index(state, root_name, &idx_bv, *class, layout, contract_name)
         }
-        IrPlace::Member { field, root, class, .. } => {
+        IrPlace::Member {
+            field, root, class, ..
+        } => {
             let root_name = root.as_deref().unwrap_or("");
             read_member(state, root_name, field, *class, layout, contract_name)
         }
@@ -649,14 +708,37 @@ pub fn resolve_place_write(
         IrPlace::Var { var, class } => {
             write_var(state, var, *class, &value_bv, layout, contract_name);
         }
-        IrPlace::Index { base: _, index, root, class } => {
+        IrPlace::Index {
+            base: _,
+            index,
+            root,
+            class,
+        } => {
             let root_name = root.as_deref().unwrap_or("");
             let idx_bv = eval_optional_index(state, index.as_ref(), keccak_ctx);
-            write_index(state, root_name, &idx_bv, *class, &value_bv, layout, contract_name);
+            write_index(
+                state,
+                root_name,
+                &idx_bv,
+                *class,
+                &value_bv,
+                layout,
+                contract_name,
+            );
         }
-        IrPlace::Member { field, root, class, .. } => {
+        IrPlace::Member {
+            field, root, class, ..
+        } => {
             let root_name = root.as_deref().unwrap_or("");
-            write_member(state, root_name, field, *class, &value_bv, layout, contract_name);
+            write_member(
+                state,
+                root_name,
+                field,
+                *class,
+                &value_bv,
+                layout,
+                contract_name,
+            );
         }
     }
 }
@@ -676,14 +758,20 @@ fn read_var(
             if layout.is_mapping(&name) {
                 fresh_bv(&format!("storage_map_{name}"), 256)
             } else if let Some(slot) = layout.get_slot(contract_name, &name) {
-                state.storage.sload(&BV::from_u64(slot, 256)).unwrap_or_else(|_| fresh_bv(&name, 256))
+                state
+                    .storage
+                    .sload(&BV::from_u64(slot, 256))
+                    .unwrap_or_else(|_| fresh_bv(&name, 256))
             } else {
                 fresh_bv(&format!("storage_unknown_{name}"), 256)
             }
         }
         PlaceClass::Memory => {
             let addr = BV::from_u64(var_addr_hint(var), 256);
-            state.memory.read(&addr).unwrap_or_else(|_| fresh_bv("mem_read", 256))
+            state
+                .memory
+                .read(&addr)
+                .unwrap_or_else(|_| fresh_bv("mem_read", 256))
         }
         PlaceClass::Unknown => resolve_unknown_var_read(state, var, layout, contract_name),
     }
@@ -700,17 +788,23 @@ fn read_index(
     match class {
         PlaceClass::Storage => {
             if layout.is_mapping(root_name) {
-                state.storage.mapping_read(root_name, idx_bv)
+                state
+                    .storage
+                    .mapping_read(root_name, idx_bv)
                     .unwrap_or_else(|_| fresh_bv(root_name, 256))
             } else {
                 let base_slot = layout.get_slot(contract_name, root_name).unwrap_or(0);
                 let slot = BV::from_u64(base_slot, 256).bvadd(idx_bv);
-                state.storage.sload(&slot).unwrap_or_else(|_| fresh_bv(root_name, 256))
+                state
+                    .storage
+                    .sload(&slot)
+                    .unwrap_or_else(|_| fresh_bv(root_name, 256))
             }
         }
-        PlaceClass::Memory => {
-            state.memory.read(idx_bv).unwrap_or_else(|_| fresh_bv("mem_read", 256))
-        }
+        PlaceClass::Memory => state
+            .memory
+            .read(idx_bv)
+            .unwrap_or_else(|_| fresh_bv("mem_read", 256)),
         PlaceClass::Unknown => fresh_bv(&format!("unknown_index_{root_name}"), 256),
     }
 }
@@ -728,7 +822,10 @@ fn read_member(
             let base_slot = layout.get_slot(contract_name, root_name).unwrap_or(0);
             let offset = layout.get_field_offset(root_name, field).unwrap_or(0);
             let slot = BV::from_u64(base_slot + offset, 256);
-            state.storage.sload(&slot).unwrap_or_else(|_| fresh_bv(field, 256))
+            state
+                .storage
+                .sload(&slot)
+                .unwrap_or_else(|_| fresh_bv(field, 256))
         }
         // TODO: derive address from base pointer + field offset when pointer tracking is added.
         PlaceClass::Memory | PlaceClass::Unknown => {
@@ -756,7 +853,9 @@ fn write_var(
             // Not in layout → discard (havoc semantics).
         }
         PlaceClass::Memory => {
-            state.memory.write(&BV::from_u64(var_addr_hint(var), 256), value_bv);
+            state
+                .memory
+                .write(&BV::from_u64(var_addr_hint(var), 256), value_bv);
         }
         PlaceClass::Unknown => {
             let name = var_name(var);
@@ -765,7 +864,10 @@ fn write_var(
             } else {
                 state.variables.set(
                     var.clone(),
-                    SymbolicValue::BitVec { width: 256, val: value_bv.clone() },
+                    SymbolicValue::BitVec {
+                        width: 256,
+                        val: value_bv.clone(),
+                    },
                 );
             }
         }
@@ -813,7 +915,9 @@ fn write_member(
         PlaceClass::Storage => {
             let base_slot = layout.get_slot(contract_name, root_name).unwrap_or(0);
             let offset = layout.get_field_offset(root_name, field).unwrap_or(0);
-            state.storage.sstore(&BV::from_u64(base_slot + offset, 256), value_bv);
+            state
+                .storage
+                .sstore(&BV::from_u64(base_slot + offset, 256), value_bv);
         }
         // TODO: derive address from base pointer + field offset when pointer tracking is added.
         PlaceClass::Memory | PlaceClass::Unknown => {
@@ -960,14 +1064,21 @@ fn value_var(val: &IrValue) -> Option<&IrVar> {
 /// Determine the `ValueOrigin` for an environment-variable `IrPlace`.
 fn place_origin(place: &IrPlace) -> Option<ValueOrigin> {
     match place {
-        IrPlace::Var { var: IrVar::Named(n), .. } => match n.as_str() {
+        IrPlace::Var {
+            var: IrVar::Named(n),
+            ..
+        } => match n.as_str() {
             "block.timestamp" | "now" => Some(ValueOrigin::Timestamp),
             "block.number" => Some(ValueOrigin::BlockNumber),
             "tx.origin" => Some(ValueOrigin::TxOrigin),
             "address(this).balance" | "this.balance" => Some(ValueOrigin::ThisBalance),
             _ => None,
         },
-        IrPlace::Member { root: Some(r), field, .. } => match (r.as_str(), field.as_str()) {
+        IrPlace::Member {
+            root: Some(r),
+            field,
+            ..
+        } => match (r.as_str(), field.as_str()) {
             ("block", "timestamp") => Some(ValueOrigin::Timestamp),
             ("block", "number") => Some(ValueOrigin::BlockNumber),
             ("tx", "origin") => Some(ValueOrigin::TxOrigin),
@@ -1025,7 +1136,11 @@ fn place_slot_key(place: &IrPlace) -> String {
     match place {
         IrPlace::Var { var, .. } => var_name(var),
         IrPlace::Member { field, root, .. } => {
-            if let Some(r) = root { format!("{r}.{field}") } else { field.clone() }
+            if let Some(r) = root {
+                format!("{r}.{field}")
+            } else {
+                field.clone()
+            }
         }
         IrPlace::Index { root, .. } => root.as_deref().unwrap_or("idx").to_string(),
     }
@@ -1035,9 +1150,14 @@ fn place_slot_key(place: &IrPlace) -> String {
 /// (price, balance, allowance, rate, etc.) used for TOD/front-running detection.
 fn is_order_sensitive_place(place: &IrPlace) -> bool {
     let key = place_slot_key(place).to_ascii_lowercase();
-    key.contains("balance") || key.contains("price") || key.contains("allowance")
-        || key.contains("rate") || key.contains("amount") || key.contains("reward")
-        || key.contains("supply") || key.contains("total")
+    key.contains("balance")
+        || key.contains("price")
+        || key.contains("allowance")
+        || key.contains("rate")
+        || key.contains("amount")
+        || key.contains("reward")
+        || key.contains("supply")
+        || key.contains("total")
 }
 
 /// Flush any remaining pending (unchecked) calls from the state, producing findings.
@@ -1086,7 +1206,10 @@ pub fn pre_populate_call_context(state: &mut SymbolicState) {
         ($name:expr, $bv:expr, $width:expr) => {
             state.variables.set(
                 IrVar::Named($name.to_string()),
-                SymbolicValue::BitVec { width: $width, val: $bv.clone() },
+                SymbolicValue::BitVec {
+                    width: $width,
+                    val: $bv.clone(),
+                },
             );
         };
     }
@@ -1100,35 +1223,55 @@ pub fn pre_populate_call_context(state: &mut SymbolicState) {
     bind!("msg.value", state.call_context.msg_value, 256);
     bind!("block.timestamp", state.call_context.block_timestamp, 256);
     bind!("block.number", state.call_context.block_number, 256);
-    bind!("address(this).balance", state.call_context.this_balance, 256);
+    bind!(
+        "address(this).balance",
+        state.call_context.this_balance,
+        256
+    );
     bind!("this.balance", state.call_context.this_balance, 256);
 
     // Seed origins for environment variables.
     state.set_origin(IrVar::Named("tx.origin".into()), ValueOrigin::TxOrigin);
-    state.set_origin(IrVar::Named("block.timestamp".into()), ValueOrigin::Timestamp);
-    state.set_origin(IrVar::Named("block.number".into()), ValueOrigin::BlockNumber);
-    state.set_origin(IrVar::Named("address(this).balance".into()), ValueOrigin::ThisBalance);
-    state.set_origin(IrVar::Named("this.balance".into()), ValueOrigin::ThisBalance);
+    state.set_origin(
+        IrVar::Named("block.timestamp".into()),
+        ValueOrigin::Timestamp,
+    );
+    state.set_origin(
+        IrVar::Named("block.number".into()),
+        ValueOrigin::BlockNumber,
+    );
+    state.set_origin(
+        IrVar::Named("address(this).balance".into()),
+        ValueOrigin::ThisBalance,
+    );
+    state.set_origin(
+        IrVar::Named("this.balance".into()),
+        ValueOrigin::ThisBalance,
+    );
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chainvet_core::cfg::{Block, BlockId, CfgFunction, Edge};
-    use chainvet_core::ir::{ControlKind, IrValue, IrVar};
-    use chainvet_core::norm::{Literal, Span};
     use crate::symbolic::detectors::DetectorRegistry;
     use crate::symbolic::solver::z3_backend::Z3Backend;
     use crate::symbolic::state::call_context::CallContext;
     use crate::symbolic::state::storage::StorageLayout;
     use crate::symbolic::state::{StateIdGen, SymbolicState};
-    use crate::symbolic::types::hash::KeccakContext;
     use crate::symbolic::types::concrete_bv;
+    use crate::symbolic::types::hash::KeccakContext;
+    use chainvet_core::cfg::{Block, BlockId, CfgFunction, Edge};
+    use chainvet_core::ir::{ControlKind, IrValue, IrVar};
+    use chainvet_core::norm::{Literal, Span};
 
     // ---- Test helpers ----
 
     fn span() -> Span {
-        Span { file: 0, start: 0, end: 0 }
+        Span {
+            file: 0,
+            start: 0,
+            end: 0,
+        }
     }
 
     fn make_state() -> SymbolicState {
@@ -1156,19 +1299,25 @@ mod tests {
     }
 
     /// Run execute_block on a given cfg and block id, returning the outcome.
-    fn run_block(
-        state: &mut SymbolicState,
-        cfg: &CfgFunction,
-        block_id: BlockId,
-    ) -> BlockOutcome {
+    fn run_block(state: &mut SymbolicState, cfg: &CfgFunction, block_id: BlockId) -> BlockOutcome {
         let solver = Z3Backend::new(0);
         let mut keccak = KeccakContext::new();
         let layout = StorageLayout::empty();
         let mut detectors = DetectorRegistry::new();
         let mut findings = vec![];
         let block = cfg.blocks.iter().find(|b| b.id == block_id).unwrap();
-        execute_block(state, block, cfg, &mut detectors, &solver, &mut keccak, &layout, "", &mut findings)
-            .unwrap()
+        execute_block(
+            state,
+            block,
+            cfg,
+            &mut detectors,
+            &solver,
+            &mut keccak,
+            &layout,
+            "",
+            &mut findings,
+        )
+        .unwrap()
     }
 
     // ---- eval_value tests ----
@@ -1194,7 +1343,11 @@ mod tests {
         let mut keccak = KeccakContext::new();
         let var = IrVar::Named("unbound_var".to_string());
         let result = eval_value(&state, &IrValue::Var(var), &mut keccak);
-        assert_eq!(result.width(), 256, "unbound var should return a 256-bit symbolic BV");
+        assert_eq!(
+            result.width(),
+            256,
+            "unbound var should return a 256-bit symbolic BV"
+        );
     }
 
     #[test]
@@ -1202,7 +1355,10 @@ mod tests {
         // IrValue::Literal with kind="number" and value="42" must produce BV 42.
         let state = make_state();
         let mut keccak = KeccakContext::new();
-        let lit = IrValue::Literal(Literal { kind: "number".to_string(), value: "42".to_string() });
+        let lit = IrValue::Literal(Literal {
+            kind: "number".to_string(),
+            value: "42".to_string(),
+        });
         let result = eval_value(&state, &lit, &mut keccak);
         // The result must be a 256-bit BV. Verify width.
         assert_eq!(result.width(), 256);
@@ -1216,7 +1372,11 @@ mod tests {
         let state = make_state();
         let mut keccak = KeccakContext::new();
         let result = eval_value(&state, &IrValue::Unknown, &mut keccak);
-        assert_eq!(result.width(), 256, "IrValue::Unknown should produce BV<256>");
+        assert_eq!(
+            result.width(),
+            256,
+            "IrValue::Unknown should produce BV<256>"
+        );
     }
 
     // ---- pre_populate_call_context tests ----
@@ -1254,14 +1414,20 @@ mod tests {
         let cfg = CfgFunction {
             id: 0,
             blocks: vec![
-                Block { id: 0, instrs: vec![] },
-                Block { id: 1, instrs: vec![] },
-                Block { id: 2, instrs: vec![] },
+                Block {
+                    id: 0,
+                    instrs: vec![],
+                },
+                Block {
+                    id: 1,
+                    instrs: vec![],
+                },
+                Block {
+                    id: 2,
+                    instrs: vec![],
+                },
             ],
-            edges: vec![
-                Edge { from: 0, to: 1 },
-                Edge { from: 0, to: 2 },
-            ],
+            edges: vec![Edge { from: 0, to: 1 }, Edge { from: 0, to: 2 }],
         };
         let succs = cfg_successors(&cfg, 0);
         assert_eq!(succs.len(), 2);
@@ -1281,7 +1447,10 @@ mod tests {
 
         match run_block(&mut state, &cfg, 0) {
             BlockOutcome::Fallthrough { target } => {
-                assert_eq!(target, 1, "Nop block with one successor should fall through to it");
+                assert_eq!(
+                    target, 1,
+                    "Nop block with one successor should fall through to it"
+                );
             }
             _ => panic!("expected Fallthrough, got different variant"),
         }
@@ -1291,8 +1460,15 @@ mod tests {
     fn test_execute_block_assign_binds_variable() {
         // An Assign instruction must bind the destination variable in state.variables.
         let dest = IrVar::Named("result".to_string());
-        let src = IrValue::Literal(Literal { kind: "number".to_string(), value: "99".to_string() });
-        let instrs = vec![IrInstr::Assign { dest: dest.clone(), src, span: span() }];
+        let src = IrValue::Literal(Literal {
+            kind: "number".to_string(),
+            value: "99".to_string(),
+        });
+        let instrs = vec![IrInstr::Assign {
+            dest: dest.clone(),
+            src,
+            span: span(),
+        }];
         let cfg = single_block_cfg(instrs);
         let mut state = make_state();
 
@@ -1307,7 +1483,10 @@ mod tests {
     #[test]
     fn test_execute_block_return_terminates_path() {
         // A block ending in Return must produce BlockOutcome::Return.
-        let instrs = vec![IrInstr::Return { values: vec![], span: span() }];
+        let instrs = vec![IrInstr::Return {
+            values: vec![],
+            span: span(),
+        }];
         let cfg = single_block_cfg(instrs);
         let mut state = make_state();
 
@@ -1339,7 +1518,9 @@ mod tests {
         // BlockOutcome::Branch with both true_block and false_block set.
         let cond_var = IrVar::Named("cond".to_string());
         let instrs = vec![IrInstr::Control {
-            kind: ControlKind::If { cond: IrValue::Var(cond_var) },
+            kind: ControlKind::If {
+                cond: IrValue::Var(cond_var),
+            },
             span: span(),
         }];
         // Two successors: block 1 (true branch) and block 2 (false branch).
@@ -1347,18 +1528,25 @@ mod tests {
             id: 0,
             blocks: vec![
                 Block { id: 0, instrs },
-                Block { id: 1, instrs: vec![] },
-                Block { id: 2, instrs: vec![] },
+                Block {
+                    id: 1,
+                    instrs: vec![],
+                },
+                Block {
+                    id: 2,
+                    instrs: vec![],
+                },
             ],
-            edges: vec![
-                Edge { from: 0, to: 1 },
-                Edge { from: 0, to: 2 },
-            ],
+            edges: vec![Edge { from: 0, to: 1 }, Edge { from: 0, to: 2 }],
         };
         let mut state = make_state();
 
         match run_block(&mut state, &cfg, 0) {
-            BlockOutcome::Branch { true_block, false_block, .. } => {
+            BlockOutcome::Branch {
+                true_block,
+                false_block,
+                ..
+            } => {
                 assert_eq!(true_block, 1, "first successor should be true_block");
                 assert_eq!(false_block, 2, "second successor should be false_block");
             }

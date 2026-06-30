@@ -2,7 +2,7 @@ use std::cmp::Ordering;
 use std::collections::{BinaryHeap, HashMap, VecDeque};
 
 use chainvet_core::cfg::CfgFunction;
-use chainvet_core::ir::{ControlKind, IrInstr, IrVar, IrValue, PlaceClass};
+use chainvet_core::ir::{ControlKind, IrInstr, IrValue, IrVar, PlaceClass};
 
 use super::scheduler::WorklistEntry;
 
@@ -279,8 +279,10 @@ fn callee_name_lower(callee: &IrValue) -> String {
 }
 
 fn is_low_level_name(name: &str) -> bool {
-    matches!(name, "call" | "send" | "transfer" | "delegatecall" | "staticcall")
-        || name.ends_with(".call")
+    matches!(
+        name,
+        "call" | "send" | "transfer" | "delegatecall" | "staticcall"
+    ) || name.ends_with(".call")
         || name.ends_with(".send")
         || name.ends_with(".transfer")
         || name.ends_with(".delegatecall")
@@ -300,7 +302,10 @@ pub enum ExplorationStrategyKind {
 /// Construct the chosen strategy as a boxed trait object.
 ///
 /// `cfgs` is required for `VulnerabilityDirected` (pre-computes sink scores).
-pub fn make_strategy(kind: ExplorationStrategyKind, cfgs: &[CfgFunction]) -> Box<dyn ExplorationStrategy> {
+pub fn make_strategy(
+    kind: ExplorationStrategyKind,
+    cfgs: &[CfgFunction],
+) -> Box<dyn ExplorationStrategy> {
     match kind {
         ExplorationStrategyKind::Dfs => Box::new(DfsStrategy::new()),
         ExplorationStrategyKind::Bfs => Box::new(BfsStrategy::new()),
@@ -313,11 +318,11 @@ pub fn make_strategy(kind: ExplorationStrategyKind, cfgs: &[CfgFunction]) -> Box
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::HashMap;
-    use chainvet_core::cfg::BlockId;
-    use crate::symbolic::state::{StateIdGen, SymbolicState};
-    use crate::symbolic::state::call_context::CallContext;
     use crate::symbolic::engine::scheduler::WorklistEntry;
+    use crate::symbolic::state::call_context::CallContext;
+    use crate::symbolic::state::{StateIdGen, SymbolicState};
+    use chainvet_core::cfg::BlockId;
+    use std::collections::HashMap;
 
     /// Build a minimal WorklistEntry at the given block_id.
     /// Each call creates a fresh Z3 context via CallContext::new_symbolic(),
@@ -358,9 +363,15 @@ mod tests {
         let second = dfs.pop().unwrap();
         let third = dfs.pop().unwrap();
 
-        assert_eq!(first.state.current_block, 30, "DFS: first pop should be last pushed");
+        assert_eq!(
+            first.state.current_block, 30,
+            "DFS: first pop should be last pushed"
+        );
         assert_eq!(second.state.current_block, 20);
-        assert_eq!(third.state.current_block, 10, "DFS: last pop should be first pushed");
+        assert_eq!(
+            third.state.current_block, 10,
+            "DFS: last pop should be first pushed"
+        );
     }
 
     #[test]
@@ -407,9 +418,15 @@ mod tests {
         let second = bfs.pop().unwrap();
         let third = bfs.pop().unwrap();
 
-        assert_eq!(first.state.current_block, 10, "BFS: first pop should be first pushed");
+        assert_eq!(
+            first.state.current_block, 10,
+            "BFS: first pop should be first pushed"
+        );
         assert_eq!(second.state.current_block, 20);
-        assert_eq!(third.state.current_block, 30, "BFS: last pop should be last pushed");
+        assert_eq!(
+            third.state.current_block, 30,
+            "BFS: last pop should be last pushed"
+        );
     }
 
     // ---- make_strategy tests ----
@@ -423,7 +440,10 @@ mod tests {
 
         // LIFO: second entry should come out first.
         let out = strategy.pop().unwrap();
-        assert_eq!(out.state.current_block, 2, "make_strategy(Dfs) should be LIFO");
+        assert_eq!(
+            out.state.current_block, 2,
+            "make_strategy(Dfs) should be LIFO"
+        );
     }
 
     #[test]
@@ -435,6 +455,9 @@ mod tests {
 
         // FIFO: first entry should come out first.
         let out = strategy.pop().unwrap();
-        assert_eq!(out.state.current_block, 1, "make_strategy(Bfs) should be FIFO");
+        assert_eq!(
+            out.state.current_block, 1,
+            "make_strategy(Bfs) should be FIFO"
+        );
     }
 }

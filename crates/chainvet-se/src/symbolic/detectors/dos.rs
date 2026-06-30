@@ -1,11 +1,11 @@
-use chainvet_sa::analysis::detectors::Severity;
-use chainvet_core::cfg::BlockId;
-use chainvet_core::ir::{ControlKind, IrInstr, IrPlace, IrValue, IrVar};
-use chainvet_core::norm::Span;
-use crate::symbolic::detectors::{make_finding, place_matches, CalleeTracker, Detector};
+use crate::symbolic::detectors::{CalleeTracker, Detector, make_finding, place_matches};
 use crate::symbolic::results::finding::{Confidence, SeFinding, SeVulnKind};
 use crate::symbolic::solver::SmtSolver;
 use crate::symbolic::state::SymbolicState;
+use chainvet_core::cfg::BlockId;
+use chainvet_core::ir::{ControlKind, IrInstr, IrPlace, IrValue, IrVar};
+use chainvet_core::norm::Span;
+use chainvet_sa::analysis::detectors::Severity;
 
 /// Detects Denial of Service vulnerabilities.
 ///
@@ -39,8 +39,7 @@ impl DosDetector {
     }
 
     fn is_send_or_call(&self, callee: &IrValue) -> bool {
-        self.tracker
-            .chain_contains_field(callee, &["call", "send"])
+        self.tracker.chain_contains_field(callee, &["call", "send"])
     }
 
     fn is_transfer_or_send(&self, callee: &IrValue) -> bool {
@@ -251,15 +250,19 @@ impl DosDetector {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chainvet_core::ir::{ControlKind, IrInstr, IrPlace, IrValue, IrVar, PlaceClass};
-    use chainvet_core::norm::Span;
     use crate::symbolic::results::finding::SeVulnKind;
     use crate::symbolic::solver::z3_backend::Z3Backend;
     use crate::symbolic::state::call_context::CallContext;
     use crate::symbolic::state::{StateIdGen, SymbolicState};
+    use chainvet_core::ir::{ControlKind, IrInstr, IrPlace, IrValue, IrVar, PlaceClass};
+    use chainvet_core::norm::Span;
 
     fn span() -> Span {
-        Span { file: 0, start: 0, end: 0 }
+        Span {
+            file: 0,
+            start: 0,
+            end: 0,
+        }
     }
 
     fn make_state_and_solver() -> (SymbolicState, Z3Backend) {
@@ -311,7 +314,9 @@ mod tests {
         };
         let findings = det.on_instruction(&state, &instr, &solver);
         assert!(
-            findings.iter().any(|f| f.kind == SeVulnKind::HardcodedGasAmount),
+            findings
+                .iter()
+                .any(|f| f.kind == SeVulnKind::HardcodedGasAmount),
             "transfer should emit HardcodedGasAmount"
         );
     }
@@ -330,7 +335,9 @@ mod tests {
         };
         let findings = det.on_instruction(&state, &instr, &solver);
         assert!(
-            findings.iter().any(|f| f.kind == SeVulnKind::HardcodedGasAmount),
+            findings
+                .iter()
+                .any(|f| f.kind == SeVulnKind::HardcodedGasAmount),
             "send should emit HardcodedGasAmount"
         );
     }
@@ -374,7 +381,9 @@ mod tests {
         };
         let findings = det.on_instruction(&state, &require_instr, &solver);
         assert!(
-            findings.iter().any(|f| f.kind == SeVulnKind::ForceSendEther),
+            findings
+                .iter()
+                .any(|f| f.kind == SeVulnKind::ForceSendEther),
             "balance in require should emit ForceSendEther"
         );
     }
@@ -405,7 +414,9 @@ mod tests {
         };
         let findings = det.on_instruction(&state, &require_instr, &solver);
         assert!(
-            !findings.iter().any(|f| f.kind == SeVulnKind::ForceSendEther),
+            !findings
+                .iter()
+                .any(|f| f.kind == SeVulnKind::ForceSendEther),
             "reset should clear balance_var tracking"
         );
     }
@@ -453,9 +464,10 @@ mod tests {
         );
         // send also triggers HardcodedGasAmount
         assert!(
-            findings.iter().any(|f| f.kind == SeVulnKind::HardcodedGasAmount),
+            findings
+                .iter()
+                .any(|f| f.kind == SeVulnKind::HardcodedGasAmount),
             "send via member chain should also emit HardcodedGasAmount"
         );
     }
 }
-

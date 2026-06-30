@@ -23,7 +23,13 @@ fn hybrid_scan_matches_cli_finding_count() {
 #[test]
 fn static_scan_returns_static_only_findings() {
     let r = scan_path(REENTRANCY, ScanMode::Static, &HybridBudget::default()).unwrap();
-    assert!(r.hybrid.is_none(), "non-hybrid modes carry no hybrid telemetry");
-    assert!(!r.findings.is_empty(), "static analysis finds the reentrancy");
+    assert!(
+        r.hybrid.is_none(),
+        "non-hybrid modes carry no hybrid telemetry"
+    );
+    assert!(
+        !r.findings.is_empty(),
+        "static analysis finds the reentrancy"
+    );
     assert!(r.findings.iter().all(|f| f.provenance == "static"));
 }

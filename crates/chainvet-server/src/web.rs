@@ -30,7 +30,10 @@ type ApiResult<T> = Result<T, ApiError>;
 
 impl ApiError {
     fn new(status: StatusCode, message: impl Into<String>) -> Self {
-        Self { status, message: message.into() }
+        Self {
+            status,
+            message: message.into(),
+        }
     }
     fn bad_request(m: impl Into<String>) -> Self {
         Self::new(StatusCode::BAD_REQUEST, m)
@@ -225,7 +228,15 @@ impl Job {
         }
     }
     fn describe(&self) -> String {
-        format!("{} analysis on {}", self.mode, if self.target_path.is_empty() { "." } else { &self.target_path })
+        format!(
+            "{} analysis on {}",
+            self.mode,
+            if self.target_path.is_empty() {
+                "."
+            } else {
+                &self.target_path
+            }
+        )
     }
     fn cancel(&self) {
         self.cancelled.store(true, Ordering::SeqCst);
@@ -234,7 +245,10 @@ impl Job {
         self.cancelled.load(Ordering::SeqCst)
     }
     fn elapsed_ms(&self) -> u64 {
-        self.started_at.elapsed().as_millis().min(u128::from(u64::MAX)) as u64
+        self.started_at
+            .elapsed()
+            .as_millis()
+            .min(u128::from(u64::MAX)) as u64
     }
     fn start_target(&self, current: String) {
         if let Ok(mut p) = self.progress.lock() {
@@ -252,7 +266,10 @@ impl Job {
 impl AppState {
     pub fn new(root_dir: PathBuf) -> Self {
         let root_dir = root_dir.canonicalize().unwrap_or(root_dir);
-        Self { root_dir, active_job: Mutex::new(None) }
+        Self {
+            root_dir,
+            active_job: Mutex::new(None),
+        }
     }
 
     fn active_job(&self) -> ApiResult<Option<Arc<Job>>> {
@@ -268,9 +285,16 @@ impl AppState {
             .lock()
             .map_err(|_| ApiError::internal("analysis state lock poisoned"))?;
         if let Some(current) = active.as_ref() {
-            return Err(ApiError::conflict(format!("{} is already running", current.describe())));
+            return Err(ApiError::conflict(format!(
+                "{} is already running",
+                current.describe()
+            )));
         }
-        let job = Arc::new(Job::new(mode.as_str(), relative_display(&self.root_dir, target), total));
+        let job = Arc::new(Job::new(
+            mode.as_str(),
+            relative_display(&self.root_dir, target),
+            total,
+        ));
         *active = Some(job.clone());
         Ok(job)
     }
@@ -302,7 +326,10 @@ async fn api_files(
     Query(query): Query<FilesQuery>,
 ) -> ApiResult<Json<FilesResponse>> {
     let dir = resolve_existing_path(&state.root_dir, query.path.as_deref().unwrap_or(""))?;
-    if !fs::metadata(&dir).map_err(ApiError::internal_from_io)?.is_dir() {
+    if !fs::metadata(&dir)
+        .map_err(ApiError::internal_from_io)?
+        .is_dir()
+    {
         return Err(ApiError::bad_request("requested path is not a directory"));
     }
 
@@ -333,7 +360,10 @@ async fn api_files(
     entries.sort_by(|a, b| match (a.is_dir, b.is_dir) {
         (true, false) => std::cmp::Ordering::Less,
         (false, true) => std::cmp::Ordering::Greater,
-        _ => a.name.to_ascii_lowercase().cmp(&b.name.to_ascii_lowercase()),
+        _ => a
+            .name
+            .to_ascii_lowercase()
+            .cmp(&b.name.to_ascii_lowercase()),
     });
 
     let parent_path = if dir == state.root_dir {
@@ -358,7 +388,10 @@ async fn api_file(
     Query(query): Query<FileQuery>,
 ) -> ApiResult<Json<FileContentResponse>> {
     let path = resolve_existing_path(&state.root_dir, &query.path)?;
-    if !fs::metadata(&path).map_err(ApiError::internal_from_io)?.is_file() {
+    if !fs::metadata(&path)
+        .map_err(ApiError::internal_from_io)?
+        .is_file()
+    {
         return Err(ApiError::bad_request("requested path is not a file"));
     }
     let content = fs::read_to_string(&path).map_err(ApiError::internal_from_io)?;
@@ -397,8 +430,16 @@ async fn api_analysis_status(
     };
     let cancel_requested = job.was_cancelled();
     let (phase, total, completed, current) = {
-        let p = job.progress.lock().map_err(|_| ApiError::internal("progress lock poisoned"))?;
-        (p.phase.clone(), p.total_targets, p.completed_targets, p.current_target.clone())
+        let p = job
+            .progress
+            .lock()
+            .map_err(|_| ApiError::internal("progress lock poisoned"))?;
+        (
+            p.phase.clone(),
+            p.total_targets,
+            p.completed_targets,
+            p.current_target.clone(),
+        )
     };
     Ok(Json(AnalyzeStatusResponse {
         running: true,
@@ -406,7 +447,11 @@ async fn api_analysis_status(
         target_path: Some(job.target_path.clone()),
         elapsed_ms: Some(job.elapsed_ms()),
         cancel_requested,
-        phase: if cancel_requested { "cancelling".to_string() } else { phase },
+        phase: if cancel_requested {
+            "cancelling".to_string()
+        } else {
+            phase
+        },
         total_targets: Some(total),
         completed_targets: Some(completed),
         remaining_targets: Some(total.saturating_sub(completed)),
@@ -441,11 +486,18 @@ fn analyze(state: &AppState, request: AnalyzeRequest) -> ApiResult<AnalyzeRespon
         let mut findings = Vec::new();
         for file in &targets {
             if job.was_cancelled() {
-                return Err(ApiError::cancelled(format!("analysis cancelled: {}", job.describe())));
+                return Err(ApiError::cancelled(format!(
+                    "analysis cancelled: {}",
+                    job.describe()
+                )));
             }
             job.start_target(relative_display(&state.root_dir, file));
-            let scan = scan_path(&file.to_string_lossy(), mode.scan_mode(), &HybridBudget::default())
-                .map_err(|e| ApiError::internal(format!("analysis failed: {e}")))?;
+            let scan = scan_path(
+                &file.to_string_lossy(),
+                mode.scan_mode(),
+                &HybridBudget::default(),
+            )
+            .map_err(|e| ApiError::internal(format!("analysis failed: {e}")))?;
             findings.extend(web_findings(&scan));
             job.finish_target();
         }
@@ -498,7 +550,10 @@ fn build_summary_cards(mode: WebMode, findings: &[WebFinding]) -> Vec<SummaryCar
         .filter(|f| f.severity.as_deref() == Some("high"))
         .count();
     let confirmed = findings.iter().filter(|f| f.layer != "static").count();
-    let card = |label: &str, value: String| SummaryCard { label: label.to_string(), value };
+    let card = |label: &str, value: String| SummaryCard {
+        label: label.to_string(),
+        value,
+    };
     vec![
         card("Mode", mode.as_str().to_string()),
         card("Findings", findings.len().to_string()),
@@ -532,13 +587,17 @@ fn collect_targets(target: &Path) -> ApiResult<Vec<PathBuf>> {
         return Ok(vec![target.to_path_buf()]);
     }
     if !metadata.is_dir() {
-        return Err(ApiError::bad_request("target must be a Solidity file or directory"));
+        return Err(ApiError::bad_request(
+            "target must be a Solidity file or directory",
+        ));
     }
     let mut files = Vec::new();
     collect_solidity_recursive(target, &mut files);
     files.sort();
     if files.is_empty() {
-        return Err(ApiError::bad_request("directory contains no Solidity files"));
+        return Err(ApiError::bad_request(
+            "directory contains no Solidity files",
+        ));
     }
     Ok(files)
 }
@@ -577,7 +636,9 @@ fn resolve_existing_path(root_dir: &Path, requested: &str) -> ApiResult<PathBuf>
         .canonicalize()
         .map_err(|_| ApiError::bad_request("requested path does not exist"))?;
     if !canonical.starts_with(root_dir) {
-        return Err(ApiError::bad_request("requested path escapes the working directory root"));
+        return Err(ApiError::bad_request(
+            "requested path escapes the working directory root",
+        ));
     }
     Ok(canonical)
 }
@@ -586,7 +647,11 @@ fn relative_display(root_dir: &Path, path: &Path) -> String {
     match path.strip_prefix(root_dir) {
         Ok(relative) => {
             let rendered = relative.to_string_lossy().replace('\\', "/");
-            if rendered == "." { String::new() } else { rendered }
+            if rendered == "." {
+                String::new()
+            } else {
+                rendered
+            }
         }
         Err(_) => path.display().to_string(),
     }

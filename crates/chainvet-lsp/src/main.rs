@@ -36,7 +36,8 @@ impl LanguageServer for Backend {
     }
 
     async fn did_open(&self, p: DidOpenTextDocumentParams) {
-        self.publish(p.text_document.uri, p.text_document.text).await;
+        self.publish(p.text_document.uri, p.text_document.text)
+            .await;
     }
 
     async fn did_change(&self, mut p: DidChangeTextDocumentParams) {
@@ -76,7 +77,11 @@ fn diagnostics(text: &str) -> Vec<Diagnostic> {
     let result = scan_path(&path, ScanMode::Static, &HybridBudget::default());
     let _ = std::fs::remove_file(&path);
     match result {
-        Ok(result) => result.findings.iter().map(|f| to_diagnostic(f, text)).collect(),
+        Ok(result) => result
+            .findings
+            .iter()
+            .map(|f| to_diagnostic(f, text))
+            .collect(),
         Err(_) => Vec::new(),
     }
 }

@@ -10,8 +10,6 @@ pub mod engine;
 use std::collections::HashSet;
 use std::sync::Arc;
 
-use chainvet_frontend::frontend::FrontendOutput;
-use chainvet_core::OutputFormat;
 use crate::symbolic::detectors::DetectorRegistry;
 use crate::symbolic::engine::run_engine;
 use crate::symbolic::engine::scheduler::SeConfig;
@@ -20,7 +18,9 @@ use crate::symbolic::results::finding::SeFinding;
 use crate::symbolic::results::report::print_se_report;
 use crate::symbolic::solver::z3_backend::Z3Backend;
 use crate::symbolic::state::storage::StorageLayout;
+use chainvet_core::OutputFormat;
 use chainvet_core::util::error::Result;
+use chainvet_frontend::frontend::FrontendOutput;
 
 #[derive(Debug, Clone, Default)]
 pub struct SymbolicOptions {
@@ -108,7 +108,9 @@ pub fn analyze_with_options(
             storage_layout: Arc::clone(&layout),
             detectors: DetectorRegistry::with_defaults(),
             target_function_ids: options.target_function_ids.clone(),
-            max_path_depth: options.max_path_depth.unwrap_or(SeConfig::default().max_path_depth),
+            max_path_depth: options
+                .max_path_depth
+                .unwrap_or(SeConfig::default().max_path_depth),
             max_instructions: options
                 .max_instructions
                 .unwrap_or(SeConfig::default().max_instructions),
@@ -172,8 +174,8 @@ fn compiler_is_0_8_plus(version: Option<&str>) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chainvet_frontend::frontend::{CompilerInfo, FrontendMode, FrontendOutput};
     use chainvet_core::norm::NormalizedAst;
+    use chainvet_frontend::frontend::{CompilerInfo, FrontendMode, FrontendOutput};
 
     fn test_compiler_info() -> CompilerInfo {
         CompilerInfo {
@@ -208,7 +210,10 @@ mod tests {
             compiler: test_compiler_info(),
         };
         let result = run(&output, OutputFormat::Json);
-        assert!(result.is_ok(), "run() with JSON format must succeed on an empty AST");
+        assert!(
+            result.is_ok(),
+            "run() with JSON format must succeed on an empty AST"
+        );
     }
 
     #[test]
@@ -220,6 +225,9 @@ mod tests {
             compiler: test_compiler_info(),
         };
         let result = run(&output, OutputFormat::Text);
-        assert!(result.is_ok(), "run() with Partial mode must succeed on an empty AST");
+        assert!(
+            result.is_ok(),
+            "run() with Partial mode must succeed on an empty AST"
+        );
     }
 }

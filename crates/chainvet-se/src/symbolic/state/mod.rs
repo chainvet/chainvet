@@ -199,7 +199,10 @@ impl SymbolicState {
             }
         }
         if !combined.is_empty() {
-            self.origins.entry(dest.clone()).or_default().extend(combined);
+            self.origins
+                .entry(dest.clone())
+                .or_default()
+                .extend(combined);
         }
     }
 
@@ -227,7 +230,9 @@ impl SymbolicState {
 
     /// Drain all remaining pending calls (for flushing at function exit).
     pub fn drain_pending(&mut self) -> Vec<(IrVar, PendingCallInfo)> {
-        std::mem::take(&mut self.pending_calls).into_iter().collect()
+        std::mem::take(&mut self.pending_calls)
+            .into_iter()
+            .collect()
     }
 
     /// Clone this state for a branch fork.
@@ -246,8 +251,8 @@ impl SymbolicState {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chainvet_core::ir::IrVar;
     use crate::symbolic::types::SymbolicValue;
+    use chainvet_core::ir::IrVar;
     use z3::ast::BV;
 
     // --- StateIdGen tests ---
@@ -362,16 +367,21 @@ mod tests {
                 val: BV::from_u64(123, 256),
             },
         );
-        forked.path_constraints.add(
-            z3::ast::Bool::from_bool(true),
-            "fork constraint".into(),
-        );
+        forked
+            .path_constraints
+            .add(z3::ast::Bool::from_bool(true), "fork constraint".into());
         forked.path_depth = 5;
         forked.instruction_count = 100;
 
         // Original should be unaffected.
-        assert!(state.variables.is_empty(), "original variables should be unchanged");
-        assert!(state.path_constraints.is_empty(), "original constraints should be unchanged");
+        assert!(
+            state.variables.is_empty(),
+            "original variables should be unchanged"
+        );
+        assert!(
+            state.path_constraints.is_empty(),
+            "original constraints should be unchanged"
+        );
         assert_eq!(state.path_depth, 0);
         assert_eq!(state.instruction_count, 0);
     }

@@ -162,7 +162,11 @@ fn for_each_expr_in_stmt(
 }
 
 /// Walk every sub-expression under `expr_id`, calling `cb` for each.
-fn for_each_expr(ast: &NormalizedAst, expr_id: u32, cb: &mut impl FnMut(u32, &chainvet_core::norm::Expr)) {
+fn for_each_expr(
+    ast: &NormalizedAst,
+    expr_id: u32,
+    cb: &mut impl FnMut(u32, &chainvet_core::norm::Expr),
+) {
     let Some(expr) = ast.expressions.get(expr_id as usize) else {
         return;
     };
@@ -220,7 +224,11 @@ fn for_each_expr(ast: &NormalizedAst, expr_id: u32, cb: &mut impl FnMut(u32, &ch
 }
 
 /// Walk every statement under `stmt_id`, calling `cb` for each.
-fn for_each_stmt(ast: &NormalizedAst, stmt_id: u32, cb: &mut impl FnMut(u32, &chainvet_core::norm::Stmt)) {
+fn for_each_stmt(
+    ast: &NormalizedAst,
+    stmt_id: u32,
+    cb: &mut impl FnMut(u32, &chainvet_core::norm::Stmt),
+) {
     let Some(stmt) = ast.statements.get(stmt_id as usize) else {
         return;
     };
@@ -536,7 +544,10 @@ fn stmt_reads_var_named(ast: &NormalizedAst, stmt_id: u32, target_names: &[Strin
     found
 }
 
-fn get_source_at_span<'a>(ast: &'a NormalizedAst, span: &chainvet_core::norm::Span) -> Option<&'a str> {
+fn get_source_at_span<'a>(
+    ast: &'a NormalizedAst,
+    span: &chainvet_core::norm::Span,
+) -> Option<&'a str> {
     let file = ast.files.get(span.file as usize)?;
     let start = span.start as usize;
     let end = span.end as usize;
@@ -547,11 +558,17 @@ fn get_source_at_span<'a>(ast: &'a NormalizedAst, span: &chainvet_core::norm::Sp
     }
 }
 
-fn function_source_lower(ast: &NormalizedAst, func: &chainvet_core::norm::Function) -> Option<String> {
+fn function_source_lower(
+    ast: &NormalizedAst,
+    func: &chainvet_core::norm::Function,
+) -> Option<String> {
     get_source_at_span(ast, &func.span).map(|source| source.to_ascii_lowercase())
 }
 
-fn source_guided_no_eth_reentrancy_hit(ast: &NormalizedAst, func: &chainvet_core::norm::Function) -> bool {
+fn source_guided_no_eth_reentrancy_hit(
+    ast: &NormalizedAst,
+    func: &chainvet_core::norm::Function,
+) -> bool {
     let Some(source_lower) = function_source_lower(ast, func) else {
         return false;
     };
@@ -1079,8 +1096,8 @@ fn detect_reentrancy_no_eth_transfer(ast: &NormalizedAst) -> Vec<Finding> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chainvet_frontend::frontend::parser::load_via_parser_sources;
     use chainvet_core::norm::SourceFile;
+    use chainvet_frontend::frontend::parser::load_via_parser_sources;
 
     #[test]
     fn source_guided_no_eth_reentrancy_detects_approve_and_call_pattern() {

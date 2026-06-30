@@ -1,12 +1,12 @@
 use std::collections::HashSet;
 
-use chainvet_sa::analysis::detectors::Severity;
-use chainvet_core::cfg::BlockId;
-use chainvet_core::ir::{IrInstr, IrValue, IrVar};
-use crate::symbolic::detectors::{make_finding, Detector};
+use crate::symbolic::detectors::{Detector, make_finding};
 use crate::symbolic::results::finding::{Confidence, SeFinding, SeVulnKind};
 use crate::symbolic::solver::SmtSolver;
 use crate::symbolic::state::SymbolicState;
+use chainvet_core::cfg::BlockId;
+use chainvet_core::ir::{IrInstr, IrValue, IrVar};
+use chainvet_sa::analysis::detectors::Severity;
 
 /// Detects cryptographic vulnerabilities.
 ///
@@ -42,9 +42,9 @@ impl Detector for CryptographicDetector {
     ) -> Vec<SeFinding> {
         match instr {
             // Track ecrecover calls.
-            IrInstr::Call { dest, callee, span, .. }
-                if is_ecrecover(callee) =>
-            {
+            IrInstr::Call {
+                dest, callee, span, ..
+            } if is_ecrecover(callee) => {
                 // Record the result variable for zero-check tracking.
                 for v in dest {
                     self.ecrecover_results.insert(v.clone());
@@ -66,12 +66,8 @@ impl Detector for CryptographicDetector {
             }
 
             // Binary comparison: detect `ecrecover_result == 0` (proper zero-check).
-            IrInstr::Binary { op, lhs, rhs, .. }
-                if op == "==" || op == "!=" =>
-            {
-                let is_zero = |v: &IrValue| {
-                    matches!(v, IrValue::Literal(lit) if lit.value == "0")
-                };
+            IrInstr::Binary { op, lhs, rhs, .. } if op == "==" || op == "!=" => {
+                let is_zero = |v: &IrValue| matches!(v, IrValue::Literal(lit) if lit.value == "0");
 
                 let checked_var = if is_zero(rhs) {
                     as_var(lhs)
@@ -131,15 +127,19 @@ impl Detector for CryptographicDetector {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chainvet_core::ir::{IrInstr, IrValue, IrVar};
-    use chainvet_core::norm::{Literal, Span};
     use crate::symbolic::results::finding::SeVulnKind;
     use crate::symbolic::solver::z3_backend::Z3Backend;
     use crate::symbolic::state::call_context::CallContext;
     use crate::symbolic::state::{StateIdGen, SymbolicState};
+    use chainvet_core::ir::{IrInstr, IrValue, IrVar};
+    use chainvet_core::norm::{Literal, Span};
 
     fn span() -> Span {
-        Span { file: 0, start: 0, end: 0 }
+        Span {
+            file: 0,
+            start: 0,
+            end: 0,
+        }
     }
 
     fn make_state_and_solver() -> (SymbolicState, Z3Backend) {
@@ -160,7 +160,10 @@ mod tests {
     }
 
     fn return_instr() -> IrInstr {
-        IrInstr::Return { values: vec![], span: span() }
+        IrInstr::Return {
+            values: vec![],
+            span: span(),
+        }
     }
 
     fn zero_check_instr() -> IrInstr {
@@ -193,7 +196,9 @@ mod tests {
         let mut det = CryptographicDetector::new();
         let findings = det.on_instruction(&state, &ecrecover_instr(), &solver);
         assert!(
-            findings.iter().any(|f| f.kind == SeVulnKind::SignatureMalleability),
+            findings
+                .iter()
+                .any(|f| f.kind == SeVulnKind::SignatureMalleability),
             "ecrecover should always emit SignatureMalleability"
         );
     }
@@ -207,7 +212,9 @@ mod tests {
         det.on_instruction(&state, &ecrecover_instr(), &solver);
         let findings = det.on_instruction(&state, &return_instr(), &solver);
         assert!(
-            findings.iter().any(|f| f.kind == SeVulnKind::MissingSignatureVerification),
+            findings
+                .iter()
+                .any(|f| f.kind == SeVulnKind::MissingSignatureVerification),
             "ecrecover result not checked before return should emit MissingSignatureVerification"
         );
     }
@@ -223,7 +230,9 @@ mod tests {
         det.on_instruction(&state, &zero_check_instr(), &solver);
         let findings = det.on_instruction(&state, &return_instr(), &solver);
         assert!(
-            !findings.iter().any(|f| f.kind == SeVulnKind::MissingSignatureVerification),
+            !findings
+                .iter()
+                .any(|f| f.kind == SeVulnKind::MissingSignatureVerification),
             "zero-checked ecrecover should not emit MissingSignatureVerification"
         );
     }
@@ -238,7 +247,9 @@ mod tests {
         det.reset();
         let findings = det.on_instruction(&state, &return_instr(), &solver);
         assert!(
-            !findings.iter().any(|f| f.kind == SeVulnKind::MissingSignatureVerification),
+            !findings
+                .iter()
+                .any(|f| f.kind == SeVulnKind::MissingSignatureVerification),
             "reset should clear ecrecover_results set"
         );
     }
@@ -257,4 +268,3 @@ fn as_var(val: &IrValue) -> Option<&IrVar> {
         _ => None,
     }
 }
-

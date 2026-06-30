@@ -2,13 +2,13 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 
 use serde::Serialize;
 
-use chainvet_sa::analysis::detectors::Finding;
-use chainvet_core::artifacts::HybridReport;
-use chainvet_fuzzing::fuzzing::types::{FuzzFinding, FuzzHybridStats};
-use chainvet_core::norm::NormalizedAst;
 use chainvet_core::OutputFormat;
-use chainvet_se::symbolic::results::{coverage::CoverageReport, SeFinding};
+use chainvet_core::artifacts::HybridReport;
+use chainvet_core::norm::NormalizedAst;
 use chainvet_core::util::error::{Error, Result};
+use chainvet_fuzzing::fuzzing::types::{FuzzFinding, FuzzHybridStats};
+use chainvet_sa::analysis::detectors::Finding;
+use chainvet_se::symbolic::results::{SeFinding, coverage::CoverageReport};
 
 use super::seeding::HybridSeed;
 use super::targeting::HybridTarget;

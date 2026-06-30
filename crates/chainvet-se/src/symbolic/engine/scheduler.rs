@@ -2,11 +2,11 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use std::sync::Arc;
 
+use crate::symbolic::detectors::DetectorRegistry;
+use crate::symbolic::state::SymbolicState;
+use crate::symbolic::state::storage::StorageLayout;
 use chainvet_core::cfg::BlockId;
 use chainvet_core::norm::Span;
-use crate::symbolic::detectors::DetectorRegistry;
-use crate::symbolic::state::storage::StorageLayout;
-use crate::symbolic::state::SymbolicState;
 
 use super::explorer::ExplorationStrategyKind;
 
@@ -101,8 +101,8 @@ impl Default for SeConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::symbolic::state::{StateIdGen, SymbolicState};
     use crate::symbolic::state::call_context::CallContext;
+    use crate::symbolic::state::{StateIdGen, SymbolicState};
 
     /// Build a minimal WorklistEntry at the given block_id.
     fn make_entry(block_id: BlockId) -> WorklistEntry {

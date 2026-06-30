@@ -1,7 +1,7 @@
 // Dynamic bytes/string modeling for symbolic execution.
 
-use z3::ast::{Array, BV, Bool};
 use z3::Sort;
+use z3::ast::{Array, BV, Bool};
 
 use super::SymbolicValue;
 
@@ -15,10 +15,7 @@ pub fn new_symbolic_bytes(name: &str, max_bound: u32) -> (SymbolicValue, Bool) {
     let len = BV::new_const(format!("{name}_len"), 256);
     let content = Array::new_const(format!("{name}_data"), &key_sort, &val_sort);
     let bound = len.bvule(BV::from_u64(max_bound as u64, 256));
-    let sv = SymbolicValue::SymBytes {
-        len,
-        content,
-    };
+    let sv = SymbolicValue::SymBytes { len, content };
     (sv, bound)
 }
 
@@ -262,8 +259,7 @@ mod tests {
         let a_arr = concrete_bytes_array(&[1, 2, 3, 4, 5]);
         let b_arr = concrete_bytes_array(&[6, 7, 8]);
 
-        let (new_len, _result_arr, _constraints) =
-            bytes_concat(&a_len, &a_arr, &b_len, &b_arr);
+        let (new_len, _result_arr, _constraints) = bytes_concat(&a_len, &a_arr, &b_len, &b_arr);
 
         let solver = Solver::new();
         solver.assert(&new_len.eq(&BV::from_u64(8, 256)));
@@ -281,10 +277,12 @@ mod tests {
         let a_arr = concrete_bytes_array(&[]);
         let b_arr = concrete_bytes_array(&[1, 2, 3]);
 
-        let (new_len, _result_arr, constraints) =
-            bytes_concat(&a_len, &a_arr, &b_len, &b_arr);
+        let (new_len, _result_arr, constraints) = bytes_concat(&a_len, &a_arr, &b_len, &b_arr);
 
-        assert!(constraints.is_empty(), "current implementation returns no constraints");
+        assert!(
+            constraints.is_empty(),
+            "current implementation returns no constraints"
+        );
 
         let solver = Solver::new();
         solver.assert(&new_len.eq(&BV::from_u64(3, 256)));

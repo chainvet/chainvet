@@ -1,8 +1,8 @@
 // Reuses Severity and Category from static analysis — these are stable,
 // engine-agnostic classifications shared across all analysis modes.
-use chainvet_sa::analysis::detectors::{Category, Severity};
-use chainvet_core::norm::Span;
 use crate::symbolic::state::StateId;
+use chainvet_core::norm::Span;
+use chainvet_sa::analysis::detectors::{Category, Severity};
 use serde::Serialize;
 
 use super::witness::Witness;
@@ -210,7 +210,10 @@ mod tests {
 
     #[test]
     fn test_sevulnkind_as_str_unprotected_selfdestruct() {
-        assert_eq!(SeVulnKind::UnprotectedSelfdestruct.as_str(), "unprotected-selfdestruct");
+        assert_eq!(
+            SeVulnKind::UnprotectedSelfdestruct.as_str(),
+            "unprotected-selfdestruct"
+        );
     }
 
     #[test]
@@ -225,17 +228,26 @@ mod tests {
 
     #[test]
     fn test_sevulnkind_as_str_unsafe_delegatecall() {
-        assert_eq!(SeVulnKind::UnsafeDelegatecall.as_str(), "unsafe-delegatecall");
+        assert_eq!(
+            SeVulnKind::UnsafeDelegatecall.as_str(),
+            "unsafe-delegatecall"
+        );
     }
 
     #[test]
     fn test_sevulnkind_as_str_timestamp_dependency() {
-        assert_eq!(SeVulnKind::TimestampDependency.as_str(), "timestamp-dependency");
+        assert_eq!(
+            SeVulnKind::TimestampDependency.as_str(),
+            "timestamp-dependency"
+        );
     }
 
     #[test]
     fn test_sevulnkind_as_str_access_control_missing() {
-        assert_eq!(SeVulnKind::AccessControlMissing.as_str(), "access-control-missing");
+        assert_eq!(
+            SeVulnKind::AccessControlMissing.as_str(),
+            "access-control-missing"
+        );
     }
 
     #[test]
@@ -252,7 +264,10 @@ mod tests {
 
     #[test]
     fn test_sevulnkind_category_integer_underflow_is_arithmetic() {
-        assert_eq!(SeVulnKind::IntegerUnderflow.category(), Category::Arithmetic);
+        assert_eq!(
+            SeVulnKind::IntegerUnderflow.category(),
+            Category::Arithmetic
+        );
     }
 
     #[test]
@@ -262,7 +277,10 @@ mod tests {
 
     #[test]
     fn test_sevulnkind_category_unprotected_selfdestruct_is_access_control() {
-        assert_eq!(SeVulnKind::UnprotectedSelfdestruct.category(), Category::AccessControl);
+        assert_eq!(
+            SeVulnKind::UnprotectedSelfdestruct.category(),
+            Category::AccessControl
+        );
     }
 
     #[test]
@@ -272,27 +290,42 @@ mod tests {
 
     #[test]
     fn test_sevulnkind_category_access_control_missing_is_access_control() {
-        assert_eq!(SeVulnKind::AccessControlMissing.category(), Category::AccessControl);
+        assert_eq!(
+            SeVulnKind::AccessControlMissing.category(),
+            Category::AccessControl
+        );
     }
 
     #[test]
     fn test_sevulnkind_category_unsafe_delegatecall_is_access_control() {
-        assert_eq!(SeVulnKind::UnsafeDelegatecall.category(), Category::AccessControl);
+        assert_eq!(
+            SeVulnKind::UnsafeDelegatecall.category(),
+            Category::AccessControl
+        );
     }
 
     #[test]
     fn test_sevulnkind_category_unchecked_call_is_denial_of_service() {
-        assert_eq!(SeVulnKind::UncheckedCall.category(), Category::DenialOfService);
+        assert_eq!(
+            SeVulnKind::UncheckedCall.category(),
+            Category::DenialOfService
+        );
     }
 
     #[test]
     fn test_sevulnkind_category_timestamp_dependency_is_block_manipulation() {
-        assert_eq!(SeVulnKind::TimestampDependency.category(), Category::BlockManipulation);
+        assert_eq!(
+            SeVulnKind::TimestampDependency.category(),
+            Category::BlockManipulation
+        );
     }
 
     #[test]
     fn test_sevulnkind_category_assertion_failure_is_miscellaneous() {
-        assert_eq!(SeVulnKind::AssertionFailure.category(), Category::Miscellaneous);
+        assert_eq!(
+            SeVulnKind::AssertionFailure.category(),
+            Category::Miscellaneous
+        );
     }
 
     // --- SeFinding construction and category delegation ---
@@ -304,7 +337,11 @@ mod tests {
             severity: Severity::High,
             confidence: Confidence::High,
             message: "test finding".to_string(),
-            span: Span { file: 0, start: 10, end: 20 },
+            span: Span {
+                file: 0,
+                start: 10,
+                end: 20,
+            },
             function_id: Some(42),
             path_constraints: vec!["x > 0".to_string(), "y < 100".to_string()],
             witness: None,

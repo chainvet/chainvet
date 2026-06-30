@@ -75,9 +75,9 @@ impl SmtSolver for Z3Backend {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use z3::ast::BV;
     use z3::SatResult;
-    
+    use z3::ast::BV;
+
     // -- Construction tests --
 
     #[test]
