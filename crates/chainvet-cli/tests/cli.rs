@@ -1,7 +1,7 @@
 //! CLI smoke tests — invoke the binary as a subprocess.
 //!
 //! These test the user-facing interface rather than internal Rust types.
-//! `env!("CARGO_BIN_EXE_Static")` resolves to the built binary path at
+//! `env!("CARGO_BIN_EXE_chainvet")` resolves to the built binary path at
 //! compile time; cargo guarantees the binary is built before tests run.
 
 use std::process::Command;
@@ -11,10 +11,10 @@ const REENTRANCY: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/vu
 
 /// Run the analysis binary with the given arguments and return the output.
 fn run(args: &[&str]) -> std::process::Output {
-    Command::new(env!("CARGO_BIN_EXE_Static"))
+    Command::new(env!("CARGO_BIN_EXE_chainvet"))
         .args(args)
         .output()
-        .unwrap_or_else(|e| panic!("failed to spawn {}: {e}", env!("CARGO_BIN_EXE_Static")))
+        .unwrap_or_else(|e| panic!("failed to spawn {}: {e}", env!("CARGO_BIN_EXE_chainvet")))
 }
 
 #[test]
