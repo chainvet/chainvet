@@ -147,7 +147,11 @@ fn run_scan(text: &str, mode: ScanMode) -> (Vec<Diagnostic>, Vec<FindingItem>) {
     let _ = std::fs::remove_file(&path);
     match result {
         Ok(result) => {
-            let diagnostics = result.findings.iter().map(|f| to_diagnostic(f, text)).collect();
+            let diagnostics = result
+                .findings
+                .iter()
+                .map(|f| to_diagnostic(f, text))
+                .collect();
             let findings = result.findings.iter().map(|f| to_item(f, text)).collect();
             (diagnostics, findings)
         }
