@@ -2265,11 +2265,11 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "pre-existing fixture expectation mismatch; predates the workspace split"]
     fn coin_fixture_migrate_and_destroy_emits_balance_invariant_check() {
-        let output = frontend::load_project(
-            "Benchmarks/Not-so-smart/not-so-smart-contracts-master/forced_ether_reception/coin.sol",
-        )
+        let output = frontend::load_project(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/coin.sol"
+        ))
         .expect("coin fixture should load");
         let ir_module = ir::lower_module(&output.ast);
         let cfgs = cfg::build_from_ir(&ir_module);
