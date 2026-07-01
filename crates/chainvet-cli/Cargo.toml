@@ -12,3 +12,6 @@ chainvet-core = { path = "../chainvet-core" }
 chainvet-frontend = { path = "../chainvet-frontend" }
 chainvet-orchestrator = { path = "../chainvet-orchestrator" }
 serde_json = "1"
+clap = { version = "4", features = ["derive"] }
+owo-colors = "4"
+comfy-table = "7"

@@ -71,16 +71,18 @@ binary is just `chainvet`); plain `cargo build --release` builds all four.
 ### CLI
 
 ```bash
-chainvet <path.sol>                 # static analysis (default)
-chainvet --hybrid <path.sol>        # full hybrid analysis
-chainvet --symbolic <path.sol>      # symbolic execution
-chainvet --fuzzing <path.sol>       # fuzzing
-chainvet --hybrid <path.sol> --json # machine-readable output
-chainvet <path.sol> --dump-ir text  # inspect the IR (text|json|tuple)
+chainvet scan <path.sol>               # hybrid analysis (the default mode)
+chainvet scan -m static <path.sol>     # one engine: static | symbolic | fuzzing | hybrid
+chainvet scan -f json <path.sol>       # machine-readable output
+chainvet scan -s high <path.sol>       # only findings at/above a severity
+chainvet scan -o report.txt <path.sol> # write the report to a file
+chainvet ir <path.sol> -f text         # inspect the IR (text | json | tuple)
 ```
 
-Hybrid budget overrides (epochs, time caps, SE depth, fuzz iters, seed) are
-available as flags — run `chainvet --help`.
+The human report is colored and tabular on a terminal (auto-plain when piped or
+under `NO_COLOR`; force off with `--no-color`). Run `chainvet scan --help` for
+all options, including the hybrid tuning flags (`--epochs`, `--fuzz-time-ms`,
+`--se-depth`, `--seed`, …).
 
 ### CI (SARIF)
 

@@ -1,181 +1,198 @@
 mod render;
 
-use chainvet_core::util::error::Error;
 use chainvet_core::util::error::Result;
-use chainvet_orchestrator::ScanMode;
+use chainvet_orchestrator::{HybridBudget, ScanMode, scan};
+use clap::{Parser, Subcommand, ValueEnum};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum AnalysisMode {
+/// Hybrid Solidity smart-contract security analyzer.
+#[derive(Parser)]
+#[command(name = "chainvet", version, about, long_about = None)]
+struct Cli {
+    #[command(subcommand)]
+    command: Command,
+}
+
+#[derive(Subcommand)]
+enum Command {
+    /// Analyze a Solidity file or project for vulnerabilities.
+    Scan(ScanArgs),
+    /// Dump the intermediate representation (debug utility).
+    Ir(IrArgs),
+}
+
+#[derive(clap::Args)]
+pub struct ScanArgs {
+    /// Solidity file or project directory to analyze.
+    pub path: String,
+
+    /// Analysis mode.
+    #[arg(short, long, value_enum, default_value_t = Mode::Hybrid)]
+    pub mode: Mode,
+
+    /// Output format.
+    #[arg(short, long, value_enum, default_value_t = Format::Pretty)]
+    pub format: Format,
+
+    /// Write the report to a file instead of stdout.
+    #[arg(short, long, value_name = "FILE")]
+    pub output: Option<String>,
+
+    /// Only report findings at or above this severity.
+    #[arg(short = 's', long, value_enum, value_name = "SEVERITY")]
+    pub min_severity: Option<Severity>,
+
+    /// Suppress the banner.
+    #[arg(short, long)]
+    pub quiet: bool,
+
+    /// Disable colored output.
+    #[arg(long)]
+    pub no_color: bool,
+
+    /// Max fuzz epochs.
+    #[arg(long, help_heading = "Hybrid tuning", value_name = "N")]
+    epochs: Option<u32>,
+    /// Fuzz time budget (ms).
+    #[arg(
+        long = "fuzz-time-ms",
+        help_heading = "Hybrid tuning",
+        value_name = "MS"
+    )]
+    fuzz_time_ms: Option<u64>,
+    /// Overall wall-clock cap (ms).
+    #[arg(
+        long = "hard-cap-ms",
+        help_heading = "Hybrid tuning",
+        value_name = "MS"
+    )]
+    hard_cap_ms: Option<u64>,
+    /// Fuzz iterations per epoch.
+    #[arg(long = "fuzz-iters", help_heading = "Hybrid tuning", value_name = "N")]
+    fuzz_iters: Option<usize>,
+    /// Per-epoch fuzz time (ms).
+    #[arg(
+        long = "epoch-time-ms",
+        help_heading = "Hybrid tuning",
+        value_name = "MS"
+    )]
+    epoch_time_ms: Option<u64>,
+    /// Symbolic execution timeout (ms).
+    #[arg(
+        long = "se-timeout-ms",
+        help_heading = "Hybrid tuning",
+        value_name = "MS"
+    )]
+    se_timeout_ms: Option<u64>,
+    /// Symbolic execution max path depth.
+    #[arg(long = "se-depth", help_heading = "Hybrid tuning", value_name = "N")]
+    se_depth: Option<u32>,
+    /// Max on-stall symbolic assists.
+    #[arg(long = "se-assists", help_heading = "Hybrid tuning", value_name = "N")]
+    se_assists: Option<u32>,
+    /// Fuzz seed (for reproducible runs).
+    #[arg(long, help_heading = "Hybrid tuning", value_name = "N")]
+    seed: Option<u64>,
+}
+
+#[derive(clap::Args)]
+struct IrArgs {
+    /// Solidity file or project directory.
+    path: String,
+    /// IR dump format.
+    #[arg(short, long, value_enum, default_value_t = IrFormat::Text)]
+    format: IrFormat,
+}
+
+#[derive(Copy, Clone, ValueEnum)]
+pub enum Mode {
     Static,
     Symbolic,
     Fuzzing,
     Hybrid,
 }
 
-impl AnalysisMode {
-    fn from_flag(flag: &str) -> Option<Self> {
-        match flag {
-            "--static" => Some(Self::Static),
-            "--symbolic" => Some(Self::Symbolic),
-            "--fuzzing" => Some(Self::Fuzzing),
-            "--hybrid" => Some(Self::Hybrid),
-            _ => None,
-        }
-    }
+#[derive(Copy, Clone, PartialEq, Eq, ValueEnum)]
+pub enum Format {
+    Pretty,
+    Json,
+}
+
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
+pub enum Severity {
+    Low,
+    Medium,
+    High,
+}
+
+#[derive(Copy, Clone, ValueEnum)]
+enum IrFormat {
+    Text,
+    Json,
+    Tuple,
 }
 
 fn main() {
-    if let Err(err) = run() {
+    let cli = Cli::parse();
+    let result = match cli.command {
+        Command::Scan(args) => run_scan(args),
+        Command::Ir(args) => run_ir(args),
+    };
+    if let Err(err) = result {
         eprintln!("error: {err}");
         std::process::exit(1);
     }
 }
 
-fn print_usage() {
-    eprintln!(
-        "usage: chainvet [--static|--symbolic|--fuzzing|--hybrid] <path> [--json|--text|--format <json|text>] [--dump-ir <text|json|tuple>]\n\
-         hybrid budget overrides: [--max-epochs N] [--total-runtime-ms N] [--hard-cap-ms N] [--fuzz-iters N] [--fuzz-epoch-ms N] [--se-timeout-ms N] [--se-max-depth N] [--max-se-assists N] [--fuzz-seed N]"
-    );
-}
-
-fn parse_next<T>(value: Option<String>, flag: &str) -> Result<T>
-where
-    T: std::str::FromStr,
-{
-    let raw = value.ok_or_else(|| Error::msg(format!("missing value for {flag}")))?;
-    raw.parse::<T>()
-        .map_err(|_| Error::msg(format!("invalid value for {flag}: {raw}")))
-}
-
-fn run() -> Result<()> {
-    let mut input = None;
-    let mut format = chainvet_core::OutputFormat::Text;
-    let mut dump_ir = None;
-    let mut mode = AnalysisMode::Static;
-    let mut mode_flag = None::<&'static str>;
-    let mut hybrid_budget = chainvet_orchestrator::HybridBudget::default();
-    let mut args = std::env::args().skip(1);
-    while let Some(arg) = args.next() {
-        if let Some(next_mode) = AnalysisMode::from_flag(&arg) {
-            if let Some(existing_flag) = mode_flag {
-                if mode != next_mode {
-                    return Err(Error::msg(format!(
-                        "multiple analysis modes provided: {existing_flag} and {arg}"
-                    )));
-                }
-            } else {
-                mode = next_mode;
-                mode_flag = Some(match next_mode {
-                    AnalysisMode::Static => "--static",
-                    AnalysisMode::Symbolic => "--symbolic",
-                    AnalysisMode::Fuzzing => "--fuzzing",
-                    AnalysisMode::Hybrid => "--hybrid",
-                });
-            }
-            continue;
-        }
-
-        match arg.as_str() {
-            "--json" => format = chainvet_core::OutputFormat::Json,
-            "--text" => format = chainvet_core::OutputFormat::Text,
-            "--help" | "-h" => {
-                print_usage();
-                return Ok(());
-            }
-            "--format" => {
-                let Some(value) = args.next() else {
-                    return Err(Error::msg("missing value for --format"));
-                };
-                match value.as_str() {
-                    "json" => format = chainvet_core::OutputFormat::Json,
-                    "text" => format = chainvet_core::OutputFormat::Text,
-                    _ => return Err(Error::msg(format!("unknown format: {value}"))),
-                }
-            }
-            "--dump-ir" => {
-                let Some(value) = args.next() else {
-                    return Err(Error::msg("missing value for --dump-ir"));
-                };
-                let ir_format = match value.as_str() {
-                    "json" => chainvet_core::ir::DumpFormat::Json,
-                    "text" => chainvet_core::ir::DumpFormat::Text,
-                    "tuple" => chainvet_core::ir::DumpFormat::Tuple,
-                    _ => return Err(Error::msg(format!("unknown IR format: {value}"))),
-                };
-                dump_ir = Some(ir_format);
-            }
-            "--fuzz" => {
-                if let Some(existing_flag) = mode_flag {
-                    if mode != AnalysisMode::Fuzzing {
-                        return Err(Error::msg(format!(
-                            "multiple analysis modes provided: {existing_flag} and --fuzz"
-                        )));
-                    }
-                } else {
-                    mode = AnalysisMode::Fuzzing;
-                    mode_flag = Some("--fuzz");
-                }
-            }
-            "--max-epochs" => hybrid_budget.max_epochs = parse_next(args.next(), "--max-epochs")?,
-            "--total-runtime-ms" => {
-                hybrid_budget.total_runtime_ms = parse_next(args.next(), "--total-runtime-ms")?
-            }
-            "--hard-cap-ms" => {
-                hybrid_budget.hard_cap_ms = parse_next(args.next(), "--hard-cap-ms")?
-            }
-            "--fuzz-iters" => {
-                hybrid_budget.fuzz_iters_per_epoch = parse_next(args.next(), "--fuzz-iters")?
-            }
-            "--fuzz-epoch-ms" => {
-                hybrid_budget.fuzz_epoch_ms = parse_next(args.next(), "--fuzz-epoch-ms")?
-            }
-            "--se-timeout-ms" => {
-                hybrid_budget.se_timeout_ms = parse_next(args.next(), "--se-timeout-ms")?
-            }
-            "--se-max-depth" => {
-                hybrid_budget.se_max_depth = parse_next(args.next(), "--se-max-depth")?
-            }
-            "--max-se-assists" => {
-                hybrid_budget.max_se_assists = parse_next(args.next(), "--max-se-assists")?
-            }
-            "--fuzz-seed" => hybrid_budget.fuzz_seed = parse_next(args.next(), "--fuzz-seed")?,
-            _ => {
-                if arg.starts_with('-') {
-                    return Err(Error::msg(format!("unknown flag: {arg}")));
-                }
-                if input.is_none() {
-                    input = Some(arg);
-                } else {
-                    return Err(Error::msg("multiple input paths provided"));
-                }
-            }
-        }
-    }
-
-    let Some(input) = input else {
-        print_usage();
-        return Ok(());
+fn run_scan(args: ScanArgs) -> Result<()> {
+    let scan_mode = match args.mode {
+        Mode::Static => ScanMode::Static,
+        Mode::Symbolic => ScanMode::Symbolic,
+        Mode::Fuzzing => ScanMode::Fuzzing,
+        Mode::Hybrid => ScanMode::Hybrid,
     };
 
-    if dump_ir.is_some() && mode != AnalysisMode::Static {
-        return Err(Error::msg("--dump-ir is only supported in --static mode"));
+    let mut budget = HybridBudget::default();
+    if let Some(v) = args.epochs {
+        budget.max_epochs = v;
+    }
+    if let Some(v) = args.fuzz_time_ms {
+        budget.total_runtime_ms = v;
+    }
+    if let Some(v) = args.hard_cap_ms {
+        budget.hard_cap_ms = v;
+    }
+    if let Some(v) = args.fuzz_iters {
+        budget.fuzz_iters_per_epoch = v;
+    }
+    if let Some(v) = args.epoch_time_ms {
+        budget.fuzz_epoch_ms = v;
+    }
+    if let Some(v) = args.se_timeout_ms {
+        budget.se_timeout_ms = v;
+    }
+    if let Some(v) = args.se_depth {
+        budget.se_max_depth = v;
+    }
+    if let Some(v) = args.se_assists {
+        budget.max_se_assists = v;
+    }
+    if let Some(v) = args.seed {
+        budget.fuzz_seed = v;
     }
 
-    // --dump-ir is an IR-inspection utility, not a scan.
-    if let Some(ir_format) = dump_ir {
-        let output = chainvet_frontend::frontend::load_project(&input)?;
-        let ir_module = chainvet_core::ir::lower_module(&output.ast);
-        println!("{}", chainvet_core::ir::dump_module(&ir_module, ir_format));
-        return Ok(());
-    }
+    let output = chainvet_frontend::frontend::load_project(&args.path)?;
+    let result = scan(&output, scan_mode, &budget)?;
+    render::render(&result, &args)
+}
 
-    let scan_mode = match mode {
-        AnalysisMode::Static => ScanMode::Static,
-        AnalysisMode::Symbolic => ScanMode::Symbolic,
-        AnalysisMode::Fuzzing => ScanMode::Fuzzing,
-        AnalysisMode::Hybrid => ScanMode::Hybrid,
+fn run_ir(args: IrArgs) -> Result<()> {
+    let output = chainvet_frontend::frontend::load_project(&args.path)?;
+    let ir_module = chainvet_core::ir::lower_module(&output.ast);
+    let fmt = match args.format {
+        IrFormat::Text => chainvet_core::ir::DumpFormat::Text,
+        IrFormat::Json => chainvet_core::ir::DumpFormat::Json,
+        IrFormat::Tuple => chainvet_core::ir::DumpFormat::Tuple,
     };
-    let output = chainvet_frontend::frontend::load_project(&input)?;
-    let result = chainvet_orchestrator::scan(&output, scan_mode, &hybrid_budget)?;
-    render::render(&result, format)
+    println!("{}", chainvet_core::ir::dump_module(&ir_module, fmt));
+    Ok(())
 }
