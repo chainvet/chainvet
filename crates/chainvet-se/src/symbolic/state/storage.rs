@@ -173,6 +173,19 @@ impl StorageLayout {
     }
 }
 
+/// Result of resolving an `IrPlace` against the storage layout.
+///
+/// Used by the executor (Phase 4) to determine how to read/write storage.
+#[allow(dead_code)] // Phase 6: used by executor resolve_place for typed storage accesses
+pub enum StorageAccess {
+    /// Direct slot access (simple state variable or struct field).
+    DirectSlot { slot: u64 },
+    /// Mapping access: mapping name + symbolic key.
+    Mapping { name: String },
+    /// Could not resolve — fall back to fresh symbolic value.
+    Unknown,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -199,7 +212,7 @@ mod tests {
 
         let zero = BV::from_u64(0, W);
         let solver = Solver::new_for_logic("QF_ABV").unwrap();
-        solver.assert(&bv.eq(&zero).not());
+        solver.assert(bv.eq(&zero).not());
         assert_eq!(
             solver.check(),
             SatResult::Unsat,
@@ -219,7 +232,7 @@ mod tests {
         let bv = read_val.as_bv().expect("should be BitVec");
 
         let solver = Solver::new_for_logic("QF_ABV").unwrap();
-        solver.assert(&bv.eq(&written).not());
+        solver.assert(bv.eq(&written).not());
         assert_eq!(
             solver.check(),
             SatResult::Unsat,
@@ -240,7 +253,7 @@ mod tests {
 
         let zero = BV::from_u64(0, W);
         let solver = Solver::new_for_logic("QF_ABV").unwrap();
-        solver.assert(&bv.eq(&zero).not());
+        solver.assert(bv.eq(&zero).not());
         assert_eq!(solver.check(), SatResult::Unsat);
     }
 
@@ -258,7 +271,7 @@ mod tests {
         let bv = read_val.as_bv().expect("should be BitVec");
 
         let solver = Solver::new_for_logic("QF_ABV").unwrap();
-        solver.assert(&bv.eq(&val).not());
+        solver.assert(bv.eq(&val).not());
         assert_eq!(
             solver.check(),
             SatResult::Unsat,
@@ -283,7 +296,7 @@ mod tests {
         let r2 = storage.mapping_read("m", &k2).unwrap();
 
         let solver = Solver::new_for_logic("QF_ABV").unwrap();
-        solver.assert(&r1.as_bv().unwrap().eq(&v1).not());
+        solver.assert(r1.as_bv().unwrap().eq(&v1).not());
         assert_eq!(
             solver.check(),
             SatResult::Unsat,
@@ -291,7 +304,7 @@ mod tests {
         );
 
         let solver2 = Solver::new_for_logic("QF_ABV").unwrap();
-        solver2.assert(&r2.as_bv().unwrap().eq(&v2).not());
+        solver2.assert(r2.as_bv().unwrap().eq(&v2).not());
         assert_eq!(solver2.check(), SatResult::Unsat, "key2 should have value2");
     }
 
@@ -323,7 +336,7 @@ mod tests {
         // "b" is a fresh symbolic array, so the value should be satisfiable
         // as something other than 999.
         let solver = Solver::new_for_logic("QF_ABV").unwrap();
-        solver.assert(&bv_b.eq(&val).not());
+        solver.assert(bv_b.eq(&val).not());
         assert_eq!(
             solver.check(),
             SatResult::Sat,
@@ -528,17 +541,4 @@ mod tests {
         let layout = StorageLayout::from_ast(&ast);
         assert_eq!(layout.get_field_offset("SomeStruct", "field"), None);
     }
-}
-
-/// Result of resolving an `IrPlace` against the storage layout.
-///
-/// Used by the executor (Phase 4) to determine how to read/write storage.
-#[allow(dead_code)] // Phase 6: used by executor resolve_place for typed storage accesses
-pub enum StorageAccess {
-    /// Direct slot access (simple state variable or struct field).
-    DirectSlot { slot: u64 },
-    /// Mapping access: mapping name + symbolic key.
-    Mapping { name: String },
-    /// Could not resolve — fall back to fresh symbolic value.
-    Unknown,
 }

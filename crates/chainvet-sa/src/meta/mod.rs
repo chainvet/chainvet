@@ -358,14 +358,14 @@ fn scan_contract_function_signatures(source: &str, base_offset: u32) -> Vec<RawS
             {
                 header_end += "returns".len();
                 skip_ws(bytes, &mut header_end);
-                if header_end < bytes.len() && bytes[header_end] == b'(' {
-                    if let Some((returns_text, after_returns)) =
+                if header_end < bytes.len()
+                    && bytes[header_end] == b'('
+                    && let Some((returns_text, after_returns)) =
                         extract_balanced(source, header_end, '(', ')')
-                    {
-                        returns = normalize_signature_list(returns_text);
-                        header_end = after_returns;
-                        continue;
-                    }
+                {
+                    returns = normalize_signature_list(returns_text);
+                    header_end = after_returns;
+                    continue;
                 }
             }
             if matches!(bytes[header_end], b'{' | b';') {
@@ -446,7 +446,7 @@ fn split_top_level_csv(raw: &str) -> Vec<String> {
 }
 
 fn normalize_signature_fragment(raw: &str) -> String {
-    let cleaned = raw.replace('\n', " ").replace('\r', " ");
+    let cleaned = raw.replace(['\n', '\r'], " ");
     let mut normalized = cleaned.split_whitespace().collect::<Vec<_>>();
     normalized.retain(|token| {
         !matches!(

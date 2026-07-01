@@ -67,7 +67,7 @@ mod tests {
         let zero = BV::from_u64(0, WORD_WIDTH);
         let solver = Solver::new_for_logic("QF_ABV").unwrap();
         // Assert that the read value is NOT zero; if unsatisfiable, then it must be zero.
-        solver.assert(&bv.eq(&zero).not());
+        solver.assert(bv.eq(&zero).not());
         assert_eq!(
             solver.check(),
             SatResult::Unsat,
@@ -88,7 +88,7 @@ mod tests {
 
         let solver = Solver::new_for_logic("QF_ABV").unwrap();
         // Assert that the read value differs from the written value; should be unsat.
-        solver.assert(&bv.eq(&written).not());
+        solver.assert(bv.eq(&written).not());
         assert_eq!(
             solver.check(),
             SatResult::Unsat,
@@ -112,7 +112,7 @@ mod tests {
 
         let zero = BV::from_u64(0, WORD_WIDTH);
         let solver = Solver::new_for_logic("QF_ABV").unwrap();
-        solver.assert(&bv_b.eq(&zero).not());
+        solver.assert(bv_b.eq(&zero).not());
         assert_eq!(
             solver.check(),
             SatResult::Unsat,
@@ -135,7 +135,7 @@ mod tests {
         let bv = read_val.as_bv().expect("should be a BitVec");
 
         let solver = Solver::new_for_logic("QF_ABV").unwrap();
-        solver.assert(&bv.eq(&second).not());
+        solver.assert(bv.eq(&second).not());
         assert_eq!(
             solver.check(),
             SatResult::Unsat,
@@ -156,7 +156,7 @@ mod tests {
         let bv = read_val.as_bv().expect("should be a BitVec");
 
         let solver = Solver::new_for_logic("QF_ABV").unwrap();
-        solver.assert(&bv.eq(&val).not());
+        solver.assert(bv.eq(&val).not());
         assert_eq!(
             solver.check(),
             SatResult::Unsat,

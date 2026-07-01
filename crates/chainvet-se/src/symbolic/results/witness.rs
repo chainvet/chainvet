@@ -50,12 +50,12 @@ impl Witness {
     /// to map witness values back to function parameter names.
     pub fn populate_variables(&mut self, model: &Model, variables: &VariableEnv) {
         for (var, sym_val) in variables.iter() {
-            if let IrVar::Named(name) = var {
-                if let Some(bv) = sym_val.as_bv() {
-                    let byte_count = (bv.get_size() as usize + 7) / 8;
-                    let bytes = eval_bv_bytes(model, bv, byte_count);
-                    self.variables.push((name.clone(), bytes));
-                }
+            if let IrVar::Named(name) = var
+                && let Some(bv) = sym_val.as_bv()
+            {
+                let byte_count = (bv.get_size() as usize).div_ceil(8);
+                let bytes = eval_bv_bytes(model, bv, byte_count);
+                self.variables.push((name.clone(), bytes));
             }
         }
     }
@@ -143,7 +143,7 @@ mod tests {
 
     /// Build a solver with model.completion=true and assert all initial constraints.
     fn make_solver_with_ctx(constraints: &[(z3::ast::Bool, String)]) -> Solver {
-        let solver = Solver::new_for_logic("QF_ABV").unwrap_or_else(Solver::new);
+        let solver = Solver::new_for_logic("QF_ABV").unwrap_or_default();
         let mut params = Params::new();
         params.set_bool("model.completion", true);
         solver.set_params(&params);
@@ -162,7 +162,7 @@ mod tests {
 
         let known_ts: u64 = 1_700_000_000;
         let ts_val = BV::from_u64(known_ts, 256);
-        solver.assert(&call_ctx.block_timestamp.eq(&ts_val));
+        solver.assert(call_ctx.block_timestamp.eq(&ts_val));
 
         assert_eq!(solver.check(), SatResult::Sat);
         let model = solver.get_model().unwrap();
@@ -182,7 +182,7 @@ mod tests {
 
         let known_bn: u64 = 12_345;
         let bn_val = BV::from_u64(known_bn, 256);
-        solver.assert(&call_ctx.block_number.eq(&bn_val));
+        solver.assert(call_ctx.block_number.eq(&bn_val));
 
         assert_eq!(solver.check(), SatResult::Sat);
         let model = solver.get_model().unwrap();
@@ -202,7 +202,7 @@ mod tests {
         let solver = make_solver_with_ctx(&constraints);
 
         let zero_256 = BV::from_u64(0, 256);
-        solver.assert(&call_ctx.msg_value.eq(&zero_256));
+        solver.assert(call_ctx.msg_value.eq(&zero_256));
 
         assert_eq!(solver.check(), SatResult::Sat);
         let model = solver.get_model().unwrap();

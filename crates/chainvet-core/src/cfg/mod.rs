@@ -166,10 +166,10 @@ fn build_edges(blocks: &[Block]) -> Vec<Edge> {
                 ControlKind::Try => {
                     if let Some(info) = try_map.get(&i) {
                         let mut success = i + 1;
-                        if let Some(first_catch) = info.catch_blocks.first() {
-                            if *first_catch == success {
-                                success = info.end_block;
-                            }
+                        if let Some(first_catch) = info.catch_blocks.first()
+                            && *first_catch == success
+                        {
+                            success = info.end_block;
                         }
                         if success < n {
                             push_edge(i, success);
@@ -198,12 +198,12 @@ fn build_edges(blocks: &[Block]) -> Vec<Edge> {
                     if let Some(body) = next_index(i, n) {
                         push_edge(i, body);
                     }
-                    if cond.is_some() {
-                        if let Some(end_block) = loop_end_by_header.get(&i) {
-                            let exit = end_block + 1;
-                            if exit < n {
-                                push_edge(i, exit);
-                            }
+                    if cond.is_some()
+                        && let Some(end_block) = loop_end_by_header.get(&i)
+                    {
+                        let exit = end_block + 1;
+                        if exit < n {
+                            push_edge(i, exit);
                         }
                     }
                 }
@@ -213,12 +213,12 @@ fn build_edges(blocks: &[Block]) -> Vec<Edge> {
                     }
                 }
                 ControlKind::Break => {
-                    if let Some(header) = loop_context[i] {
-                        if let Some(end_block) = loop_end_by_header.get(&header) {
-                            let exit = end_block + 1;
-                            if exit < n {
-                                push_edge(i, exit);
-                            }
+                    if let Some(header) = loop_context[i]
+                        && let Some(end_block) = loop_end_by_header.get(&header)
+                    {
+                        let exit = end_block + 1;
+                        if exit < n {
+                            push_edge(i, exit);
                         }
                     }
                 }

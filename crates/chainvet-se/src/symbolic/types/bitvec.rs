@@ -162,11 +162,11 @@ mod tests {
     fn assert_bv_val(sv: &SymbolicValue, expected: u64, width: u32) {
         let bv = sv.as_bv().expect("expected BitVec");
         let solver = Solver::new();
-        solver.assert(&bv.eq(&BV::from_u64(expected, width)));
+        solver.assert(bv.eq(BV::from_u64(expected, width)));
         assert_eq!(solver.check(), SatResult::Sat, "expected {expected}");
         // Uniqueness check
         let solver2 = Solver::new();
-        solver2.assert(&bv.eq(&BV::from_u64(expected, width)).not());
+        solver2.assert(bv.eq(BV::from_u64(expected, width)).not());
         assert_eq!(solver2.check(), SatResult::Unsat);
     }
 
@@ -176,7 +176,7 @@ mod tests {
         let solver = Solver::new();
         if expected {
             // Check b is always true
-            solver.assert(&b.not());
+            solver.assert(b.not());
             assert_eq!(solver.check(), SatResult::Unsat);
         } else {
             // Check b is always false
@@ -491,7 +491,7 @@ mod tests {
         let resized = bv_resize(&bv, 256, false);
         assert_eq!(resized.get_size(), 256);
         let solver = Solver::new();
-        solver.assert(&resized.eq(&BV::from_u64(42, 256)));
+        solver.assert(resized.eq(BV::from_u64(42, 256)));
         assert_eq!(solver.check(), SatResult::Sat);
     }
 
@@ -501,7 +501,7 @@ mod tests {
         let resized = bv_resize(&bv, 256, false);
         assert_eq!(resized.get_size(), 256);
         let solver = Solver::new();
-        solver.assert(&resized.eq(&BV::from_u64(200, 256)));
+        solver.assert(resized.eq(BV::from_u64(200, 256)));
         assert_eq!(solver.check(), SatResult::Sat);
     }
 
@@ -513,7 +513,7 @@ mod tests {
         assert_eq!(resized.get_size(), 256);
         let solver = Solver::new();
         // -1 in 256-bit two's complement
-        solver.assert(&resized.eq(&BV::from_i64(-1, 256)));
+        solver.assert(resized.eq(BV::from_i64(-1, 256)));
         assert_eq!(solver.check(), SatResult::Sat);
     }
 
@@ -524,7 +524,7 @@ mod tests {
         let resized = bv_resize(&bv, 8, false);
         assert_eq!(resized.get_size(), 8);
         let solver = Solver::new();
-        solver.assert(&resized.eq(&BV::from_u64(0xFF, 8)));
+        solver.assert(resized.eq(BV::from_u64(0xFF, 8)));
         assert_eq!(solver.check(), SatResult::Sat);
     }
 
@@ -595,10 +595,10 @@ mod tests {
         // The result should be unconstrained -- check that it can equal both 0 and 1
         let bv = result.as_bv().unwrap();
         let s1 = Solver::new();
-        s1.assert(&bv.eq(&BV::from_u64(0, 256)));
+        s1.assert(bv.eq(BV::from_u64(0, 256)));
         assert_eq!(s1.check(), SatResult::Sat);
         let s2 = Solver::new();
-        s2.assert(&bv.eq(&BV::from_u64(1, 256)));
+        s2.assert(bv.eq(BV::from_u64(1, 256)));
         assert_eq!(s2.check(), SatResult::Sat);
     }
 
@@ -613,8 +613,8 @@ mod tests {
 
         // Verify: when x = 5, result should be 25
         let solver = Solver::new();
-        solver.assert(&base.eq(&BV::from_u64(5, 256)));
-        solver.assert(&result_bv.eq(&BV::from_u64(25, 256)));
+        solver.assert(base.eq(BV::from_u64(5, 256)));
+        solver.assert(result_bv.eq(BV::from_u64(25, 256)));
         assert_eq!(solver.check(), SatResult::Sat);
     }
 
@@ -631,7 +631,7 @@ mod tests {
             let ab = apply_binary_op("+", &bv_a, &bv_b, 64).unwrap();
             let ba = apply_binary_op("+", &bv_b, &bv_a, 64).unwrap();
             let solver = Solver::new();
-            solver.assert(&ab.as_bv().unwrap().eq(ba.as_bv().unwrap()));
+            solver.assert(ab.as_bv().unwrap().eq(ba.as_bv().unwrap()));
             prop_assert_eq!(solver.check(), SatResult::Sat);
         }
 
@@ -643,7 +643,7 @@ mod tests {
             let ab = apply_binary_op("*", &bv_a, &bv_b, 64).unwrap();
             let ba = apply_binary_op("*", &bv_b, &bv_a, 64).unwrap();
             let solver = Solver::new();
-            solver.assert(&ab.as_bv().unwrap().eq(ba.as_bv().unwrap()));
+            solver.assert(ab.as_bv().unwrap().eq(ba.as_bv().unwrap()));
             prop_assert_eq!(solver.check(), SatResult::Sat);
         }
 
@@ -654,7 +654,7 @@ mod tests {
             let bv_0 = BV::from_u64(0, 64);
             let result = apply_binary_op("+", &bv_a, &bv_0, 64).unwrap();
             let solver = Solver::new();
-            solver.assert(&result.as_bv().unwrap().eq(&bv_a));
+            solver.assert(result.as_bv().unwrap().eq(&bv_a));
             prop_assert_eq!(solver.check(), SatResult::Sat);
         }
 
@@ -665,7 +665,7 @@ mod tests {
             let bv_1 = BV::from_u64(1, 64);
             let result = apply_binary_op("*", &bv_a, &bv_1, 64).unwrap();
             let solver = Solver::new();
-            solver.assert(&result.as_bv().unwrap().eq(&bv_a));
+            solver.assert(result.as_bv().unwrap().eq(&bv_a));
             prop_assert_eq!(solver.check(), SatResult::Sat);
         }
 
@@ -677,7 +677,7 @@ mod tests {
             let bv_b = BV::from_u64(b, 64);
             let result = apply_binary_op("+", &bv_a, &bv_b, 64).unwrap();
             let solver = Solver::new();
-            solver.assert(&result.as_bv().unwrap().eq(&BV::from_u64(expected, 64)));
+            solver.assert(result.as_bv().unwrap().eq(BV::from_u64(expected, 64)));
             prop_assert_eq!(solver.check(), SatResult::Sat);
         }
 
@@ -689,7 +689,7 @@ mod tests {
             let bv_b = BV::from_u64(b, 64);
             let result = apply_binary_op("-", &bv_a, &bv_b, 64).unwrap();
             let solver = Solver::new();
-            solver.assert(&result.as_bv().unwrap().eq(&BV::from_u64(expected, 64)));
+            solver.assert(result.as_bv().unwrap().eq(BV::from_u64(expected, 64)));
             prop_assert_eq!(solver.check(), SatResult::Sat);
         }
 
@@ -701,7 +701,7 @@ mod tests {
             let bv_b = BV::from_u64(b, 64);
             let result = apply_binary_op("*", &bv_a, &bv_b, 64).unwrap();
             let solver = Solver::new();
-            solver.assert(&result.as_bv().unwrap().eq(&BV::from_u64(expected, 64)));
+            solver.assert(result.as_bv().unwrap().eq(BV::from_u64(expected, 64)));
             prop_assert_eq!(solver.check(), SatResult::Sat);
         }
     }

@@ -300,10 +300,10 @@ impl AppState {
     }
 
     fn clear_job(&self, current: &Arc<Job>) {
-        if let Ok(mut active) = self.active_job.lock() {
-            if active.as_ref().is_some_and(|j| Arc::ptr_eq(j, current)) {
-                *active = None;
-            }
+        if let Ok(mut active) = self.active_job.lock()
+            && active.as_ref().is_some_and(|j| Arc::ptr_eq(j, current))
+        {
+            *active = None;
         }
     }
 }

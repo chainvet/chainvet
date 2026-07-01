@@ -175,7 +175,7 @@ fn deduplicate(candidates: Vec<FindingCandidate>) -> Vec<FindingCandidate> {
     }
 
     let mut out = best_by_key.into_values().collect::<Vec<_>>();
-    out.sort_by(|left, right| sort_key(left).cmp(&sort_key(right)));
+    out.sort_by_key(sort_key);
     out
 }
 

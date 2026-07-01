@@ -382,10 +382,10 @@ fn parse_ts_function(node: Node, contract_id: Option<u32>, ctx: &mut TsContext) 
         span,
     });
     ctx.ast.items.push(Item::Function(id));
-    if let Some(contract_id) = contract_id {
-        if let Some(contract) = ctx.ast.contracts.get_mut(contract_id as usize) {
-            contract.functions.push(id);
-        }
+    if let Some(contract_id) = contract_id
+        && let Some(contract) = ctx.ast.contracts.get_mut(contract_id as usize)
+    {
+        contract.functions.push(id);
     }
     ctx.parsed_any = true;
 }
@@ -453,12 +453,11 @@ fn parse_ts_param_list(node: Node, ctx: &mut TsContext) -> Vec<String> {
     };
     let mut cursor = param_list.walk();
     for child in param_list.named_children(&mut cursor) {
-        if child.kind().contains("parameter") {
-            if let Some(name) = find_ts_param_name(child, ctx.source) {
-                if !name.is_empty() {
-                    params.push(name);
-                }
-            }
+        if child.kind().contains("parameter")
+            && let Some(name) = find_ts_param_name(child, ctx.source)
+            && !name.is_empty()
+        {
+            params.push(name);
         }
     }
     params
@@ -474,12 +473,12 @@ fn parse_ts_return_list(node: Node, ctx: &mut TsContext) -> Vec<String> {
     for child in param_list.named_children(&mut cursor) {
         if child.kind().contains("parameter") {
             let name = find_ts_param_name(child, ctx.source);
-            if let Some(name) = name {
-                if !name.is_empty() {
-                    returns.push(name);
-                    idx += 1;
-                    continue;
-                }
+            if let Some(name) = name
+                && !name.is_empty()
+            {
+                returns.push(name);
+                idx += 1;
+                continue;
             }
             returns.push(format!("_ret{idx}"));
             idx += 1;
@@ -498,16 +497,16 @@ fn find_ts_return_param_list(node: Node) -> Option<Node> {
         if let Some(list) = find_ts_param_list(ret) {
             return Some(list);
         }
-        if let Some(inner) = find_named_child(ret, "return_type_definition") {
-            if let Some(list) = find_ts_param_list(inner) {
-                return Some(list);
-            }
-        }
-    }
-    if let Some(inner) = find_named_child(node, "return_type_definition") {
-        if let Some(list) = find_ts_param_list(inner) {
+        if let Some(inner) = find_named_child(ret, "return_type_definition")
+            && let Some(list) = find_ts_param_list(inner)
+        {
             return Some(list);
         }
+    }
+    if let Some(inner) = find_named_child(node, "return_type_definition")
+        && let Some(list) = find_ts_param_list(inner)
+    {
+        return Some(list);
     }
     None
 }
@@ -674,7 +673,7 @@ fn parse_ts_for(node: Node, ctx: &mut TsContext) -> Option<u32> {
     });
     let step = node
         .child_by_field_name("update")
-        .and_then(|child| Some(parse_ts_expr(child, ctx)));
+        .map(|child| parse_ts_expr(child, ctx));
     let body = node
         .child_by_field_name("body")
         .or_else(|| find_named_child(node, "block"))
@@ -722,12 +721,11 @@ fn parse_ts_var_decl(node: Node, ctx: &mut TsContext) -> Option<u32> {
     let mut names = Vec::new();
     let mut cursor = node.walk();
     for child in node.named_children(&mut cursor) {
-        if child.kind().contains("variable_declaration") {
-            if let Some(name) = find_ts_name(child, ctx.source) {
-                if !name.is_empty() {
-                    names.push(name);
-                }
-            }
+        if child.kind().contains("variable_declaration")
+            && let Some(name) = find_ts_name(child, ctx.source)
+            && !name.is_empty()
+        {
+            names.push(name);
         }
     }
     if names.is_empty() {
@@ -855,26 +853,25 @@ fn parse_ts_expr(node: Node, ctx: &mut TsContext) -> u32 {
             } else {
                 parse_ts_inline_call_args(node, callee_node, ctx)
             };
-            if options.is_empty() {
-                if let Some((base_callee, legacy_option, chain)) =
+            if options.is_empty()
+                && let Some((base_callee, legacy_option, chain)) =
                     parse_legacy_ts_call_option(ctx.ast, callee, &args)
-                {
-                    let meta = ExprMeta {
-                        chain: Some(chain),
-                        call: None,
-                    };
-                    return push_expr(
-                        ctx.ast,
-                        Expr {
-                            kind: ExprKind::CallOptions {
-                                callee: base_callee,
-                                options: vec![legacy_option],
-                            },
-                            span: span_from_node(node, ctx.file_id),
-                            meta,
+            {
+                let meta = ExprMeta {
+                    chain: Some(chain),
+                    call: None,
+                };
+                return push_expr(
+                    ctx.ast,
+                    Expr {
+                        kind: ExprKind::CallOptions {
+                            callee: base_callee,
+                            options: vec![legacy_option],
                         },
-                    );
-                }
+                        span: span_from_node(node, ctx.file_id),
+                        meta,
+                    },
+                );
             }
             let chain = chain_from_expr(ctx.ast, callee).unwrap_or_default();
             let target = call_target_from_chain(&chain);
@@ -1306,12 +1303,8 @@ fn parse_ts_call_struct_argument(node: Node, ctx: &mut TsContext) -> Option<(Str
 
 fn first_ts_expr_child(node: Node) -> Option<Node> {
     let mut cursor = node.walk();
-    for child in node.named_children(&mut cursor) {
-        if is_ts_expr_node(child.kind()) {
-            return Some(child);
-        }
-    }
-    None
+    node.named_children(&mut cursor)
+        .find(|&child| is_ts_expr_node(child.kind()))
 }
 
 fn second_ts_expr_child(node: Node) -> Option<Node> {
@@ -1458,12 +1451,8 @@ fn collect_ts_identifiers(node: Node, source: &[u8]) -> Vec<String> {
 
 fn find_named_child<'a>(node: Node<'a>, kind: &str) -> Option<Node<'a>> {
     let mut cursor = node.walk();
-    for child in node.named_children(&mut cursor) {
-        if child.kind() == kind {
-            return Some(child);
-        }
-    }
-    None
+    node.named_children(&mut cursor)
+        .find(|&child| child.kind() == kind)
 }
 
 fn node_text(node: Node, source: &[u8]) -> Option<String> {
@@ -1508,14 +1497,13 @@ fn parse_top_level_functions(
             idx = range.body_end + 1;
             continue;
         }
-        if is_function_keyword(&tokens[idx]) {
-            if let Some((func_id, end_idx)) =
+        if is_function_keyword(&tokens[idx])
+            && let Some((func_id, end_idx)) =
                 parse_function(tokens, idx, file_id, ast, None, tokens.len())
-            {
-                ast.items.push(Item::Function(func_id));
-                idx = end_idx + 1;
-                continue;
-            }
+        {
+            ast.items.push(Item::Function(func_id));
+            idx = end_idx + 1;
+            continue;
         }
         idx += 1;
     }
@@ -1531,19 +1519,18 @@ fn parse_functions_in_range(
 ) {
     let mut idx = start_idx;
     while idx < end_idx {
-        if is_function_keyword(&tokens[idx]) {
-            if let Some((func_id, end_idx)) =
+        if is_function_keyword(&tokens[idx])
+            && let Some((func_id, end_idx)) =
                 parse_function(tokens, idx, file_id, ast, contract_id, end_idx)
+        {
+            if let Some(contract_id) = contract_id
+                && let Some(contract) = ast.contracts.get_mut(contract_id as usize)
             {
-                if let Some(contract_id) = contract_id {
-                    if let Some(contract) = ast.contracts.get_mut(contract_id as usize) {
-                        contract.functions.push(func_id);
-                    }
-                }
-                ast.items.push(Item::Function(func_id));
-                idx = end_idx + 1;
-                continue;
+                contract.functions.push(func_id);
             }
+            ast.items.push(Item::Function(func_id));
+            idx = end_idx + 1;
+            continue;
         }
         idx += 1;
     }
@@ -1640,10 +1627,10 @@ fn parse_param_names(tokens: &[Token], start: usize, end: usize) -> Vec<String> 
     let mut depth = 0u32;
 
     let flush = |current: &mut Vec<String>, params: &mut Vec<String>| {
-        if current.len() >= 2 {
-            if let Some(name) = current.pop() {
-                params.push(name);
-            }
+        if current.len() >= 2
+            && let Some(name) = current.pop()
+        {
+            params.push(name);
         }
         current.clear();
     };
@@ -1655,9 +1642,7 @@ fn parse_param_names(tokens: &[Token], start: usize, end: usize) -> Vec<String> 
             continue;
         }
         if token.is_symbol(')') {
-            if depth > 0 {
-                depth -= 1;
-            }
+            depth = depth.saturating_sub(1);
             continue;
         }
         if depth > 0 {
@@ -1794,22 +1779,19 @@ fn parse_body(
             idx = end_idx + 1;
             continue;
         }
-        if let Some(semi) = find_semicolon(tokens, idx, end_idx) {
-            if semi > idx {
-                if let Some((expr_id, consumed)) =
-                    parse_expr_in_range(tokens, idx, semi - 1, file_id, ast)
-                {
-                    if consumed == semi - 1 {
-                        statements.push(push_stmt(
-                            ast,
-                            StmtKind::Expr(expr_id),
-                            span_for(file_id, tokens[idx].start, tokens[semi].end),
-                        ));
-                        idx = semi + 1;
-                        continue;
-                    }
-                }
-            }
+        if let Some(semi) = find_semicolon(tokens, idx, end_idx)
+            && semi > idx
+            && let Some((expr_id, consumed)) =
+                parse_expr_in_range(tokens, idx, semi - 1, file_id, ast)
+            && consumed == semi - 1
+        {
+            statements.push(push_stmt(
+                ast,
+                StmtKind::Expr(expr_id),
+                span_for(file_id, tokens[idx].start, tokens[semi].end),
+            ));
+            idx = semi + 1;
+            continue;
         }
         if let Some((expr_id, end_idx)) = parse_call_expr(tokens, idx, file_id, ast) {
             statements.push(push_stmt(
@@ -2688,22 +2670,24 @@ fn find_top_level_binary_operator(
             continue;
         }
 
-        if paren_depth == 0 && bracket_depth == 0 && brace_depth == 0 {
-            if let Some((op, len, prec)) = binary_operator_at(tokens, idx, end_idx) {
-                if idx > start_idx && idx + len - 1 < end_idx {
-                    let replace = match best {
-                        None => true,
-                        Some((best_prec, best_idx, _, _)) => {
-                            prec < best_prec || (prec == best_prec && idx >= best_idx)
-                        }
-                    };
-                    if replace {
-                        best = Some((prec, idx, len, op));
+        if paren_depth == 0
+            && bracket_depth == 0
+            && brace_depth == 0
+            && let Some((op, len, prec)) = binary_operator_at(tokens, idx, end_idx)
+        {
+            if idx > start_idx && idx + len - 1 < end_idx {
+                let replace = match best {
+                    None => true,
+                    Some((best_prec, best_idx, _, _)) => {
+                        prec < best_prec || (prec == best_prec && idx >= best_idx)
                     }
+                };
+                if replace {
+                    best = Some((prec, idx, len, op));
                 }
-                idx += len;
-                continue;
             }
+            idx += len;
+            continue;
         }
         idx += 1;
     }
@@ -3315,6 +3299,20 @@ fn is_keyword(value: &str) -> bool {
     )
 }
 
+trait UnknownExpr {
+    fn unknown(span: Span) -> Self;
+}
+
+impl UnknownExpr for Expr {
+    fn unknown(span: Span) -> Self {
+        Expr {
+            kind: ExprKind::Unknown,
+            span,
+            meta: ExprMeta::default(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -3371,25 +3369,22 @@ mod tests {
         let Some(expr) = ast.expressions.get(expr_id as usize) else {
             return false;
         };
-        if let Some(chain) = expr.meta.chain.as_deref() {
-            if chain.len() == 2 {
-                if let (ChainSegment::Ident(base), ChainSegment::Member(member)) =
-                    (&chain[0], &chain[1])
-                {
-                    if base == "block" && member == "timestamp" {
-                        return true;
-                    }
-                }
-            }
+        if let Some(chain) = expr.meta.chain.as_deref()
+            && chain.len() == 2
+            && let (ChainSegment::Ident(base), ChainSegment::Member(member)) =
+                (&chain[0], &chain[1])
+            && base == "block"
+            && member == "timestamp"
+        {
+            return true;
         }
         match &expr.kind {
             ExprKind::Member { base, field } => {
-                if field == "timestamp" {
-                    if let Some(base_expr) = ast.expressions.get(*base as usize) {
-                        if matches!(&base_expr.kind, ExprKind::Ident(name) if name == "block") {
-                            return true;
-                        }
-                    }
+                if field == "timestamp"
+                    && let Some(base_expr) = ast.expressions.get(*base as usize)
+                    && matches!(&base_expr.kind, ExprKind::Ident(name) if name == "block")
+                {
+                    return true;
                 }
                 contains_block_timestamp(ast, *base)
             }
@@ -3403,7 +3398,7 @@ mod tests {
             }
             ExprKind::Index { base, index } => {
                 contains_block_timestamp(ast, *base)
-                    || index.map_or(false, |idx| contains_block_timestamp(ast, idx))
+                    || index.is_some_and(|idx| contains_block_timestamp(ast, idx))
             }
             ExprKind::Assign { lhs, rhs, .. } => {
                 contains_block_timestamp(ast, *lhs) || contains_block_timestamp(ast, *rhs)
@@ -3659,19 +3654,5 @@ mod tests {
 
         let inner_expr = ast.expressions.get(*inner as usize).expect("inner callee");
         assert!(matches!(inner_expr.kind, ExprKind::Member { .. }));
-    }
-}
-
-trait UnknownExpr {
-    fn unknown(span: Span) -> Self;
-}
-
-impl UnknownExpr for Expr {
-    fn unknown(span: Span) -> Self {
-        Expr {
-            kind: ExprKind::Unknown,
-            span,
-            meta: ExprMeta::default(),
-        }
     }
 }

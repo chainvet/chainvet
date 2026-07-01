@@ -14,6 +14,12 @@ use chainvet_sa::analysis::detectors::Severity;
 /// - `UnsafeAssembly` — any inline assembly usage
 pub struct StorageDetector;
 
+impl Default for StorageDetector {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl StorageDetector {
     pub fn new() -> Self {
         Self

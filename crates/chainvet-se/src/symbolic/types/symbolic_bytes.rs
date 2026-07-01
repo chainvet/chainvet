@@ -102,7 +102,7 @@ mod tests {
                 // The length should be satisfiable at 0 (within bound).
                 let solver = Solver::new();
                 solver.assert(&bound);
-                solver.assert(&len.eq(&BV::from_u64(0, 256)));
+                solver.assert(len.eq(BV::from_u64(0, 256)));
                 assert_eq!(solver.check(), SatResult::Sat);
             }
             other => panic!("expected SymBytes, got {:?}", other),
@@ -118,13 +118,13 @@ mod tests {
                 // Length = 100 should be satisfiable (it's <= 100).
                 let s1 = Solver::new();
                 s1.assert(&bound);
-                s1.assert(&len.eq(&BV::from_u64(100, 256)));
+                s1.assert(len.eq(BV::from_u64(100, 256)));
                 assert_eq!(s1.check(), SatResult::Sat);
 
                 // Length = 101 should be unsatisfiable with the bound.
                 let s2 = Solver::new();
                 s2.assert(&bound);
-                s2.assert(&len.eq(&BV::from_u64(101, 256)));
+                s2.assert(len.eq(BV::from_u64(101, 256)));
                 assert_eq!(s2.check(), SatResult::Unsat);
             }
             other => panic!("expected SymBytes, got {:?}", other),
@@ -147,7 +147,7 @@ mod tests {
         let read = arr.select(&idx);
         let bv = read.as_bv().unwrap();
         let solver = Solver::new();
-        solver.assert(&bv.eq(&BV::from_u64(0, 8)));
+        solver.assert(bv.eq(BV::from_u64(0, 8)));
         assert_eq!(solver.check(), SatResult::Sat);
     }
 
@@ -162,7 +162,7 @@ mod tests {
             let read = arr.select(&idx);
             let bv = read.as_bv().unwrap();
             let solver = Solver::new();
-            solver.assert(&bv.eq(&BV::from_u64(expected_byte as u64, 8)));
+            solver.assert(bv.eq(BV::from_u64(expected_byte as u64, 8)));
             assert_eq!(
                 solver.check(),
                 SatResult::Sat,
@@ -170,7 +170,7 @@ mod tests {
             );
             // Uniqueness
             let solver2 = Solver::new();
-            solver2.assert(&bv.eq(&BV::from_u64(expected_byte as u64, 8)).not());
+            solver2.assert(bv.eq(BV::from_u64(expected_byte as u64, 8)).not());
             assert_eq!(solver2.check(), SatResult::Unsat);
         }
     }
@@ -183,10 +183,10 @@ mod tests {
         let read = arr.select(&idx);
         let bv = read.as_bv().unwrap();
         let solver = Solver::new();
-        solver.assert(&bv.eq(&BV::from_u64(0, 8)));
+        solver.assert(bv.eq(BV::from_u64(0, 8)));
         assert_eq!(solver.check(), SatResult::Sat);
         let solver2 = Solver::new();
-        solver2.assert(&bv.eq(&BV::from_u64(0, 8)).not());
+        solver2.assert(bv.eq(BV::from_u64(0, 8)).not());
         assert_eq!(solver2.check(), SatResult::Unsat);
     }
 
@@ -201,10 +201,10 @@ mod tests {
         assert_eq!(result.width(), 8);
         let bv = result.as_bv().unwrap();
         let solver = Solver::new();
-        solver.assert(&bv.eq(&BV::from_u64(20, 8)));
+        solver.assert(bv.eq(BV::from_u64(20, 8)));
         assert_eq!(solver.check(), SatResult::Sat);
         let solver2 = Solver::new();
-        solver2.assert(&bv.eq(&BV::from_u64(20, 8)).not());
+        solver2.assert(bv.eq(BV::from_u64(20, 8)).not());
         assert_eq!(solver2.check(), SatResult::Unsat);
     }
 
@@ -217,14 +217,14 @@ mod tests {
         let first = bytes_read(&arr, &BV::from_u64(0, 256));
         let bv0 = first.as_bv().unwrap();
         let solver = Solver::new();
-        solver.assert(&bv0.eq(&BV::from_u64(0xFF, 8)));
+        solver.assert(bv0.eq(BV::from_u64(0xFF, 8)));
         assert_eq!(solver.check(), SatResult::Sat);
 
         // Last byte
         let last = bytes_read(&arr, &BV::from_u64(2, 256));
         let bv2 = last.as_bv().unwrap();
         let solver2 = Solver::new();
-        solver2.assert(&bv2.eq(&BV::from_u64(0x42, 8)));
+        solver2.assert(bv2.eq(BV::from_u64(0x42, 8)));
         assert_eq!(solver2.check(), SatResult::Sat);
     }
 
@@ -238,11 +238,11 @@ mod tests {
                 let bv = read.as_bv().unwrap();
                 // Can be 0
                 let s1 = Solver::new();
-                s1.assert(&bv.eq(&BV::from_u64(0, 8)));
+                s1.assert(bv.eq(BV::from_u64(0, 8)));
                 assert_eq!(s1.check(), SatResult::Sat);
                 // Can also be 0xFF
                 let s2 = Solver::new();
-                s2.assert(&bv.eq(&BV::from_u64(0xFF, 8)));
+                s2.assert(bv.eq(BV::from_u64(0xFF, 8)));
                 assert_eq!(s2.check(), SatResult::Sat);
             }
             other => panic!("expected SymBytes, got {:?}", other),
@@ -262,10 +262,10 @@ mod tests {
         let (new_len, _result_arr, _constraints) = bytes_concat(&a_len, &a_arr, &b_len, &b_arr);
 
         let solver = Solver::new();
-        solver.assert(&new_len.eq(&BV::from_u64(8, 256)));
+        solver.assert(new_len.eq(BV::from_u64(8, 256)));
         assert_eq!(solver.check(), SatResult::Sat);
         let solver2 = Solver::new();
-        solver2.assert(&new_len.eq(&BV::from_u64(8, 256)).not());
+        solver2.assert(new_len.eq(BV::from_u64(8, 256)).not());
         assert_eq!(solver2.check(), SatResult::Unsat);
     }
 
@@ -285,7 +285,7 @@ mod tests {
         );
 
         let solver = Solver::new();
-        solver.assert(&new_len.eq(&BV::from_u64(3, 256)));
+        solver.assert(new_len.eq(BV::from_u64(3, 256)));
         assert_eq!(solver.check(), SatResult::Sat);
     }
 
@@ -304,10 +304,10 @@ mod tests {
         let bv = read.as_bv().unwrap();
         // Fresh array: any value is possible
         let s1 = Solver::new();
-        s1.assert(&bv.eq(&BV::from_u64(0xAA, 8)));
+        s1.assert(bv.eq(BV::from_u64(0xAA, 8)));
         assert_eq!(s1.check(), SatResult::Sat);
         let s2 = Solver::new();
-        s2.assert(&bv.eq(&BV::from_u64(0x00, 8)));
+        s2.assert(bv.eq(BV::from_u64(0x00, 8)));
         assert_eq!(s2.check(), SatResult::Sat);
     }
 
@@ -323,9 +323,9 @@ mod tests {
 
         // If a_len = 10 and b_len = 20, new_len should be 30.
         let solver = Solver::new();
-        solver.assert(&a_len.eq(&BV::from_u64(10, 256)));
-        solver.assert(&b_len.eq(&BV::from_u64(20, 256)));
-        solver.assert(&new_len.eq(&BV::from_u64(30, 256)));
+        solver.assert(a_len.eq(BV::from_u64(10, 256)));
+        solver.assert(b_len.eq(BV::from_u64(20, 256)));
+        solver.assert(new_len.eq(BV::from_u64(30, 256)));
         assert_eq!(solver.check(), SatResult::Sat);
     }
 }

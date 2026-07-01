@@ -184,7 +184,7 @@ mod tests {
             solver.assert(c);
         }
         let zero_160 = BV::from_u64(0, 160);
-        solver.assert(&ctx.msg_sender.eq(&zero_160));
+        solver.assert(ctx.msg_sender.eq(&zero_160));
         assert_eq!(
             solver.check(),
             SatResult::Unsat,
@@ -201,7 +201,7 @@ mod tests {
         for (c, _) in &constraints {
             solver.assert(c);
         }
-        solver.assert(&ctx.tx_origin.eq(&ctx.msg_sender).not());
+        solver.assert(ctx.tx_origin.eq(&ctx.msg_sender).not());
         assert_eq!(
             solver.check(),
             SatResult::Sat,

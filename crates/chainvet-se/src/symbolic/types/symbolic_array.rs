@@ -129,11 +129,11 @@ mod tests {
         let read = array_select(arr, &idx, 256).unwrap();
         let bv = read.as_bv().unwrap();
         let solver = Solver::new();
-        solver.assert(&bv.eq(&BV::from_u64(0, 256)));
+        solver.assert(bv.eq(BV::from_u64(0, 256)));
         assert_eq!(solver.check(), SatResult::Sat);
         // Confirm uniqueness: it cannot be anything other than 0.
         let solver2 = Solver::new();
-        solver2.assert(&bv.eq(&BV::from_u64(0, 256)).not());
+        solver2.assert(bv.eq(BV::from_u64(0, 256)).not());
         assert_eq!(solver2.check(), SatResult::Unsat);
     }
 
@@ -148,7 +148,7 @@ mod tests {
         let read = array_select(arr, &idx, 256).unwrap();
         let bv = read.as_bv().unwrap();
         let solver = Solver::new();
-        solver.assert(&bv.eq(&BV::from_u64(99, 256)));
+        solver.assert(bv.eq(BV::from_u64(99, 256)));
         assert_eq!(solver.check(), SatResult::Sat);
     }
 
@@ -169,11 +169,11 @@ mod tests {
         let read = array_select(updated_arr, &idx, 256).unwrap();
         let read_bv = read.as_bv().unwrap();
         let solver = Solver::new();
-        solver.assert(&read_bv.eq(&BV::from_u64(42, 256)));
+        solver.assert(read_bv.eq(BV::from_u64(42, 256)));
         assert_eq!(solver.check(), SatResult::Sat);
         // Uniqueness
         let solver2 = Solver::new();
-        solver2.assert(&read_bv.eq(&BV::from_u64(42, 256)).not());
+        solver2.assert(read_bv.eq(BV::from_u64(42, 256)).not());
         assert_eq!(solver2.check(), SatResult::Unsat);
     }
 
@@ -194,10 +194,10 @@ mod tests {
         let read = array_select(updated_arr, &idx8, 256).unwrap();
         let read_bv = read.as_bv().unwrap();
         let solver = Solver::new();
-        solver.assert(&read_bv.eq(&BV::from_u64(0, 256)));
+        solver.assert(read_bv.eq(BV::from_u64(0, 256)));
         assert_eq!(solver.check(), SatResult::Sat);
         let solver2 = Solver::new();
-        solver2.assert(&read_bv.eq(&BV::from_u64(0, 256)).not());
+        solver2.assert(read_bv.eq(BV::from_u64(0, 256)).not());
         assert_eq!(solver2.check(), SatResult::Unsat);
     }
 
@@ -221,10 +221,10 @@ mod tests {
         let read = array_select(second.as_array().unwrap(), &idx, 256).unwrap();
         let read_bv = read.as_bv().unwrap();
         let solver = Solver::new();
-        solver.assert(&read_bv.eq(&BV::from_u64(20, 256)));
+        solver.assert(read_bv.eq(BV::from_u64(20, 256)));
         assert_eq!(solver.check(), SatResult::Sat);
         let solver2 = Solver::new();
-        solver2.assert(&read_bv.eq(&BV::from_u64(20, 256)).not());
+        solver2.assert(read_bv.eq(BV::from_u64(20, 256)).not());
         assert_eq!(solver2.check(), SatResult::Unsat);
     }
 
@@ -240,12 +240,12 @@ mod tests {
 
         // Should be able to equal 0
         let s1 = Solver::new();
-        s1.assert(&read_bv.eq(&BV::from_u64(0, 256)));
+        s1.assert(read_bv.eq(BV::from_u64(0, 256)));
         assert_eq!(s1.check(), SatResult::Sat);
 
         // Should also be able to equal 999
         let s2 = Solver::new();
-        s2.assert(&read_bv.eq(&BV::from_u64(999, 256)));
+        s2.assert(read_bv.eq(BV::from_u64(999, 256)));
         assert_eq!(s2.check(), SatResult::Sat);
     }
 
@@ -290,14 +290,14 @@ mod tests {
             let read = array_select(final_arr, &BV::from_u64(key, 256), 256).unwrap();
             let bv = read.as_bv().unwrap();
             let solver = Solver::new();
-            solver.assert(&bv.eq(&BV::from_u64(expected, 256)));
+            solver.assert(bv.eq(BV::from_u64(expected, 256)));
             assert_eq!(
                 solver.check(),
                 SatResult::Sat,
                 "key {key} should map to {expected}"
             );
             let solver2 = Solver::new();
-            solver2.assert(&bv.eq(&BV::from_u64(expected, 256)).not());
+            solver2.assert(bv.eq(BV::from_u64(expected, 256)).not());
             assert_eq!(
                 solver2.check(),
                 SatResult::Unsat,

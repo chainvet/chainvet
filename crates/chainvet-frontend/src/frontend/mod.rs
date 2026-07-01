@@ -296,10 +296,10 @@ fn surrounding_contract_name(function: &Function, ast: &NormalizedAst) -> Option
         .filter(|token| !token.is_empty());
     let mut last_name = None::<String>;
     while let Some(token) = tokens.next() {
-        if matches!(token, "contract" | "library" | "interface") {
-            if let Some(name) = tokens.next() {
-                last_name = Some(name.to_string());
-            }
+        if matches!(token, "contract" | "library" | "interface")
+            && let Some(name) = tokens.next()
+        {
+            last_name = Some(name.to_string());
         }
     }
     last_name

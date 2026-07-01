@@ -414,17 +414,18 @@ fn execute_transaction(
                 ext_call_checked = true;
             }
             TraceEventKind::StorageWrite { var_name, .. } => {
-                if let Some(callee) = &last_ext_call {
-                    if !ext_call_checked && var_name != "__no_sender_check" {
-                        disorder_events.push(TraceEvent {
-                            span: None,
-                            function_id: tx.function_id,
-                            kind: TraceEventKind::ExternalCallThenState {
-                                callee: callee.clone(),
-                                checked: false,
-                            },
-                        });
-                    }
+                if let Some(callee) = &last_ext_call
+                    && !ext_call_checked
+                    && var_name != "__no_sender_check"
+                {
+                    disorder_events.push(TraceEvent {
+                        span: None,
+                        function_id: tx.function_id,
+                        kind: TraceEventKind::ExternalCallThenState {
+                            callee: callee.clone(),
+                            checked: false,
+                        },
+                    });
                 }
             }
             _ => {}
@@ -1363,7 +1364,7 @@ fn execute_instr(
                     }
                 }
                 ControlKind::Revert { value } => {
-                    let msg = value.as_ref().map(|v| value_name(v));
+                    let msg = value.as_ref().map(value_name);
                     trace.events.push(TraceEvent {
                         span: None,
                         function_id,
@@ -2037,13 +2038,7 @@ fn eval_binary(op: &str, l: u128, r: u128) -> u128 {
                 0
             }
         }
-        "||" => {
-            if l != 0 || r != 0 {
-                1
-            } else {
-                0
-            }
-        }
+        "||" if (l != 0 || r != 0) => 1,
         _ => 0,
     }
 }

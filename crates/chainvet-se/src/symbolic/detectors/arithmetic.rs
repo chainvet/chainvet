@@ -21,6 +21,12 @@ pub struct ArithmeticDetector {
     last_div_dest: Option<IrVar>,
 }
 
+impl Default for ArithmeticDetector {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ArithmeticDetector {
     pub fn new() -> Self {
         Self {
@@ -244,6 +250,42 @@ impl ArithmeticDetector {
         } else {
             None
         }
+    }
+}
+
+/// Check SAT for `overflow_cond` under current path constraints.
+///
+/// Short-circuits when the overflow condition is trivially false
+/// (e.g., both operands are concrete zeros), avoiding a solver call.
+#[allow(clippy::too_many_arguments)]
+fn check_sat_and_emit(
+    state: &SymbolicState,
+    solver: &dyn SmtSolver,
+    overflow_cond: Bool,
+    kind: SeVulnKind,
+    severity: Severity,
+    confidence: Confidence,
+    message: &str,
+    span: Span,
+) -> Vec<SeFinding> {
+    if is_trivially_false(&overflow_cond) {
+        return vec![];
+    }
+    let mut assumptions = path_bools(state);
+    assumptions.push(overflow_cond);
+    match solver.check_sat_assuming(&assumptions) {
+        SatResult::Sat => {
+            let witness = solver.get_model().map(|m| {
+                let mut w = Witness::from_model(&m, &state.call_context);
+                w.populate_variables(&m, &state.variables);
+                w
+            });
+            vec![make_finding(
+                kind, severity, confidence, message, span, state, witness,
+            )]
+        }
+        // Unknown (timeout) or Unsat — not a confirmed finding.
+        _ => vec![],
     }
 }
 
@@ -599,41 +641,5 @@ mod tests {
             findings.is_empty(),
             "modulo op should not be detected as arithmetic vulnerability"
         );
-    }
-}
-
-/// Check SAT for `overflow_cond` under current path constraints.
-///
-/// Short-circuits when the overflow condition is trivially false
-/// (e.g., both operands are concrete zeros), avoiding a solver call.
-#[allow(clippy::too_many_arguments)]
-fn check_sat_and_emit(
-    state: &SymbolicState,
-    solver: &dyn SmtSolver,
-    overflow_cond: Bool,
-    kind: SeVulnKind,
-    severity: Severity,
-    confidence: Confidence,
-    message: &str,
-    span: Span,
-) -> Vec<SeFinding> {
-    if is_trivially_false(&overflow_cond) {
-        return vec![];
-    }
-    let mut assumptions = path_bools(state);
-    assumptions.push(overflow_cond);
-    match solver.check_sat_assuming(&assumptions) {
-        SatResult::Sat => {
-            let witness = solver.get_model().map(|m| {
-                let mut w = Witness::from_model(&m, &state.call_context);
-                w.populate_variables(&m, &state.variables);
-                w
-            });
-            vec![make_finding(
-                kind, severity, confidence, message, span, state, witness,
-            )]
-        }
-        // Unknown (timeout) or Unsat — not a confirmed finding.
-        _ => vec![],
     }
 }

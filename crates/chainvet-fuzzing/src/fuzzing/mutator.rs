@@ -46,10 +46,10 @@ fn mutate_individual_core(
 
     if havoc_only {
         havoc_mutate(&mut mutant, abi, rng, dict);
-        if let Some(deps) = deps {
-            if rng.gen_bool(0.20) {
-                inject_dependency_chain(&mut mutant, abi, deps, rng, dict);
-            }
+        if let Some(deps) = deps
+            && rng.gen_bool(0.20)
+        {
+            inject_dependency_chain(&mut mutant, abi, deps, rng, dict);
         }
         return mutant;
     }
@@ -115,11 +115,6 @@ pub fn crossover(a: &Individual, b: &Individual, rng: &mut impl Rng) -> Individu
 }
 
 // --- Value-Level Mutations ---
-
-/// Replace a random argument with a new random value.
-fn mutate_value(ind: &mut Individual, rng: &mut impl Rng) {
-    mutate_value_with_dict(ind, rng, None);
-}
 
 /// Replace a random argument, optionally using dictionary values.
 fn mutate_value_with_dict(ind: &mut Individual, rng: &mut impl Rng, dict: Option<&Dictionary>) {
@@ -194,11 +189,6 @@ fn mutate_arithmetic(ind: &mut Individual, rng: &mut impl Rng) {
 }
 
 // --- Sequence-Level Mutations ---
-
-/// Insert a random transaction into the sequence.
-fn insert_transaction(ind: &mut Individual, abi: &ContractAbi, rng: &mut impl Rng) {
-    insert_transaction_with_dict(ind, abi, rng, None);
-}
 
 /// Insert a random transaction, optionally using dictionary values.
 fn insert_transaction_with_dict(
@@ -432,7 +422,7 @@ mod tests {
     use super::*;
     use crate::fuzzing::types::{DependencyMap, Environment, FunctionAbi, FunctionDeps, ParamInfo};
     use chainvet_core::norm::{FunctionKind, Mutability, Visibility};
-    use std::collections::{HashMap, HashSet};
+    use std::collections::HashSet;
 
     fn sample_individual() -> Individual {
         Individual {
@@ -568,11 +558,11 @@ mod tests {
         let mut changed = false;
         for _ in 0..10 {
             mutate_arithmetic(&mut ind, &mut rng);
-            if let FuzzValue::Uint(v) = &ind.transactions[0].args[0] {
-                if *v != original_val {
-                    changed = true;
-                    break;
-                }
+            if let FuzzValue::Uint(v) = &ind.transactions[0].args[0]
+                && *v != original_val
+            {
+                changed = true;
+                break;
             }
         }
         assert!(changed, "arithmetic mutation should change a numeric value");

@@ -186,9 +186,9 @@ mod tests {
         let backend = Z3Backend::new(5000);
         let x = BV::new_const("x", 8);
 
-        backend.assert_constraint(&x.bvugt(&BV::from_u64(5, 8)));
+        backend.assert_constraint(&x.bvugt(BV::from_u64(5, 8)));
 
-        let assumption = x.bvult(&BV::from_u64(20, 8));
+        let assumption = x.bvult(BV::from_u64(20, 8));
         assert_eq!(backend.check_sat_assuming(&[assumption]), SatResult::Sat);
     }
 
@@ -201,11 +201,11 @@ mod tests {
         let backend = Z3Backend::new(5000);
         let x = BV::new_const("x", 8);
 
-        backend.assert_constraint(&x.bvugt(&BV::from_u64(5, 8)));
+        backend.assert_constraint(&x.bvugt(BV::from_u64(5, 8)));
         assert_eq!(backend.check_sat(), SatResult::Sat);
 
         backend.push();
-        backend.assert_constraint(&x.bvult(&BV::from_u64(3, 8)));
+        backend.assert_constraint(&x.bvult(BV::from_u64(3, 8)));
         assert_eq!(
             backend.check_sat(),
             SatResult::Unsat,
@@ -227,17 +227,17 @@ mod tests {
         let x = BV::new_const("x", 8);
 
         // Level 0: x > 10
-        backend.assert_constraint(&x.bvugt(&BV::from_u64(10, 8)));
+        backend.assert_constraint(&x.bvugt(BV::from_u64(10, 8)));
         assert_eq!(backend.check_sat(), SatResult::Sat);
 
         backend.push(); // Level 1
         // x < 20 narrows to [11, 19]
-        backend.assert_constraint(&x.bvult(&BV::from_u64(20, 8)));
+        backend.assert_constraint(&x.bvult(BV::from_u64(20, 8)));
         assert_eq!(backend.check_sat(), SatResult::Sat);
 
         backend.push(); // Level 2
         // x < 5 contradicts x > 10
-        backend.assert_constraint(&x.bvult(&BV::from_u64(5, 8)));
+        backend.assert_constraint(&x.bvult(BV::from_u64(5, 8)));
         assert_eq!(backend.check_sat(), SatResult::Unsat);
 
         backend.pop(); // Back to level 1
@@ -295,8 +295,8 @@ mod tests {
         let x = BV::new_const("x", 8);
 
         // Force unsat
-        backend.assert_constraint(&x.bvugt(&BV::from_u64(5, 8)));
-        backend.assert_constraint(&x.bvult(&BV::from_u64(3, 8)));
+        backend.assert_constraint(&x.bvugt(BV::from_u64(5, 8)));
+        backend.assert_constraint(&x.bvult(BV::from_u64(3, 8)));
         backend.check_sat();
 
         assert!(
@@ -314,9 +314,9 @@ mod tests {
         let y = BV::new_const("y", 8);
 
         // x == 42
-        backend.assert_constraint(&x.eq(&BV::from_u64(42, 8)));
+        backend.assert_constraint(&x.eq(BV::from_u64(42, 8)));
         // y == 7
-        backend.assert_constraint(&y.eq(&BV::from_u64(7, 8)));
+        backend.assert_constraint(&y.eq(BV::from_u64(7, 8)));
 
         assert_eq!(backend.check_sat(), SatResult::Sat);
         let model = backend.get_model().unwrap();

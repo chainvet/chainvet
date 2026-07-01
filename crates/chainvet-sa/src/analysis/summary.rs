@@ -55,10 +55,10 @@ pub fn summarize(ast: &NormalizedAst, resolved: &ResolvedCallGraph) -> Vec<Funct
             ResolvedTarget::Ambiguous(_) | ResolvedTarget::Unknown => summary.unresolved_calls += 1,
             ResolvedTarget::Function(_) => {}
         }
-        if let Some(call) = edge.call.as_ref() {
-            if is_low_level_call(call) {
-                summary.low_level_calls += 1;
-            }
+        if let Some(call) = edge.call.as_ref()
+            && is_low_level_call(call)
+        {
+            summary.low_level_calls += 1;
         }
     }
 

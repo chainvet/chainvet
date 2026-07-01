@@ -71,15 +71,16 @@ fn review_one(config: &OllamaConfig, mut finding: ScanFinding) -> Option<ScanFin
     if verdict == "false_positive" {
         return None;
     }
-    if let Some(sev) = value.get("corrected_severity").and_then(|v| v.as_str()) {
-        if !sev.is_empty() && sev != "null" {
-            finding.severity = Some(sev.to_string());
-        }
+    if let Some(sev) = value.get("corrected_severity").and_then(|v| v.as_str())
+        && !sev.is_empty()
+        && sev != "null"
+    {
+        finding.severity = Some(sev.to_string());
     }
-    if let Some(reason) = value.get("reason").and_then(|v| v.as_str()) {
-        if !reason.is_empty() {
-            finding.message = format!("{} [AI: {reason}]", finding.message);
-        }
+    if let Some(reason) = value.get("reason").and_then(|v| v.as_str())
+        && !reason.is_empty()
+    {
+        finding.message = format!("{} [AI: {reason}]", finding.message);
     }
     Some(finding)
 }

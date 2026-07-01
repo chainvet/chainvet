@@ -166,10 +166,10 @@ pub fn run_engine(
     };
 
     for cfg_func in cfgs {
-        if let Some(target_ids) = &target_function_ids {
-            if !target_ids.contains(&cfg_func.id) {
-                continue;
-            }
+        if let Some(target_ids) = &target_function_ids
+            && !target_ids.contains(&cfg_func.id)
+        {
+            continue;
         }
         if cfg_func.blocks.is_empty() {
             continue;

@@ -205,10 +205,10 @@ impl<'a> FuzzSession<'a> {
         }
 
         for idx in 0..self.contract_states.len() {
-            if let Some(ms) = max_duration_ms {
-                if slice_start.elapsed().as_millis() as u64 >= ms {
-                    break;
-                }
+            if let Some(ms) = max_duration_ms
+                && slice_start.elapsed().as_millis() as u64 >= ms
+            {
+                break;
             }
             let abi_index = self.contract_states[idx].abi_index;
 
@@ -281,12 +281,12 @@ impl<'a> FuzzSession<'a> {
         // them as arguments. Capped to keep generation cheap.
         if self.dictionary.values.len() < 1024 {
             for (key, val) in &trace.final_state {
-                if let Some(index) = key.split('#').nth(1) {
-                    if let Ok(v) = index.parse::<u128>() {
-                        if v != 0 && self.harvested.insert(v) {
-                            self.dictionary.values.push(v);
-                        }
-                    }
+                if let Some(index) = key.split('#').nth(1)
+                    && let Ok(v) = index.parse::<u128>()
+                    && v != 0
+                    && self.harvested.insert(v)
+                {
+                    self.dictionary.values.push(v);
                 }
                 let stored = val.as_uint();
                 if stored != 0 && self.harvested.insert(stored) {
@@ -336,10 +336,10 @@ impl<'a> FuzzSession<'a> {
     ) {
         let abi_index = self.contract_states[state_idx].abi_index;
         for _ in 0..max_iterations {
-            if let Some(ms) = max_duration_ms {
-                if slice_start.elapsed().as_millis() as u64 >= ms {
-                    break;
-                }
+            if let Some(ms) = max_duration_ms
+                && slice_start.elapsed().as_millis() as u64 >= ms
+            {
+                break;
             }
 
             let parent = {
@@ -393,10 +393,10 @@ impl<'a> FuzzSession<'a> {
 
             let n = st.iters_run;
             st.iters_run += 1;
-            if n % 50 == 0 {
+            if n.is_multiple_of(50) {
                 scheduler::assign_energy(&mut self.corpus, &self.global_coverage);
             }
-            if n % 200 == 0 && n > 0 {
+            if n.is_multiple_of(200) && n > 0 {
                 scheduler::minimize_corpus(&mut self.corpus);
             }
         }
@@ -418,7 +418,7 @@ impl<'a> FuzzSession<'a> {
                     "no contracts or functions available for fuzzing".to_string(),
                 ),
                 elapsed_ms: self.start.elapsed().as_millis(),
-                hybrid_stats: self.config.hybrid_mode.then(|| FuzzHybridStats {
+                hybrid_stats: self.config.hybrid_mode.then_some(FuzzHybridStats {
                     seeded_inputs_provided: self.config.seed_corpus.len(),
                     seeded_inputs_executed: 0,
                 }),
@@ -455,7 +455,7 @@ impl<'a> FuzzSession<'a> {
             corpus_size: self.corpus.entries.len(),
             corpus_zero_reason: zero_corpus_reason(&self.abis, &self.corpus),
             elapsed_ms: self.start.elapsed().as_millis(),
-            hybrid_stats: self.config.hybrid_mode.then(|| FuzzHybridStats {
+            hybrid_stats: self.config.hybrid_mode.then_some(FuzzHybridStats {
                 seeded_inputs_provided: self.config.seed_corpus.len(),
                 seeded_inputs_executed: self.seeded_inputs_executed,
             }),
@@ -961,13 +961,12 @@ fn apply_static_fp_guards(
 fn extract_function_id_from_message(message: &str) -> Option<u32> {
     let tokens = message.split_whitespace().collect::<Vec<_>>();
     for window in tokens.windows(2) {
-        if window[0] == "function" {
-            if let Ok(id) = window[1]
+        if window[0] == "function"
+            && let Ok(id) = window[1]
                 .trim_matches(|c: char| !c.is_ascii_digit())
                 .parse::<u32>()
-            {
-                return Some(id);
-            }
+        {
+            return Some(id);
         }
     }
     None

@@ -28,7 +28,7 @@ struct BitSet {
 
 impl BitSet {
     fn new(size: usize) -> Self {
-        let words = (size + 63) / 64;
+        let words = size.div_ceil(64);
         Self {
             words: vec![0; words],
         }
@@ -428,7 +428,7 @@ fn apply_block(
     uses_source: &mut bool,
 ) {
     temp_taint.clear();
-    for (instr_index, instr) in block.instrs.iter().enumerate() {
+    for instr in block.instrs.iter() {
         match instr {
             IrInstr::Declare {
                 names: vars, init, ..
@@ -571,12 +571,6 @@ fn apply_block(
     }
 }
 
-fn call_site_id(block_id: u32, instr_index: usize) -> u32 {
-    block_id
-        .wrapping_mul(1315423911)
-        .wrapping_add(instr_index as u32)
-}
-
 fn call_option_taint(
     option: &IrCallOption,
     names: &NameIndex,
@@ -627,10 +621,10 @@ fn place_taint(
         *uses_source = true;
         return true;
     }
-    if let Some(name) = assign_target_name(place, contract_name) {
-        if let Some(idx) = names.idx(&name) {
-            return state.contains(idx);
-        }
+    if let Some(name) = assign_target_name(place, contract_name)
+        && let Some(idx) = names.idx(&name)
+    {
+        return state.contains(idx);
     }
     match place {
         IrPlace::Var {
@@ -650,10 +644,10 @@ fn place_taint(
         IrPlace::Index { base, index, .. } => {
             let mut tainted =
                 value_taint(base, names, contract_name, state, temp_taint, uses_source);
-            if let Some(index) = index {
-                if value_taint(index, names, contract_name, state, temp_taint, uses_source) {
-                    tainted = true;
-                }
+            if let Some(index) = index
+                && value_taint(index, names, contract_name, state, temp_taint, uses_source)
+            {
+                tainted = true;
             }
             tainted
         }
@@ -698,13 +692,13 @@ fn set_place_taint(
     match place {
         IrPlace::Var { var, .. } => set_var_taint(var, tainted, names, state, temp_taint),
         _ => {
-            if let Some(name) = assign_target_name(place, contract_name) {
-                if let Some(idx) = names.idx(&name) {
-                    if tainted {
-                        state.set(idx);
-                    } else {
-                        state.clear(idx);
-                    }
+            if let Some(name) = assign_target_name(place, contract_name)
+                && let Some(idx) = names.idx(&name)
+            {
+                if tainted {
+                    state.set(idx);
+                } else {
+                    state.clear(idx);
                 }
             }
         }

@@ -270,17 +270,17 @@ pub fn build_dependency_map(ir_module: &IrModule, ast: &NormalizedAst) -> Depend
             for instr in &block.instrs {
                 match instr {
                     IrInstr::Store { dest, .. } => {
-                        if is_storage_place(dest) {
-                            if let Some(name) = place_root_name(dest, contract_name.as_deref()) {
-                                writes.insert(name);
-                            }
+                        if is_storage_place(dest)
+                            && let Some(name) = place_root_name(dest, contract_name.as_deref())
+                        {
+                            writes.insert(name);
                         }
                     }
                     IrInstr::Load { src, .. } => {
-                        if is_storage_place(src) {
-                            if let Some(name) = place_root_name(src, contract_name.as_deref()) {
-                                reads.insert(name);
-                            }
+                        if is_storage_place(src)
+                            && let Some(name) = place_root_name(src, contract_name.as_deref())
+                        {
+                            reads.insert(name);
                         }
                     }
                     _ => {}

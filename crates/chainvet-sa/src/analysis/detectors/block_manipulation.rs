@@ -64,134 +64,6 @@ pub fn detect_all(ast: &NormalizedAst) -> Vec<Finding> {
     findings
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use chainvet_core::norm::SourceFile;
-    use chainvet_frontend::frontend::parser::load_via_parser_sources;
-
-    fn parse(source: &str) -> NormalizedAst {
-        load_via_parser_sources(vec![SourceFile {
-            id: 0,
-            path: "test.sol".to_string(),
-            source: source.to_string(),
-        }])
-        .expect("parser should succeed")
-    }
-
-    #[test]
-    fn price_based_transfer_still_emits_tod() {
-        let ast = parse(
-            r#"
-            pragma solidity ^0.4.24;
-            contract Sale {
-                uint public price;
-                function buy() public payable {
-                    require(msg.value >= price);
-                    msg.sender.transfer(price);
-                }
-            }
-            "#,
-        );
-
-        let findings = detect_transaction_order_dependency(&ast);
-        assert!(
-            findings
-                .iter()
-                .any(|finding| { finding.kind == FindingKind::TransactionOrderDependency })
-        );
-    }
-
-    #[test]
-    fn balance_based_withdraw_does_not_emit_tod() {
-        let ast = parse(
-            r#"
-            pragma solidity ^0.4.24;
-            contract Wallet {
-                mapping(address => uint256) balances;
-                function withdraw(uint256 amount) public {
-                    require(amount <= balances[msg.sender]);
-                    msg.sender.transfer(amount);
-                    balances[msg.sender] -= amount;
-                }
-            }
-            "#,
-        );
-
-        let findings = detect_transaction_order_dependency(&ast);
-        assert!(
-            findings.is_empty(),
-            "ordinary balance accounting should not be treated as transaction-order dependency"
-        );
-    }
-
-    #[test]
-    fn timestamp_return_comparison_emits_bm01() {
-        let ast = parse(
-            r#"
-            pragma solidity ^0.4.24;
-            contract TimedCrowdsale {
-                function isSaleFinished() public view returns (bool) {
-                    return block.timestamp >= 1546300800;
-                }
-            }
-            "#,
-        );
-
-        let findings = detect_dangerous_timestamp(&ast);
-        assert!(
-            findings
-                .iter()
-                .any(|finding| finding.kind == FindingKind::DangerousBlockTimestamp)
-        );
-    }
-
-    #[test]
-    fn logging_timestamp_assignment_does_not_emit_bm01() {
-        let ast = parse(
-            r#"
-            pragma solidity ^0.4.24;
-            contract Logger {
-                struct Message { uint time; }
-                Message lastMsg;
-                function addMessage() public {
-                    lastMsg.time = now;
-                }
-            }
-            "#,
-        );
-
-        let findings = detect_dangerous_timestamp(&ast);
-        assert!(
-            findings.is_empty(),
-            "plain bookkeeping assignments from `now` should not emit timestamp dependency"
-        );
-    }
-
-    #[test]
-    fn migrate_named_function_does_not_trip_rate_hint() {
-        let ast = parse(
-            r#"
-            pragma solidity ^0.4.24;
-            contract Wallet {
-                address creator;
-                constructor() public { creator = msg.sender; }
-                function migrateTo(address to) public {
-                    require(creator == msg.sender);
-                    to.transfer(address(this).balance);
-                }
-            }
-            "#,
-        );
-
-        let findings = detect_transaction_order_dependency(&ast);
-        assert!(
-            findings.is_empty(),
-            "identifier substring matches like `migrateTo` should not trigger TOD hints"
-        );
-    }
-}
-
 // ═══════════════════════════════════════════════════════════════════════════════
 //  Helper utilities
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -411,8 +283,7 @@ fn source_contains_transfer_call(lower: &str) -> bool {
 }
 
 fn source_contains_order_sensitive_hint(lower: &str) -> bool {
-    source_identifier_tokens(lower)
-        .any(|token| ORDER_SENSITIVE_VAR_HINTS.iter().any(|hint| token == *hint))
+    source_identifier_tokens(lower).any(|token| ORDER_SENSITIVE_VAR_HINTS.contains(&token))
 }
 
 /// Returns `true` if `expr_id` is (or contains) `block.timestamp` or `now`.
@@ -426,36 +297,30 @@ fn contains_timestamp(ast: &NormalizedAst, expr_id: u32) -> bool {
     };
 
     // Direct `now` keyword
-    if let ExprKind::Ident(name) = &expr.kind {
-        if name == "now" {
-            return true;
-        }
+    if let ExprKind::Ident(name) = &expr.kind
+        && name == "now"
+    {
+        return true;
     }
 
     // Chain metadata: block.timestamp
-    if let Some(chain) = expr.meta.chain.as_deref() {
-        if chain.len() == 2 {
-            if let (ChainSegment::Ident(base), ChainSegment::Member(member)) =
-                (&chain[0], &chain[1])
-            {
-                if base == "block" && member == "timestamp" {
-                    return true;
-                }
-            }
-        }
+    if let Some(chain) = expr.meta.chain.as_deref()
+        && chain.len() == 2
+        && let (ChainSegment::Ident(base), ChainSegment::Member(member)) = (&chain[0], &chain[1])
+        && base == "block"
+        && member == "timestamp"
+    {
+        return true;
     }
 
     // Member AST node: block.timestamp
-    if let ExprKind::Member { base, field } = &expr.kind {
-        if field == "timestamp" {
-            if let Some(base_expr) = ast.expressions.get(*base as usize) {
-                if let ExprKind::Ident(name) = &base_expr.kind {
-                    if name == "block" {
-                        return true;
-                    }
-                }
-            }
-        }
+    if let ExprKind::Member { base, field } = &expr.kind
+        && field == "timestamp"
+        && let Some(base_expr) = ast.expressions.get(*base as usize)
+        && let ExprKind::Ident(name) = &base_expr.kind
+        && name == "block"
+    {
+        return true;
     }
 
     // Recurse into sub-expressions
@@ -471,29 +336,23 @@ fn contains_block_difficulty(ast: &NormalizedAst, expr_id: u32) -> bool {
     };
 
     // Chain metadata: block.difficulty OR block.prevrandao
-    if let Some(chain) = expr.meta.chain.as_deref() {
-        if chain.len() == 2 {
-            if let (ChainSegment::Ident(base), ChainSegment::Member(member)) =
-                (&chain[0], &chain[1])
-            {
-                if base == "block" && (member == "difficulty" || member == "prevrandao") {
-                    return true;
-                }
-            }
-        }
+    if let Some(chain) = expr.meta.chain.as_deref()
+        && chain.len() == 2
+        && let (ChainSegment::Ident(base), ChainSegment::Member(member)) = (&chain[0], &chain[1])
+        && base == "block"
+        && (member == "difficulty" || member == "prevrandao")
+    {
+        return true;
     }
 
     // Member AST node: block.difficulty | block.prevrandao
-    if let ExprKind::Member { base, field } = &expr.kind {
-        if field == "difficulty" || field == "prevrandao" {
-            if let Some(base_expr) = ast.expressions.get(*base as usize) {
-                if let ExprKind::Ident(name) = &base_expr.kind {
-                    if name == "block" {
-                        return true;
-                    }
-                }
-            }
-        }
+    if let ExprKind::Member { base, field } = &expr.kind
+        && (field == "difficulty" || field == "prevrandao")
+        && let Some(base_expr) = ast.expressions.get(*base as usize)
+        && let ExprKind::Ident(name) = &base_expr.kind
+        && name == "block"
+    {
+        return true;
     }
 
     recurse_contains(ast, expr, contains_block_difficulty)
@@ -506,18 +365,17 @@ fn contains_blockhash(ast: &NormalizedAst, expr_id: u32) -> bool {
     };
 
     // Direct call: blockhash(number)
-    if let Some(call) = &expr.meta.call {
-        if let CallTarget::Direct { name } = &call.target {
-            if name == "blockhash" {
-                return true;
-            }
-        }
+    if let Some(call) = &expr.meta.call
+        && let CallTarget::Direct { name } = &call.target
+        && name == "blockhash"
+    {
+        return true;
     }
     // Ident node named "blockhash" (callee before Call resolution)
-    if let ExprKind::Ident(name) = &expr.kind {
-        if name == "blockhash" {
-            return true;
-        }
+    if let ExprKind::Ident(name) = &expr.kind
+        && name == "blockhash"
+    {
+        return true;
     }
 
     recurse_contains(ast, expr, contains_blockhash)
@@ -530,29 +388,23 @@ fn contains_block_number(ast: &NormalizedAst, expr_id: u32) -> bool {
     };
 
     // Chain metadata: block.number
-    if let Some(chain) = expr.meta.chain.as_deref() {
-        if chain.len() == 2 {
-            if let (ChainSegment::Ident(base), ChainSegment::Member(member)) =
-                (&chain[0], &chain[1])
-            {
-                if base == "block" && member == "number" {
-                    return true;
-                }
-            }
-        }
+    if let Some(chain) = expr.meta.chain.as_deref()
+        && chain.len() == 2
+        && let (ChainSegment::Ident(base), ChainSegment::Member(member)) = (&chain[0], &chain[1])
+        && base == "block"
+        && member == "number"
+    {
+        return true;
     }
 
     // Member AST node: block.number
-    if let ExprKind::Member { base, field } = &expr.kind {
-        if field == "number" {
-            if let Some(base_expr) = ast.expressions.get(*base as usize) {
-                if let ExprKind::Ident(name) = &base_expr.kind {
-                    if name == "block" {
-                        return true;
-                    }
-                }
-            }
-        }
+    if let ExprKind::Member { base, field } = &expr.kind
+        && field == "number"
+        && let Some(base_expr) = ast.expressions.get(*base as usize)
+        && let ExprKind::Ident(name) = &base_expr.kind
+        && name == "block"
+    {
+        return true;
     }
 
     recurse_contains(ast, expr, contains_block_number)
@@ -590,9 +442,7 @@ fn recurse_contains(
                 })
         }
         ExprKind::Assign { lhs, rhs, .. } => pred(ast, *lhs) || pred(ast, *rhs),
-        ExprKind::Index { base, index } => {
-            pred(ast, *base) || index.map_or(false, |i| pred(ast, i))
-        }
+        ExprKind::Index { base, index } => pred(ast, *base) || index.is_some_and(|i| pred(ast, i)),
         ExprKind::Conditional {
             cond,
             then_expr,
@@ -621,7 +471,7 @@ fn expr_contains_transfer_call(ast: &NormalizedAst, expr_id: u32) -> bool {
     // Strategy 1: Check call metadata (works when parser resolves target)
     if let Some(call) = &expr.meta.call {
         let name = call_target_name(call);
-        if TRANSFER_METHODS.iter().any(|&m| m == name) {
+        if TRANSFER_METHODS.contains(&name) {
             return true;
         }
     }
@@ -630,14 +480,12 @@ fn expr_contains_transfer_call(ast: &NormalizedAst, expr_id: u32) -> bool {
     // This covers cases like `payable(addr).transfer(amt)` where the parser
     // produces CallTarget::Unknown but the callee is a Member expression
     // whose `field` is the actual method name.
-    if let ExprKind::Call { callee, .. } = &expr.kind {
-        if let Some(callee_expr) = ast.expressions.get(*callee as usize) {
-            if let ExprKind::Member { field, .. } = &callee_expr.kind {
-                if TRANSFER_METHODS.iter().any(|&m| m == field.as_str()) {
-                    return true;
-                }
-            }
-        }
+    if let ExprKind::Call { callee, .. } = &expr.kind
+        && let Some(callee_expr) = ast.expressions.get(*callee as usize)
+        && let ExprKind::Member { field, .. } = &callee_expr.kind
+        && TRANSFER_METHODS.contains(&field.as_str())
+    {
+        return true;
     }
 
     match &expr.kind {
@@ -784,12 +632,11 @@ fn expr_references_tainted_local(
 ) -> bool {
     let mut found = false;
     for_each_expr(ast, expr_id, &mut |_eid, e| {
-        if !found {
-            if let ExprKind::Ident(n) = &e.kind {
-                if tainted.contains(n) {
-                    found = true;
-                }
-            }
+        if !found
+            && let ExprKind::Ident(n) = &e.kind
+            && tainted.contains(n)
+        {
+            found = true;
         }
     });
     found
@@ -816,16 +663,13 @@ fn timestamp_tainted_locals(ast: &NormalizedAst, body: u32) -> HashSet<String> {
                 }
             }
             StmtKind::Expr(e) => {
-                if let Some(expr) = ast.expressions.get(*e as usize) {
-                    if let ExprKind::Assign { lhs, rhs, .. } = &expr.kind {
-                        if contains_timestamp(ast, *rhs)
-                            || expr_references_tainted_local(ast, *rhs, &snapshot)
-                        {
-                            if let Some(n) = lhs_base_name(ast, *lhs) {
-                                adds.push(n);
-                            }
-                        }
-                    }
+                if let Some(expr) = ast.expressions.get(*e as usize)
+                    && let ExprKind::Assign { lhs, rhs, .. } = &expr.kind
+                    && (contains_timestamp(ast, *rhs)
+                        || expr_references_tainted_local(ast, *rhs, &snapshot))
+                    && let Some(n) = lhs_base_name(ast, *lhs)
+                {
+                    adds.push(n);
                 }
             }
             _ => {}
@@ -884,19 +728,16 @@ fn detect_dangerous_timestamp(ast: &NormalizedAst) -> Vec<Finding> {
                 // for (...; block.timestamp < ...; ...)
                 StmtKind::For {
                     cond: Some(cond), ..
-                } => {
-                    if cond_ts(*cond) {
-                        findings.push(Finding {
-                            kind: FindingKind::DangerousBlockTimestamp,
-                            severity: Severity::Low,
-                            message:
-                                "dangerous use of `block.timestamp` / `now` in for-condition; \
+                } if cond_ts(*cond) => {
+                    findings.push(Finding {
+                        kind: FindingKind::DangerousBlockTimestamp,
+                        severity: Severity::Low,
+                        message: "dangerous use of `block.timestamp` / `now` in for-condition; \
                                 miners can manipulate this value within ~15 seconds"
-                                    .into(),
-                            span: stmt.span,
-                            function: Some(func.id),
-                        });
-                    }
+                            .into(),
+                        span: stmt.span,
+                        function: Some(func.id),
+                    });
                 }
                 _ => {}
             }
@@ -988,12 +829,11 @@ fn attacker_writable_storage(ast: &NormalizedAst) -> HashSet<String> {
         }
         let Some(body) = func.body else { continue };
         for_each_expr_in_stmt(ast, body, &mut |_eid, expr| {
-            if let ExprKind::Assign { lhs, .. } = &expr.kind {
-                if let Some(name) = lhs_base_name(ast, *lhs) {
-                    if storage.contains(name.as_str()) {
-                        writable.insert(name);
-                    }
-                }
+            if let ExprKind::Assign { lhs, .. } = &expr.kind
+                && let Some(name) = lhs_base_name(ast, *lhs)
+                && storage.contains(name.as_str())
+            {
+                writable.insert(name);
             }
         });
     }
@@ -1051,18 +891,14 @@ fn transfers_to_writable_recipient(
         if hit {
             return;
         }
-        if let Some(expr) = ast.expressions.get(eid as usize) {
-            if let ExprKind::Call { callee, .. } = &expr.kind {
-                if let Some(c) = ast.expressions.get(*callee as usize) {
-                    if let ExprKind::Member { base, field } = &c.kind {
-                        if ETH_TRANSFER.contains(&field.as_str())
-                            && recipient_is_writable_storage(ast, *base, writable)
-                        {
-                            hit = true;
-                        }
-                    }
-                }
-            }
+        if let Some(expr) = ast.expressions.get(eid as usize)
+            && let ExprKind::Call { callee, .. } = &expr.kind
+            && let Some(c) = ast.expressions.get(*callee as usize)
+            && let ExprKind::Member { base, field } = &c.kind
+            && ETH_TRANSFER.contains(&field.as_str())
+            && recipient_is_writable_storage(ast, *base, writable)
+        {
+            hit = true;
         }
     });
     hit
@@ -1091,10 +927,8 @@ fn detect_transaction_order_dependency(ast: &NormalizedAst) -> Vec<Finding> {
                 reads_sensitive = true;
             }
         });
-        if !reads_sensitive {
-            if let Some(source_lower) = source_lower.as_deref() {
-                reads_sensitive = source_contains_order_sensitive_hint(source_lower);
-            }
+        if !reads_sensitive && let Some(source_lower) = source_lower.as_deref() {
+            reads_sensitive = source_contains_order_sensitive_hint(source_lower);
         }
         let has_transfer = stmt_contains_transfer(ast, body)
             || source_lower
@@ -1237,4 +1071,132 @@ fn detect_weak_prng(ast: &NormalizedAst) -> Vec<Finding> {
     }
 
     findings
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chainvet_core::norm::SourceFile;
+    use chainvet_frontend::frontend::parser::load_via_parser_sources;
+
+    fn parse(source: &str) -> NormalizedAst {
+        load_via_parser_sources(vec![SourceFile {
+            id: 0,
+            path: "test.sol".to_string(),
+            source: source.to_string(),
+        }])
+        .expect("parser should succeed")
+    }
+
+    #[test]
+    fn price_based_transfer_still_emits_tod() {
+        let ast = parse(
+            r#"
+            pragma solidity ^0.4.24;
+            contract Sale {
+                uint public price;
+                function buy() public payable {
+                    require(msg.value >= price);
+                    msg.sender.transfer(price);
+                }
+            }
+            "#,
+        );
+
+        let findings = detect_transaction_order_dependency(&ast);
+        assert!(
+            findings
+                .iter()
+                .any(|finding| { finding.kind == FindingKind::TransactionOrderDependency })
+        );
+    }
+
+    #[test]
+    fn balance_based_withdraw_does_not_emit_tod() {
+        let ast = parse(
+            r#"
+            pragma solidity ^0.4.24;
+            contract Wallet {
+                mapping(address => uint256) balances;
+                function withdraw(uint256 amount) public {
+                    require(amount <= balances[msg.sender]);
+                    msg.sender.transfer(amount);
+                    balances[msg.sender] -= amount;
+                }
+            }
+            "#,
+        );
+
+        let findings = detect_transaction_order_dependency(&ast);
+        assert!(
+            findings.is_empty(),
+            "ordinary balance accounting should not be treated as transaction-order dependency"
+        );
+    }
+
+    #[test]
+    fn timestamp_return_comparison_emits_bm01() {
+        let ast = parse(
+            r#"
+            pragma solidity ^0.4.24;
+            contract TimedCrowdsale {
+                function isSaleFinished() public view returns (bool) {
+                    return block.timestamp >= 1546300800;
+                }
+            }
+            "#,
+        );
+
+        let findings = detect_dangerous_timestamp(&ast);
+        assert!(
+            findings
+                .iter()
+                .any(|finding| finding.kind == FindingKind::DangerousBlockTimestamp)
+        );
+    }
+
+    #[test]
+    fn logging_timestamp_assignment_does_not_emit_bm01() {
+        let ast = parse(
+            r#"
+            pragma solidity ^0.4.24;
+            contract Logger {
+                struct Message { uint time; }
+                Message lastMsg;
+                function addMessage() public {
+                    lastMsg.time = now;
+                }
+            }
+            "#,
+        );
+
+        let findings = detect_dangerous_timestamp(&ast);
+        assert!(
+            findings.is_empty(),
+            "plain bookkeeping assignments from `now` should not emit timestamp dependency"
+        );
+    }
+
+    #[test]
+    fn migrate_named_function_does_not_trip_rate_hint() {
+        let ast = parse(
+            r#"
+            pragma solidity ^0.4.24;
+            contract Wallet {
+                address creator;
+                constructor() public { creator = msg.sender; }
+                function migrateTo(address to) public {
+                    require(creator == msg.sender);
+                    to.transfer(address(this).balance);
+                }
+            }
+            "#,
+        );
+
+        let findings = detect_transaction_order_dependency(&ast);
+        assert!(
+            findings.is_empty(),
+            "identifier substring matches like `migrateTo` should not trigger TOD hints"
+        );
+    }
 }

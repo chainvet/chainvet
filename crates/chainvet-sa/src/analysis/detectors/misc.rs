@@ -200,15 +200,11 @@ fn should_surface_tainted_call(ast: &NormalizedAst, span: Span) -> bool {
     match expr.meta.call.as_ref().map(|call| &call.target) {
         Some(CallTarget::Direct { .. }) => false,
         Some(CallTarget::Member { name, receiver }) => {
-            let is_helper = NON_EXTERNAL_MEMBER_HELPERS
-                .iter()
-                .any(|&helper| helper == name.as_str());
+            let is_helper = NON_EXTERNAL_MEMBER_HELPERS.contains(&name.as_str());
             let is_internal_receiver = receiver.last().is_some_and(|segment| {
                 segment.eq_ignore_ascii_case("this") || segment.eq_ignore_ascii_case("super")
             });
-            let is_risky_sink = RISKY_EXTERNAL_MEMBER_CALLS
-                .iter()
-                .any(|&sink| sink == name.as_str());
+            let is_risky_sink = RISKY_EXTERNAL_MEMBER_CALLS.contains(&name.as_str());
             !is_helper && !is_internal_receiver && is_risky_sink
         }
         Some(CallTarget::Unknown) | None => true,

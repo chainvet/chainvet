@@ -22,6 +22,12 @@ pub struct BlockManipulationDetector {
     prng_vars: HashSet<IrVar>,
 }
 
+impl Default for BlockManipulationDetector {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl BlockManipulationDetector {
     pub fn new() -> Self {
         Self {
