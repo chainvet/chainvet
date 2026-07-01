@@ -12,3 +12,5 @@ chainvet-core = { path = "../chainvet-core" }
 chainvet-orchestrator = { path = "../chainvet-orchestrator" }
 tower-lsp = "0.20"
 tokio = { version = "1", features = ["rt-multi-thread", "io-std", "macros"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
