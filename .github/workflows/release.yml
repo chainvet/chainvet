@@ -1,0 +1,68 @@
+name: Release
+
+# Fires only on version tags (e.g. `v0.1.0`) — a normal branch push never
+# triggers this. Cut a release with:
+#   git tag -a v0.1.0 -m "Chainvet v0.1.0" && git push origin v0.1.0
+on:
+  push:
+    tags:
+      - 'v*'
+
+# Allow the built-in GITHUB_TOKEN to create the release and upload assets.
+permissions:
+  contents: write
+
+env:
+  # v0.1.0 ships the tested target only; other arches/OSes come in a later phase.
+  TARGET: x86_64-unknown-linux-gnu
+
+jobs:
+  release:
+    name: Build and publish (x86_64-linux-gnu)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # z3 is a dynamically-linked system library (not bundled for v0.1.0); the
+      # install script installs the matching runtime on the user's machine.
+      - name: Install Z3
+        run: sudo apt-get update && sudo apt-get install -y libz3-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build release binaries
+        run: cargo build --release -p chainvet-cli -p chainvet-ci -p chainvet-server -p chainvet-lsp
+
+      - name: Package artifacts
+        run: |
+          set -eu
+          VERSION="${GITHUB_REF_NAME}"
+          DIST="$PWD/dist"; mkdir -p "$DIST"
+          STAGE="$(mktemp -d)"
+
+          # Stage the four binaries plus the docs that ride along in the bundle.
+          cp target/release/chainvet \
+             target/release/chainvet-ci \
+             target/release/chainvet-server \
+             target/release/chainvet-lsp "$STAGE/"
+          for d in README.md LICENSE; do [ -f "$d" ] && cp "$d" "$STAGE/"; done
+
+          # One tarball per binary (grab exactly what you need)...
+          for bin in chainvet chainvet-ci chainvet-server chainvet-lsp; do
+            tar -C "$STAGE" -czf "$DIST/${bin}-${VERSION}-${TARGET}.tar.gz" "$bin"
+          done
+          # ...and one combined bundle: every staged file (all four + docs).
+          ( cd "$STAGE" && tar -czf "$DIST/chainvet-full-${VERSION}-${TARGET}.tar.gz" * )
+
+          # Checksums for the installer / manual verification.
+          ( cd "$DIST" && sha256sum *.tar.gz > SHA256SUMS.txt )
+          ls -la "$DIST"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" dist/* \
+            --title "Chainvet ${GITHUB_REF_NAME}" \
+            --generate-notes
