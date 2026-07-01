@@ -15,10 +15,10 @@ cargo clippy -- -D warnings  # Lint
 cargo fmt                    # Format
 
 # CLI (binary: chainvet)
-cargo run -p chainvet-cli -- <path.sol>              # static (default)
-cargo run -p chainvet-cli -- --hybrid <path.sol>     # hybrid / --symbolic / --fuzzing
-cargo run -p chainvet-cli -- --hybrid <path.sol> --json
-cargo run -p chainvet-cli -- <path.sol> --dump-ir text   # text|json|tuple
+cargo run -p chainvet-cli -- scan <path.sol>              # hybrid (the default mode)
+cargo run -p chainvet-cli -- scan -m static <path.sol>   # -m static|symbolic|fuzzing|hybrid
+cargo run -p chainvet-cli -- scan -f json <path.sol>     # -f pretty|json
+cargo run -p chainvet-cli -- ir <path.sol> -f text       # dump IR: text|json|tuple
 
 # Other frontends
 cargo run -p chainvet-ci -- <path> --fail-on high --sarif out.sarif

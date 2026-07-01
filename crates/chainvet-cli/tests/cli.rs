@@ -12,7 +12,7 @@ const REENTRANCY: &str = concat!(
     "/tests/fixtures/vuln_reentrancy.sol"
 );
 
-/// Run the analysis binary with the given arguments and return the output.
+/// Run the binary with the given arguments and return the output.
 fn run(args: &[&str]) -> std::process::Output {
     Command::new(env!("CARGO_BIN_EXE_chainvet"))
         .args(args)
@@ -20,51 +20,58 @@ fn run(args: &[&str]) -> std::process::Output {
         .unwrap_or_else(|e| panic!("failed to spawn {}: {e}", env!("CARGO_BIN_EXE_chainvet")))
 }
 
-#[test]
-fn symbolic_on_se_test_fixture_exits_ok() {
-    let out = run(&["--symbolic", SE_TEST]);
+fn assert_ok(out: &std::process::Output, ctx: &str) {
     assert!(
         out.status.success(),
-        "binary exited non-zero on se_test.sol\nstdout: {}\nstderr: {}",
+        "binary exited non-zero ({ctx})\nstdout: {}\nstderr: {}",
         String::from_utf8_lossy(&out.stdout),
         String::from_utf8_lossy(&out.stderr),
     );
-    // Confirm no panic backtrace was emitted.
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
         !stderr.contains("thread '") && !stderr.contains("panicked"),
-        "unexpected panic in se_test.sol run:\n{stderr}",
+        "unexpected panic ({ctx}):\n{stderr}",
     );
 }
 
 #[test]
-fn symbolic_on_reentrancy_fixture_exits_ok() {
-    let out = run(&["--symbolic", REENTRANCY]);
-    assert!(
-        out.status.success(),
-        "binary exited non-zero on vuln_reentrancy.sol\nstdout: {}\nstderr: {}",
-        String::from_utf8_lossy(&out.stdout),
-        String::from_utf8_lossy(&out.stderr),
-    );
-    let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(
-        !stderr.contains("thread '") && !stderr.contains("panicked"),
-        "unexpected panic in vuln_reentrancy.sol run:\n{stderr}",
+fn scan_symbolic_se_fixture_exits_ok() {
+    assert_ok(
+        &run(&["scan", "-m", "symbolic", SE_TEST]),
+        "symbolic se_test",
     );
 }
 
 #[test]
-fn hybrid_on_reentrancy_fixture_exits_ok() {
-    let out = run(&["--hybrid", REENTRANCY]);
-    assert!(
-        out.status.success(),
-        "binary exited non-zero on hybrid vuln_reentrancy.sol\nstdout: {}\nstderr: {}",
-        String::from_utf8_lossy(&out.stdout),
-        String::from_utf8_lossy(&out.stderr),
+fn scan_symbolic_reentrancy_exits_ok() {
+    assert_ok(
+        &run(&["scan", "-m", "symbolic", REENTRANCY]),
+        "symbolic reentrancy",
     );
-    let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(
-        !stderr.contains("thread '") && !stderr.contains("panicked"),
-        "unexpected panic in hybrid vuln_reentrancy.sol run:\n{stderr}",
+}
+
+#[test]
+fn scan_hybrid_reentrancy_exits_ok() {
+    assert_ok(
+        &run(&["scan", "-m", "hybrid", REENTRANCY]),
+        "hybrid reentrancy",
     );
+}
+
+#[test]
+fn scan_json_is_valid_and_has_findings() {
+    let out = run(&["scan", "-m", "hybrid", "-f", "json", REENTRANCY]);
+    assert_ok(&out, "hybrid json");
+    let value: serde_json::Value =
+        serde_json::from_slice(&out.stdout).expect("scan -f json must emit valid JSON");
+    let findings = value.get("findings").and_then(|f| f.as_array());
+    assert!(
+        findings.is_some_and(|f| !f.is_empty()),
+        "hybrid json should carry a non-empty findings array",
+    );
+}
+
+#[test]
+fn ir_dump_exits_ok() {
+    assert_ok(&run(&["ir", REENTRANCY, "-f", "text"]), "ir dump");
 }
