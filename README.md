@@ -11,31 +11,6 @@ trigger further symbolic assists. Findings are merged, deduplicated, and tagged
 with a confidence tier (**confirmed** by dynamic/symbolic evidence vs **candidate**
 from static heuristics only).
 
-## Workspace
-
-Chainvet is a Cargo workspace. The engines are pure libraries (no I/O); one
-orchestration crate exposes a typed `scan()` facade; thin frontends render it.
-
-```
-crates/
-  chainvet-core          shared types: normalized AST, IR, CFG, SSA, findings
-  chainvet-frontend      load Solidity: solc → tree-sitter → optional AI fallback
-  chainvet-ai            local-LLM (Ollama) transport, shared by frontend + reports
-  chainvet-sa            static analysis: call graph, taint, detectors
-  chainvet-se            symbolic execution (Z3)
-  chainvet-fuzzing       coverage-guided greybox fuzzer
-  chainvet-hybrid        the hybrid control loop
-  chainvet-orchestrator  scan(config) -> ScanResult (merge/dedup/tier + AI review)
-  chainvet-cli           binary: chainvet
-  chainvet-ci            binary: chainvet-ci  (SARIF + fail-on-severity)
-  chainvet-server        binary: chainvet-server (REST API)
-  chainvet-lsp           binary: chainvet-lsp (language server)
-```
-
-Integrations live in their own repositories: **chainvet-vscode** (VS Code
-extension → LSP), **chainvet-web** (web UI → server), **chainvet-action**
-(GitHub Action → CI).
-
 ## Install
 
 **Linux (x86_64)** — install with one command:
@@ -137,6 +112,31 @@ them off (the default), Chainvet runs fully offline and deterministically.
 | `CHAINVET_AI_FALLBACK_PARSER=1` | AI-assisted parsing when solc and tree-sitter both fail |
 | `CHAINVET_AI_REPORT=1` | LLM review of findings: drop false positives, annotate the rest |
 | `CHAINVET_AI_ENDPOINT`, `CHAINVET_AI_MODEL` | Ollama endpoint/model (default `http://127.0.0.1:11434`, `qwen2.5-coder:7b`) |
+
+## Workspace
+
+Chainvet is a Cargo workspace. The engines are pure libraries (no I/O); one
+orchestration crate exposes a typed `scan()` facade; thin frontends render it.
+
+```
+crates/
+chainvet-core          shared types: normalized AST, IR, CFG, SSA, findings
+chainvet-frontend      load Solidity: solc → tree-sitter → optional AI fallback
+chainvet-ai            local-LLM (Ollama) transport, shared by frontend + reports
+    chainvet-sa            static analysis: call graph, taint, detectors
+chainvet-se            symbolic execution (Z3)
+    chainvet-fuzzing       coverage-guided greybox fuzzer
+    chainvet-hybrid        the hybrid control loop
+chainvet-orchestrator  scan(config) -> ScanResult (merge/dedup/tier + AI review)
+    chainvet-cli           binary: chainvet
+    chainvet-ci            binary: chainvet-ci  (SARIF + fail-on-severity)
+    chainvet-server        binary: chainvet-server (REST API)
+    chainvet-lsp           binary: chainvet-lsp (language server)
+```
+
+Integrations live in their own repositories: **chainvet-vscode** (VS Code
+        extension → LSP), **chainvet-web** (web UI → server), **chainvet-action**
+(GitHub Action → CI).
 
 ## Development
 
