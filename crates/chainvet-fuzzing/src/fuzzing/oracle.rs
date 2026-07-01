@@ -1283,7 +1283,9 @@ fn check_locked_ether(trace: &ExecutionTrace, tx_sequence: &[Transaction]) -> Ve
         }
     }
 
-    for function_id in &functions_with_balance_invariant {
+    // At most one locked-ether finding per contract; the previous `for … return`
+    // reported the first element of the set, so `iter().next()` is equivalent.
+    if let Some(function_id) = functions_with_balance_invariant.iter().next() {
         let detail = if functions_with_selfdestruct.contains(function_id) {
             "balance-invariant-selfdestruct"
         } else {
