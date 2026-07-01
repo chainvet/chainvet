@@ -38,14 +38,17 @@ extension → LSP), **chainvet-web** (web UI → server), **chainvet-action**
 
 ## Install
 
-**Linux (x86_64)** — install the `chainvet` CLI with one command:
+**Linux (x86_64)** — install with one command:
 
 ```sh
 curl -fsSL https://install.chainvet.dev/install.sh | sh
 ```
 
-This installs the [Z3](https://github.com/Z3Prover/z3) runtime and the latest
-`chainvet` release binary (verifying its checksum). Prebuilt binaries live on the
+On a terminal it prompts which components to install — the `chainvet` CLI
+(default) plus optionally `chainvet-ci`, `chainvet-server`, and `chainvet-lsp` —
+installing the [Z3](https://github.com/Z3Prover/z3) runtime and each selected
+binary (checksum-verified). For a scripted install, set `CHAINVET_BINS` (e.g.
+`CHAINVET_BINS=all`). Prebuilt binaries live on the
 [releases page](https://github.com/chainvet/chainvet/releases); other platforms
 build from source (below).
 
