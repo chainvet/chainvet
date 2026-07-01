@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/chainvet-horizontal-logo.svg" alt="Chainvet Horizontal Logo">
+  <img src="assets/chainvet-horizontal-logo.svg" alt="Chainvet Horizontal Logo" width="800">
 </p>
 </br>
 
