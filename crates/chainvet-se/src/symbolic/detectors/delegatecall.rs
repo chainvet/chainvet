@@ -15,6 +15,12 @@ pub struct DelegatecallDetector {
     tracker: CalleeTracker,
 }
 
+impl Default for DelegatecallDetector {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DelegatecallDetector {
     pub fn new() -> Self {
         Self {
@@ -101,6 +107,15 @@ impl Detector for DelegatecallDetector {
 
     fn reset(&mut self) {
         self.tracker.reset();
+    }
+}
+
+/// Returns true if a value is not a known constant.
+fn is_user_controlled(val: &IrValue) -> bool {
+    match val {
+        IrValue::Var(IrVar::Named(n)) => n != "this" && n != "address(this)",
+        IrValue::Var(IrVar::Temp(_)) | IrValue::Unknown => true,
+        IrValue::Literal(_) => false,
     }
 }
 
@@ -275,14 +290,5 @@ mod tests {
             "delegatecall via member chain should emit UnsafeDelegatecall"
         );
         assert_eq!(findings[0].kind, SeVulnKind::UnsafeDelegatecall);
-    }
-}
-
-/// Returns true if a value is not a known constant.
-fn is_user_controlled(val: &IrValue) -> bool {
-    match val {
-        IrValue::Var(IrVar::Named(n)) => n != "this" && n != "address(this)",
-        IrValue::Var(IrVar::Temp(_)) | IrValue::Unknown => true,
-        IrValue::Literal(_) => false,
     }
 }

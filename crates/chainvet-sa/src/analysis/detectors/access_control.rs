@@ -114,26 +114,22 @@ fn is_msg_sender(ast: &NormalizedAst, expr_id: u32) -> bool {
         return false;
     };
     // Chain metadata check
-    if let Some(chain) = expr.meta.chain.as_deref() {
-        if chain.len() == 2 {
-            if let (ChainSegment::Ident(a), ChainSegment::Member(b)) = (&chain[0], &chain[1]) {
-                if a == "msg" && b == "sender" {
-                    return true;
-                }
-            }
-        }
+    if let Some(chain) = expr.meta.chain.as_deref()
+        && chain.len() == 2
+        && let (ChainSegment::Ident(a), ChainSegment::Member(b)) = (&chain[0], &chain[1])
+        && a == "msg"
+        && b == "sender"
+    {
+        return true;
     }
     // Member expression check
-    if let ExprKind::Member { base, field } = &expr.kind {
-        if field == "sender" {
-            if let Some(be) = ast.expressions.get(*base as usize) {
-                if let ExprKind::Ident(n) = &be.kind {
-                    if n == "msg" {
-                        return true;
-                    }
-                }
-            }
-        }
+    if let ExprKind::Member { base, field } = &expr.kind
+        && field == "sender"
+        && let Some(be) = ast.expressions.get(*base as usize)
+        && let ExprKind::Ident(n) = &be.kind
+        && n == "msg"
+    {
+        return true;
     }
     false
 }
@@ -242,10 +238,10 @@ fn initializer_mentions_authority_context(
                     found = true;
                 }
             }
-            ExprKind::Member { field, .. } => {
-                if authority_like_name(field) || field.eq_ignore_ascii_case("creator") {
-                    found = true;
-                }
+            ExprKind::Member { field, .. }
+                if (authority_like_name(field) || field.eq_ignore_ascii_case("creator")) =>
+            {
+                found = true;
             }
             _ => {}
         }
@@ -265,10 +261,10 @@ fn function_calls_method(
         if found {
             return;
         }
-        if let Some(call) = &expr.meta.call {
-            if call_target_name(call) == method {
-                found = true;
-            }
+        if let Some(call) = &expr.meta.call
+            && call_target_name(call) == method
+        {
+            found = true;
         }
     });
     found
@@ -319,7 +315,7 @@ fn expr_references_ident(ast: &NormalizedAst, expr_id: u32, name: &str) -> bool 
         }
         ExprKind::Index { base, index } => {
             expr_references_ident(ast, *base, name)
-                || index.map_or(false, |i| expr_references_ident(ast, i, name))
+                || index.is_some_and(|i| expr_references_ident(ast, i, name))
         }
         _ => false,
     }
@@ -340,13 +336,13 @@ fn has_validation_for_param(
         }
         if let Some(call) = &expr.meta.call {
             let cn = call_target_name(call);
-            if cn == "require" || cn == "assert" || cn == "revert" {
-                if let ExprKind::Call { args, .. } = &expr.kind {
-                    for &arg_id in args {
-                        if expr_references_ident(ast, arg_id, param) {
-                            found = true;
-                            return;
-                        }
+            if (cn == "require" || cn == "assert" || cn == "revert")
+                && let ExprKind::Call { args, .. } = &expr.kind
+            {
+                for &arg_id in args {
+                    if expr_references_ident(ast, arg_id, param) {
+                        found = true;
+                        return;
                     }
                 }
             }
@@ -575,24 +571,21 @@ fn detect_arbitrary_transfer_from(ast: &NormalizedAst) -> Vec<Finding> {
         let Some(body) = func.body else { continue };
 
         for_each_expr_in_stmt(ast, body, &mut |_eid, expr| {
-            if let Some(call) = &expr.meta.call {
-                if call_target_name(call) == "transferFrom" {
-                    if let ExprKind::Call { args, .. } = &expr.kind {
-                        if let Some(&from_arg) = args.first() {
-                            if !is_msg_sender(ast, from_arg) {
-                                findings.push(Finding {
-                                    kind: FindingKind::ArbitraryTransferFrom,
-                                    severity: Severity::High,
-                                    message: "transferFrom() called with arbitrary `from` \
+            if let Some(call) = &expr.meta.call
+                && call_target_name(call) == "transferFrom"
+                && let ExprKind::Call { args, .. } = &expr.kind
+                && let Some(&from_arg) = args.first()
+                && !is_msg_sender(ast, from_arg)
+            {
+                findings.push(Finding {
+                    kind: FindingKind::ArbitraryTransferFrom,
+                    severity: Severity::High,
+                    message: "transferFrom() called with arbitrary `from` \
                                             without msg.sender check or access control modifier"
-                                        .into(),
-                                    span: expr.span,
-                                    function: Some(func.id),
-                                });
-                            }
-                        }
-                    }
-                }
+                        .into(),
+                    span: expr.span,
+                    function: Some(func.id),
+                });
             }
         });
     }
@@ -612,22 +605,20 @@ fn detect_arbitrary_calldata(ast: &NormalizedAst) -> Vec<Finding> {
         }
 
         for_each_expr_in_stmt(ast, body, &mut |_eid, expr| {
-            if let Some(call) = &expr.meta.call {
-                if let CallTarget::Member { name, receiver } = &call.target {
-                    if matches!(name.as_str(), "call" | "delegatecall" | "staticcall") {
-                        if receiver.iter().any(|r| params.contains(r.as_str())) {
-                            findings.push(Finding {
-                                kind: FindingKind::ArbitraryCalldata,
-                                severity: Severity::High,
-                                message: "low-level call to address from function parameter \
+            if let Some(call) = &expr.meta.call
+                && let CallTarget::Member { name, receiver } = &call.target
+                && matches!(name.as_str(), "call" | "delegatecall" | "staticcall")
+                && receiver.iter().any(|r| params.contains(r.as_str()))
+            {
+                findings.push(Finding {
+                    kind: FindingKind::ArbitraryCalldata,
+                    severity: Severity::High,
+                    message: "low-level call to address from function parameter \
                                         with unchecked calldata"
-                                    .into(),
-                                span: expr.span,
-                                function: Some(func.id),
-                            });
-                        }
-                    }
-                }
+                        .into(),
+                    span: expr.span,
+                    function: Some(func.id),
+                });
             }
         });
     }
@@ -642,22 +633,22 @@ fn detect_caller_not_checked(ast: &NormalizedAst) -> Vec<Finding> {
         let Some(body) = func.body else { continue };
 
         for_each_stmt(ast, body, &mut |_sid, stmt| {
-            if let StmtKind::InlineAsm { .. } = &stmt.kind {
-                if let Some(source) = get_source_at_span(ast, &stmt.span) {
-                    let lower = source.to_lowercase();
-                    if lower.contains("extcodesize")
-                        && (lower.contains("caller") || lower.contains("msg.sender"))
-                    {
-                        findings.push(Finding {
-                            kind: FindingKind::CallerNotChecked,
-                            severity: Severity::Medium,
-                            message: "extcodesize check on caller can be bypassed when \
+            if let StmtKind::InlineAsm { .. } = &stmt.kind
+                && let Some(source) = get_source_at_span(ast, &stmt.span)
+            {
+                let lower = source.to_lowercase();
+                if lower.contains("extcodesize")
+                    && (lower.contains("caller") || lower.contains("msg.sender"))
+                {
+                    findings.push(Finding {
+                        kind: FindingKind::CallerNotChecked,
+                        severity: Severity::Medium,
+                        message: "extcodesize check on caller can be bypassed when \
                                     called from a constructor"
-                                .into(),
-                            span: stmt.span,
-                            function: Some(func.id),
-                        });
-                    }
+                            .into(),
+                        span: stmt.span,
+                        function: Some(func.id),
+                    });
                 }
             }
         });
@@ -682,19 +673,19 @@ fn detect_contract_destructable(ast: &NormalizedAst, call_graph: &CallGraph) -> 
         }
 
         // Only flag when the function HAS access control (AC-13 handles unprotected)
-        if let Some(func) = ast.functions.get(site.function as usize) {
-            if has_access_control_modifier(ast, func) {
-                findings.push(Finding {
-                    kind: FindingKind::ContractDestructable,
-                    severity: Severity::Medium,
-                    message: format!(
-                        "contract can be destroyed via {name} — even with access control \
+        if let Some(func) = ast.functions.get(site.function as usize)
+            && has_access_control_modifier(ast, func)
+        {
+            findings.push(Finding {
+                kind: FindingKind::ContractDestructable,
+                severity: Severity::Medium,
+                message: format!(
+                    "contract can be destroyed via {name} — even with access control \
                         this is a centralization risk"
-                    ),
-                    span: site.span,
-                    function: Some(site.function),
-                });
-            }
+                ),
+                span: site.span,
+                function: Some(site.function),
+            });
         }
     }
     findings
@@ -708,29 +699,29 @@ fn detect_dangerous_state_var_init(ast: &NormalizedAst) -> Vec<Finding> {
         if sv.constant || sv.immutable {
             continue;
         }
-        if let Some(source) = get_source_at_span(ast, &sv.span) {
-            if let Some(eq_pos) = source.find('=') {
-                let rhs = &source[eq_pos + 1..];
-                let rhs_lower = rhs.to_lowercase();
-                // Flag runtime-dependent values used in state-variable initializers
-                if rhs_lower.contains("block.")
-                    || rhs_lower.contains("msg.")
-                    || rhs_lower.contains("tx.")
-                    || rhs_lower.contains("now")
-                    || rhs_lower.contains("gasleft")
-                    || rhs_lower.contains("blockhash")
-                {
-                    findings.push(Finding {
-                        kind: FindingKind::DangerousStateVarInit,
-                        severity: Severity::Medium,
-                        message: format!(
-                            "state variable '{}' initialized with runtime-dependent value",
-                            sv.name
-                        ),
-                        span: sv.span,
-                        function: None,
-                    });
-                }
+        if let Some(source) = get_source_at_span(ast, &sv.span)
+            && let Some(eq_pos) = source.find('=')
+        {
+            let rhs = &source[eq_pos + 1..];
+            let rhs_lower = rhs.to_lowercase();
+            // Flag runtime-dependent values used in state-variable initializers
+            if rhs_lower.contains("block.")
+                || rhs_lower.contains("msg.")
+                || rhs_lower.contains("tx.")
+                || rhs_lower.contains("now")
+                || rhs_lower.contains("gasleft")
+                || rhs_lower.contains("blockhash")
+            {
+                findings.push(Finding {
+                    kind: FindingKind::DangerousStateVarInit,
+                    severity: Severity::Medium,
+                    message: format!(
+                        "state variable '{}' initialized with runtime-dependent value",
+                        sv.name
+                    ),
+                    span: sv.span,
+                    function: None,
+                });
             }
         }
     }
@@ -900,25 +891,21 @@ fn walk_expr_for_tx_origin(
 }
 
 fn is_tx_origin(ast: &NormalizedAst, expr: &chainvet_core::norm::Expr) -> bool {
-    if let Some(chain) = expr.meta.chain.as_deref() {
-        if chain.len() == 2 {
-            if let (ChainSegment::Ident(a), ChainSegment::Member(b)) = (&chain[0], &chain[1]) {
-                if a == "tx" && b == "origin" {
-                    return true;
-                }
-            }
-        }
+    if let Some(chain) = expr.meta.chain.as_deref()
+        && chain.len() == 2
+        && let (ChainSegment::Ident(a), ChainSegment::Member(b)) = (&chain[0], &chain[1])
+        && a == "tx"
+        && b == "origin"
+    {
+        return true;
     }
-    if let ExprKind::Member { base, field } = &expr.kind {
-        if field == "origin" {
-            if let Some(be) = ast.expressions.get(*base as usize) {
-                if let ExprKind::Ident(n) = &be.kind {
-                    if n == "tx" {
-                        return true;
-                    }
-                }
-            }
-        }
+    if let ExprKind::Member { base, field } = &expr.kind
+        && field == "origin"
+        && let Some(be) = ast.expressions.get(*base as usize)
+        && let ExprKind::Ident(n) = &be.kind
+        && n == "tx"
+    {
+        return true;
     }
     false
 }
@@ -1014,25 +1001,22 @@ fn detect_permit_arbitrary_transfer_from(ast: &NormalizedAst) -> Vec<Finding> {
         let Some(body) = func.body else { continue };
 
         for_each_expr_in_stmt(ast, body, &mut |_eid, expr| {
-            if let Some(call) = &expr.meta.call {
-                if call_target_name(call) == "transferFrom" {
-                    if let ExprKind::Call { args, .. } = &expr.kind {
-                        if let Some(&from_arg) = args.first() {
-                            if !is_msg_sender(ast, from_arg) {
-                                findings.push(Finding {
-                                    kind: FindingKind::PermitArbitraryTransferFrom,
-                                    severity: Severity::High,
-                                    message: "permit() used with transferFrom() where `from` \
+            if let Some(call) = &expr.meta.call
+                && call_target_name(call) == "transferFrom"
+                && let ExprKind::Call { args, .. } = &expr.kind
+                && let Some(&from_arg) = args.first()
+                && !is_msg_sender(ast, from_arg)
+            {
+                findings.push(Finding {
+                    kind: FindingKind::PermitArbitraryTransferFrom,
+                    severity: Severity::High,
+                    message: "permit() used with transferFrom() where `from` \
                                             is not msg.sender — if token lacks permit support, \
                                             fallback may silently succeed"
-                                        .into(),
-                                    span: expr.span,
-                                    function: Some(func.id),
-                                });
-                            }
-                        }
-                    }
-                }
+                        .into(),
+                    span: expr.span,
+                    function: Some(func.id),
+                });
             }
         });
     }
@@ -1047,24 +1031,21 @@ fn detect_missing_sender_check_transfer_from(ast: &NormalizedAst) -> Vec<Finding
         let Some(body) = func.body else { continue };
 
         for_each_expr_in_stmt(ast, body, &mut |_eid, expr| {
-            if let Some(call) = &expr.meta.call {
-                if call_target_name(call) == "transferFrom" {
-                    if let ExprKind::Call { args, .. } = &expr.kind {
-                        if let Some(&from_arg) = args.first() {
-                            if !is_msg_sender(ast, from_arg) {
-                                findings.push(Finding {
-                                    kind: FindingKind::MissingSenderCheckTransferFrom,
-                                    severity: Severity::High,
-                                    message: "transferFrom() called without msg.sender as `from` \
+            if let Some(call) = &expr.meta.call
+                && call_target_name(call) == "transferFrom"
+                && let ExprKind::Call { args, .. } = &expr.kind
+                && let Some(&from_arg) = args.first()
+                && !is_msg_sender(ast, from_arg)
+            {
+                findings.push(Finding {
+                    kind: FindingKind::MissingSenderCheckTransferFrom,
+                    severity: Severity::High,
+                    message: "transferFrom() called without msg.sender as `from` \
                                             parameter — may allow unauthorized token transfer"
-                                        .into(),
-                                    span: expr.span,
-                                    function: Some(func.id),
-                                });
-                            }
-                        }
-                    }
-                }
+                        .into(),
+                    span: expr.span,
+                    function: Some(func.id),
+                });
             }
         });
     }
@@ -1082,20 +1063,18 @@ fn detect_missing_input_validation(ast: &NormalizedAst) -> Vec<Finding> {
         }
 
         for param in &func.params {
-            if is_address_param_name(param) {
-                if !has_validation_for_param(ast, func, param) {
-                    findings.push(Finding {
-                        kind: FindingKind::MissingInputValidation,
-                        severity: Severity::Medium,
-                        message: format!(
-                            "parameter '{}' in function '{}' may lack zero-address validation",
-                            param,
-                            func.name.as_deref().unwrap_or("<unnamed>")
-                        ),
-                        span: func.span,
-                        function: Some(func.id),
-                    });
-                }
+            if is_address_param_name(param) && !has_validation_for_param(ast, func, param) {
+                findings.push(Finding {
+                    kind: FindingKind::MissingInputValidation,
+                    severity: Severity::Medium,
+                    message: format!(
+                        "parameter '{}' in function '{}' may lack zero-address validation",
+                        param,
+                        func.name.as_deref().unwrap_or("<unnamed>")
+                    ),
+                    span: func.span,
+                    function: Some(func.id),
+                });
             }
         }
     }
@@ -1115,27 +1094,27 @@ fn detect_arbitrary_ether_send(ast: &NormalizedAst) -> Vec<Finding> {
         }
 
         for_each_expr_in_stmt(ast, body, &mut |_eid, expr| {
-            if let Some(call) = &expr.meta.call {
-                if let CallTarget::Member { name, receiver } = &call.target {
-                    let is_ether_send = match name.as_str() {
-                        "transfer" | "send" => true,
-                        "call" => call
-                            .options
-                            .iter()
-                            .any(|o| matches!(o, CallOption::Value(_))),
-                        _ => false,
-                    };
-                    if is_ether_send && receiver.iter().any(|r| params.contains(r.as_str())) {
-                        findings.push(Finding {
-                            kind: FindingKind::ArbitraryEtherSend,
-                            severity: Severity::High,
-                            message: "ether sent to address derived from function parameter \
+            if let Some(call) = &expr.meta.call
+                && let CallTarget::Member { name, receiver } = &call.target
+            {
+                let is_ether_send = match name.as_str() {
+                    "transfer" | "send" => true,
+                    "call" => call
+                        .options
+                        .iter()
+                        .any(|o| matches!(o, CallOption::Value(_))),
+                    _ => false,
+                };
+                if is_ether_send && receiver.iter().any(|r| params.contains(r.as_str())) {
+                    findings.push(Finding {
+                        kind: FindingKind::ArbitraryEtherSend,
+                        severity: Severity::High,
+                        message: "ether sent to address derived from function parameter \
                                     — destination should be validated"
-                                .into(),
-                            span: expr.span,
-                            function: Some(func.id),
-                        });
-                    }
+                            .into(),
+                        span: expr.span,
+                        function: Some(func.id),
+                    });
                 }
             }
         });
@@ -1159,18 +1138,18 @@ fn detect_unprotected_selfdestruct(ast: &NormalizedAst, call_graph: &CallGraph) 
             continue;
         }
 
-        if let Some(func) = ast.functions.get(site.function as usize) {
-            if !has_access_control_guard(ast, func) {
-                findings.push(Finding {
-                    kind: FindingKind::UnprotectedSelfdestruct,
-                    severity: Severity::High,
-                    message: format!(
-                        "unprotected {name} — no access control modifier on containing function"
-                    ),
-                    span: site.span,
-                    function: Some(site.function),
-                });
-            }
+        if let Some(func) = ast.functions.get(site.function as usize)
+            && !has_access_control_guard(ast, func)
+        {
+            findings.push(Finding {
+                kind: FindingKind::UnprotectedSelfdestruct,
+                severity: Severity::High,
+                message: format!(
+                    "unprotected {name} — no access control modifier on containing function"
+                ),
+                span: site.span,
+                function: Some(site.function),
+            });
         }
     }
     findings
@@ -1201,23 +1180,22 @@ fn detect_unprotected_ether_withdrawal(ast: &NormalizedAst) -> Vec<Finding> {
             if sends_ether {
                 return;
             }
-            if let Some(call) = &expr.meta.call {
-                if let CallTarget::Member { name, .. } = &call.target {
-                    match name.as_str() {
-                        "transfer" | "send" => {
-                            sends_ether = true;
-                        }
-                        "call" => {
-                            if call
-                                .options
-                                .iter()
-                                .any(|o| matches!(o, CallOption::Value(_)))
-                            {
-                                sends_ether = true;
-                            }
-                        }
-                        _ => {}
+            if let Some(call) = &expr.meta.call
+                && let CallTarget::Member { name, .. } = &call.target
+            {
+                match name.as_str() {
+                    "transfer" | "send" => {
+                        sends_ether = true;
                     }
+                    "call"
+                        if call
+                            .options
+                            .iter()
+                            .any(|o| matches!(o, CallOption::Value(_))) =>
+                    {
+                        sends_ether = true;
+                    }
+                    _ => {}
                 }
             }
         });
@@ -1272,16 +1250,16 @@ fn detect_unused_return_value(ast: &NormalizedAst) -> Vec<Finding> {
         if let Some(body) = func.body {
             walk_for_unchecked(ast, body, func.id, &mut findings);
         }
-        if findings.len() == baseline {
-            if let Some(method) = function_source_unchecked_call(ast, func) {
-                findings.push(Finding {
-                    kind: FindingKind::UnusedReturnValue,
-                    severity: Severity::Medium,
-                    message: format!("return value of low-level {method} is not checked"),
-                    span: func.span,
-                    function: Some(func.id),
-                });
-            }
+        if findings.len() == baseline
+            && let Some(method) = function_source_unchecked_call(ast, func)
+        {
+            findings.push(Finding {
+                kind: FindingKind::UnusedReturnValue,
+                severity: Severity::Medium,
+                message: format!("return value of low-level {method} is not checked"),
+                span: func.span,
+                function: Some(func.id),
+            });
         }
     }
     findings
@@ -1356,23 +1334,23 @@ fn low_level_call_name(ast: &NormalizedAst, expr_id: u32) -> Option<String> {
         }
     }
 
-    if let ExprKind::Call { callee, .. } = &expr.kind {
-        if let Some(callee_expr) = ast.expressions.get(*callee as usize) {
-            match &callee_expr.kind {
-                ExprKind::Member { field, .. } => match field.as_str() {
-                    "call" | "delegatecall" | "callcode" | "staticcall" | "send" => {
-                        return Some(field.clone());
-                    }
-                    _ => {}
-                },
-                ExprKind::Ident(name) => match name.as_str() {
-                    "call" | "delegatecall" | "callcode" | "staticcall" | "send" => {
-                        return Some(name.clone());
-                    }
-                    _ => {}
-                },
+    if let ExprKind::Call { callee, .. } = &expr.kind
+        && let Some(callee_expr) = ast.expressions.get(*callee as usize)
+    {
+        match &callee_expr.kind {
+            ExprKind::Member { field, .. } => match field.as_str() {
+                "call" | "delegatecall" | "callcode" | "staticcall" | "send" => {
+                    return Some(field.clone());
+                }
                 _ => {}
-            }
+            },
+            ExprKind::Ident(name) => match name.as_str() {
+                "call" | "delegatecall" | "callcode" | "staticcall" | "send" => {
+                    return Some(name.clone());
+                }
+                _ => {}
+            },
+            _ => {}
         }
     }
 
@@ -1477,20 +1455,20 @@ fn detect_arbitrary_storage_write(ast: &NormalizedAst) -> Vec<Finding> {
         let Some(body) = func.body else { continue };
 
         for_each_stmt(ast, body, &mut |_sid, stmt| {
-            if let StmtKind::InlineAsm { .. } = &stmt.kind {
-                if let Some(source) = get_source_at_span(ast, &stmt.span) {
-                    let lower = source.to_lowercase();
-                    if lower.contains("sstore") {
-                        findings.push(Finding {
-                            kind: FindingKind::ArbitraryStorageWrite,
-                            severity: Severity::High,
-                            message: "inline assembly uses sstore — may write to \
+            if let StmtKind::InlineAsm { .. } = &stmt.kind
+                && let Some(source) = get_source_at_span(ast, &stmt.span)
+            {
+                let lower = source.to_lowercase();
+                if lower.contains("sstore") {
+                    findings.push(Finding {
+                        kind: FindingKind::ArbitraryStorageWrite,
+                        severity: Severity::High,
+                        message: "inline assembly uses sstore — may write to \
                                     arbitrary storage location"
-                                .into(),
-                            span: stmt.span,
-                            function: Some(func.id),
-                        });
-                    }
+                            .into(),
+                        span: stmt.span,
+                        function: Some(func.id),
+                    });
                 }
             }
         });

@@ -229,11 +229,11 @@ mod tests {
 
         let bv = result.as_bv().unwrap();
         let solver = Solver::new();
-        solver.assert(&bv.eq(&expected_bv));
+        solver.assert(bv.eq(&expected_bv));
         assert_eq!(solver.check(), SatResult::Sat);
         // Verify uniqueness.
         let solver2 = Solver::new();
-        solver2.assert(&bv.eq(&expected_bv).not());
+        solver2.assert(bv.eq(&expected_bv).not());
         assert_eq!(solver2.check(), SatResult::Unsat);
     }
 
@@ -254,7 +254,7 @@ mod tests {
 
         let bv = result.as_bv().unwrap();
         let solver = Solver::new();
-        solver.assert(&bv.eq(&expected_bv));
+        solver.assert(bv.eq(&expected_bv));
         assert_eq!(solver.check(), SatResult::Sat);
     }
 
@@ -272,10 +272,10 @@ mod tests {
         let bv1 = r1.as_bv().unwrap();
         let bv2 = r2.as_bv().unwrap();
         let solver = Solver::new();
-        solver.assert(&bv1.eq(bv2));
+        solver.assert(bv1.eq(bv2));
         assert_eq!(solver.check(), SatResult::Sat);
         let solver2 = Solver::new();
-        solver2.assert(&bv1.eq(bv2).not());
+        solver2.assert(bv1.eq(bv2).not());
         assert_eq!(solver2.check(), SatResult::Unsat);
     }
 
@@ -296,7 +296,7 @@ mod tests {
         let bv1 = h1.as_bv().unwrap();
         // They should not be equal.
         let solver = Solver::new();
-        solver.assert(&bv0.eq(bv1));
+        solver.assert(bv0.eq(bv1));
         assert_eq!(solver.check(), SatResult::Unsat);
     }
 
@@ -351,8 +351,8 @@ mod tests {
 
         // If x == y, then hash(x) == hash(y) (functionality of uninterpreted function).
         let solver = Solver::new();
-        solver.assert(&x.eq(&y));
-        solver.assert(&bv_hx.eq(bv_hy).not());
+        solver.assert(x.eq(&y));
+        solver.assert(bv_hx.eq(bv_hy).not());
         assert_eq!(
             solver.check(),
             SatResult::Unsat,
@@ -391,17 +391,17 @@ mod tests {
         p1_bytes.extend_from_slice(&1u64.to_be_bytes()); // 8 bytes for value
         input_bytes.extend_from_slice(&p1_bytes);
         // Part2: 32 zero bytes
-        input_bytes.extend(std::iter::repeat(0u8).take(32));
+        input_bytes.extend(std::iter::repeat_n(0u8, 32));
 
         let expected_hash = reference_keccak256(&input_bytes);
         let expected_bv = hash_to_bv256(&expected_hash);
 
         let bv = result.as_bv().unwrap();
         let solver = Solver::new();
-        solver.assert(&bv.eq(&expected_bv));
+        solver.assert(bv.eq(&expected_bv));
         assert_eq!(solver.check(), SatResult::Sat);
         let solver2 = Solver::new();
-        solver2.assert(&bv.eq(&expected_bv).not());
+        solver2.assert(bv.eq(&expected_bv).not());
         assert_eq!(solver2.check(), SatResult::Unsat);
     }
 
@@ -415,7 +415,7 @@ mod tests {
         let bv1 = h1.as_bv().unwrap();
         let bv2 = h2.as_bv().unwrap();
         let solver = Solver::new();
-        solver.assert(&bv1.eq(bv2));
+        solver.assert(bv1.eq(bv2));
         assert_eq!(solver.check(), SatResult::Unsat);
     }
 
@@ -453,10 +453,10 @@ mod tests {
         let bv1 = r1.as_bv().unwrap();
         let bv2 = r2.as_bv().unwrap();
         let solver = Solver::new();
-        solver.assert(&bv1.eq(bv2));
+        solver.assert(bv1.eq(bv2));
         assert_eq!(solver.check(), SatResult::Sat);
         let solver2 = Solver::new();
-        solver2.assert(&bv1.eq(bv2).not());
+        solver2.assert(bv1.eq(bv2).not());
         assert_eq!(solver2.check(), SatResult::Unsat);
     }
 
@@ -477,9 +477,9 @@ mod tests {
 
         // If x1==y1 and x2==y2, then hash(x1,x2) == hash(y1,y2).
         let solver = Solver::new();
-        solver.assert(&x1.eq(&y1));
-        solver.assert(&x2.eq(&y2));
-        solver.assert(&bv_h1.eq(bv_h2).not());
+        solver.assert(x1.eq(&y1));
+        solver.assert(x2.eq(&y2));
+        solver.assert(bv_h1.eq(bv_h2).not());
         assert_eq!(
             solver.check(),
             SatResult::Unsat,

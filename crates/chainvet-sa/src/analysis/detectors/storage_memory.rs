@@ -223,29 +223,23 @@ fn contains_msg_value(ast: &NormalizedAst, expr_id: u32) -> bool {
     };
 
     // Chain metadata: msg.value
-    if let Some(chain) = expr.meta.chain.as_deref() {
-        if chain.len() == 2 {
-            if let (ChainSegment::Ident(base), ChainSegment::Member(member)) =
-                (&chain[0], &chain[1])
-            {
-                if base == "msg" && member == "value" {
-                    return true;
-                }
-            }
-        }
+    if let Some(chain) = expr.meta.chain.as_deref()
+        && chain.len() == 2
+        && let (ChainSegment::Ident(base), ChainSegment::Member(member)) = (&chain[0], &chain[1])
+        && base == "msg"
+        && member == "value"
+    {
+        return true;
     }
 
     // Member AST node: msg.value
-    if let ExprKind::Member { base, field } = &expr.kind {
-        if field == "value" {
-            if let Some(base_expr) = ast.expressions.get(*base as usize) {
-                if let ExprKind::Ident(name) = &base_expr.kind {
-                    if name == "msg" {
-                        return true;
-                    }
-                }
-            }
-        }
+    if let ExprKind::Member { base, field } = &expr.kind
+        && field == "value"
+        && let Some(base_expr) = ast.expressions.get(*base as usize)
+        && let ExprKind::Ident(name) = &base_expr.kind
+        && name == "msg"
+    {
+        return true;
     }
 
     // Recurse into sub-expressions
@@ -260,29 +254,23 @@ fn contains_msg_data(ast: &NormalizedAst, expr_id: u32) -> bool {
     };
 
     // Chain metadata: msg.data
-    if let Some(chain) = expr.meta.chain.as_deref() {
-        if chain.len() == 2 {
-            if let (ChainSegment::Ident(base), ChainSegment::Member(member)) =
-                (&chain[0], &chain[1])
-            {
-                if base == "msg" && member == "data" {
-                    return true;
-                }
-            }
-        }
+    if let Some(chain) = expr.meta.chain.as_deref()
+        && chain.len() == 2
+        && let (ChainSegment::Ident(base), ChainSegment::Member(member)) = (&chain[0], &chain[1])
+        && base == "msg"
+        && member == "data"
+    {
+        return true;
     }
 
     // Member AST node: msg.data
-    if let ExprKind::Member { base, field } = &expr.kind {
-        if field == "data" {
-            if let Some(base_expr) = ast.expressions.get(*base as usize) {
-                if let ExprKind::Ident(name) = &base_expr.kind {
-                    if name == "msg" {
-                        return true;
-                    }
-                }
-            }
-        }
+    if let ExprKind::Member { base, field } = &expr.kind
+        && field == "data"
+        && let Some(base_expr) = ast.expressions.get(*base as usize)
+        && let ExprKind::Ident(name) = &base_expr.kind
+        && name == "msg"
+    {
+        return true;
     }
 
     recurse_contains(ast, expr, contains_msg_data)
@@ -306,14 +294,12 @@ fn contains_delegatecall(ast: &NormalizedAst, expr_id: u32) -> bool {
     }
 
     // Strategy 2: Call whose callee is a Member { field: "delegatecall" }
-    if let ExprKind::Call { callee, .. } = &expr.kind {
-        if let Some(callee_expr) = ast.expressions.get(*callee as usize) {
-            if let ExprKind::Member { field, .. } = &callee_expr.kind {
-                if field == "delegatecall" {
-                    return true;
-                }
-            }
-        }
+    if let ExprKind::Call { callee, .. } = &expr.kind
+        && let Some(callee_expr) = ast.expressions.get(*callee as usize)
+        && let ExprKind::Member { field, .. } = &callee_expr.kind
+        && field == "delegatecall"
+    {
+        return true;
     }
 
     recurse_contains(ast, expr, contains_delegatecall)
@@ -341,9 +327,7 @@ fn recurse_contains(
                 })
         }
         ExprKind::Assign { lhs, rhs, .. } => pred(ast, *lhs) || pred(ast, *rhs),
-        ExprKind::Index { base, index } => {
-            pred(ast, *base) || index.map_or(false, |i| pred(ast, i))
-        }
+        ExprKind::Index { base, index } => pred(ast, *base) || index.is_some_and(|i| pred(ast, i)),
         ExprKind::Conditional {
             cond,
             then_expr,
@@ -705,10 +689,10 @@ fn detect_memory_manipulation(ast: &NormalizedAst) -> Vec<Finding> {
 
         for_each_expr_in_stmt(ast, body, &mut |_eid, expr| {
             // Check for state-variable references
-            if let ExprKind::Ident(name) = &expr.kind {
-                if state_var_names.contains(name) {
-                    references_state = true;
-                }
+            if let ExprKind::Ident(name) = &expr.kind
+                && state_var_names.contains(name)
+            {
+                references_state = true;
             }
             // Check for memory array creation: `new uint[](n)`
             if let ExprKind::New { .. } = &expr.kind {

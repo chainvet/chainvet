@@ -278,12 +278,11 @@ fn resolve_target(
 }
 
 fn resolve_direct(name: &str, caller_contract: Option<u32>, index: &CallIndex) -> ResolvedTarget {
-    if let Some(contract) = caller_contract {
-        if let Some(map) = index.by_contract.get(&contract) {
-            if let Some(ids) = map.get(name) {
-                return pack_ids(ids);
-            }
-        }
+    if let Some(contract) = caller_contract
+        && let Some(map) = index.by_contract.get(&contract)
+        && let Some(ids) = map.get(name)
+    {
+        return pack_ids(ids);
     }
     if let Some(ids) = index.by_name.get(name) {
         return pack_ids(ids);
@@ -303,10 +302,10 @@ fn resolve_member(
     if receiver.is_empty() {
         return ResolvedTarget::Unknown;
     }
-    if let Some(last) = receiver.last() {
-        if last == "this" || last == "super" {
-            return resolve_direct(name, caller_contract, index);
-        }
+    if let Some(last) = receiver.last()
+        && (last == "this" || last == "super")
+    {
+        return resolve_direct(name, caller_contract, index);
     }
 
     if receiver.len() == 1 {
@@ -314,10 +313,10 @@ fn resolve_member(
         if let Some(contract_ids) = index.contract_by_name.get(recv) {
             let mut candidates = Vec::new();
             for contract_id in contract_ids {
-                if let Some(map) = index.by_contract.get(contract_id) {
-                    if let Some(ids) = map.get(name) {
-                        candidates.extend(ids);
-                    }
+                if let Some(map) = index.by_contract.get(contract_id)
+                    && let Some(ids) = map.get(name)
+                {
+                    candidates.extend(ids);
                 }
             }
             if !candidates.is_empty() {
@@ -368,10 +367,10 @@ fn is_primitive_type_name(name: &str) -> bool {
     if let Some(bits) = name.strip_prefix("int") {
         return bits.is_empty() || parse_bits(bits);
     }
-    if let Some(width) = name.strip_prefix("bytes") {
-        if let Ok(value) = width.parse::<u16>() {
-            return (1..=32).contains(&value);
-        }
+    if let Some(width) = name.strip_prefix("bytes")
+        && let Ok(value) = width.parse::<u16>()
+    {
+        return (1..=32).contains(&value);
     }
     false
 }
@@ -380,7 +379,7 @@ fn parse_bits(bits: &str) -> bool {
     let Ok(value) = bits.parse::<u16>() else {
         return false;
     };
-    value >= 8 && value <= 256 && value % 8 == 0
+    (8..=256).contains(&value) && value % 8 == 0
 }
 
 fn build_outgoing_index(edges: &[CallEdge]) -> HashMap<u32, Vec<usize>> {

@@ -721,10 +721,10 @@ fn rename_variables(
                 let Some(var_idx) = vars.get(&phi.var) else {
                     continue;
                 };
-                if let Some((def_id, _version)) = current_def(stacks, defs, var_idx) {
-                    if *pred_pos < phi.sources.len() {
-                        phi.sources[*pred_pos] = Some(def_id);
-                    }
+                if let Some((def_id, _version)) = current_def(stacks, defs, var_idx)
+                    && *pred_pos < phi.sources.len()
+                {
+                    phi.sources[*pred_pos] = Some(def_id);
                 }
             }
         }

@@ -142,7 +142,7 @@ fn run_solc(
     )?;
     match parse_solc_output(&output) {
         Ok(parsed) => Ok(parsed),
-        Err(err) if should_retry_without_path_flags(&output) => {
+        Err(_err) if should_retry_without_path_flags(&output) => {
             let fallback = run_solc_once(
                 solc_path,
                 base_path,
@@ -257,7 +257,7 @@ fn load_remappings(root: &Path) -> Result<Vec<String>> {
 
 fn split_remapping_list(value: &str) -> Vec<String> {
     value
-        .split(|c| c == ';' || c == ',')
+        .split([';', ','])
         .map(|entry| entry.trim())
         .filter(|entry| !entry.is_empty())
         .map(|entry| entry.to_string())
@@ -311,10 +311,10 @@ fn check_solc_errors(output: &SolcOutput) -> Result<()> {
 
     let mut messages = Vec::new();
     for err in errors {
-        if err.severity.as_deref() == Some("error") {
-            if let Some(msg) = err.formatted_message.as_ref().or(err.message.as_ref()) {
-                messages.push(msg.trim().to_string());
-            }
+        if err.severity.as_deref() == Some("error")
+            && let Some(msg) = err.formatted_message.as_ref().or(err.message.as_ref())
+        {
+            messages.push(msg.trim().to_string());
         }
     }
 
@@ -418,38 +418,38 @@ fn normalize_contract(node: &Value, source_map: &HashMap<u32, u32>, ast: &mut No
         match node_type(child).as_deref() {
             Some("FunctionDefinition") => {
                 let func_id = normalize_function(child, source_map, Some(id), ast);
-                if let Some(func_id) = func_id {
-                    if let Some(contract) = ast.contracts.get_mut(id as usize) {
-                        contract.functions.push(func_id);
-                    }
+                if let Some(func_id) = func_id
+                    && let Some(contract) = ast.contracts.get_mut(id as usize)
+                {
+                    contract.functions.push(func_id);
                 }
             }
             Some("VariableDeclaration") => {
-                if let Some(var_id) = normalize_state_var(child, source_map, id, ast) {
-                    if let Some(contract) = ast.contracts.get_mut(id as usize) {
-                        contract.state_vars.push(var_id);
-                    }
+                if let Some(var_id) = normalize_state_var(child, source_map, id, ast)
+                    && let Some(contract) = ast.contracts.get_mut(id as usize)
+                {
+                    contract.state_vars.push(var_id);
                 }
             }
             Some("ModifierDefinition") => {
-                if let Some(mod_id) = normalize_modifier(child, source_map, id, ast) {
-                    if let Some(contract) = ast.contracts.get_mut(id as usize) {
-                        contract.modifiers.push(mod_id);
-                    }
+                if let Some(mod_id) = normalize_modifier(child, source_map, id, ast)
+                    && let Some(contract) = ast.contracts.get_mut(id as usize)
+                {
+                    contract.modifiers.push(mod_id);
                 }
             }
             Some("EventDefinition") => {
-                if let Some(event_id) = normalize_event(child, source_map, id, ast) {
-                    if let Some(contract) = ast.contracts.get_mut(id as usize) {
-                        contract.events.push(event_id);
-                    }
+                if let Some(event_id) = normalize_event(child, source_map, id, ast)
+                    && let Some(contract) = ast.contracts.get_mut(id as usize)
+                {
+                    contract.events.push(event_id);
                 }
             }
             Some("ErrorDefinition") => {
-                if let Some(error_id) = normalize_error(child, source_map, Some(id), ast) {
-                    if let Some(contract) = ast.contracts.get_mut(id as usize) {
-                        contract.errors.push(error_id);
-                    }
+                if let Some(error_id) = normalize_error(child, source_map, Some(id), ast)
+                    && let Some(contract) = ast.contracts.get_mut(id as usize)
+                {
+                    contract.errors.push(error_id);
                 }
             }
             _ => {}
@@ -955,10 +955,10 @@ fn parse_stmt(
         "Break" => Some(push_stmt(ast, StmtKind::Break, span)),
         "Continue" => Some(push_stmt(ast, StmtKind::Continue, span)),
         _ => {
-            if is_expr_kind(kind.as_str()) {
-                if let Some(expr_id) = parse_expr(node, source_map, ast) {
-                    return Some(push_stmt(ast, StmtKind::Expr(expr_id), span));
-                }
+            if is_expr_kind(kind.as_str())
+                && let Some(expr_id) = parse_expr(node, source_map, ast)
+            {
+                return Some(push_stmt(ast, StmtKind::Expr(expr_id), span));
             }
             let expr_id = parse_unknown_expr(node, source_map, ast);
             Some(push_stmt(ast, StmtKind::Expr(expr_id), span))
@@ -1005,7 +1005,7 @@ fn parse_expr(
                 .or_else(|| read_attr_string(node, "value"))
                 .or_else(|| read_string(node, "hexValue"))
                 .or_else(|| read_attr_string(node, "hexValue"))
-                .unwrap_or_else(|| "".to_string());
+                .unwrap_or_default();
             Some(push_expr(
                 ast,
                 ExprKind::Literal(Literal {
@@ -1370,10 +1370,9 @@ fn parse_clause_params(node: &Value) -> Vec<String> {
             if let Some(name) = read_string(param, "name")
                 .or_else(|| read_attr_string(param, "name"))
                 .or_else(|| read_type_string(param))
+                && !name.is_empty()
             {
-                if !name.is_empty() {
-                    params.push(name);
-                }
+                params.push(name);
             }
         }
     }
@@ -1399,10 +1398,9 @@ fn parse_function_params(node: &Value) -> Vec<String> {
             }
             if let Some(name) =
                 read_string(param, "name").or_else(|| read_attr_string(param, "name"))
+                && !name.is_empty()
             {
-                if !name.is_empty() {
-                    params.push(name);
-                }
+                params.push(name);
             }
         }
     }
@@ -1428,11 +1426,11 @@ fn parse_function_returns(node: &Value) -> Vec<String> {
                 continue;
             }
             let name = read_string(param, "name").or_else(|| read_attr_string(param, "name"));
-            if let Some(name) = name {
-                if !name.is_empty() {
-                    returns.push(name);
-                    continue;
-                }
+            if let Some(name) = name
+                && !name.is_empty()
+            {
+                returns.push(name);
+                continue;
             }
             returns.push(format!("_ret{idx}"));
         }

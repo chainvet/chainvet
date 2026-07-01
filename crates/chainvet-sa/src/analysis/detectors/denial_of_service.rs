@@ -364,30 +364,30 @@ fn is_unchecked_value_call(ast: &NormalizedAst, expr: &chainvet_core::norm::Expr
             CallTarget::Member { name, .. } => name.as_str(),
             CallTarget::Unknown => "",
         };
-        if UNCHECKED_VALUE_METHODS.iter().any(|&m| m == name) {
+        if UNCHECKED_VALUE_METHODS.contains(&name) {
             return true;
         }
     }
     // Inspect the callee directly, covering `addr.call{value: x}("")` where the
     // callee is a Member (possibly under call options).
-    if let ExprKind::Call { callee, .. } = &expr.kind {
-        if let Some(callee_expr) = ast.expressions.get(*callee as usize) {
-            let member_field = match &callee_expr.kind {
-                ExprKind::Member { field, .. } => Some(field.as_str()),
-                ExprKind::CallOptions { callee: inner, .. } => ast
-                    .expressions
-                    .get(*inner as usize)
-                    .and_then(|e| match &e.kind {
-                        ExprKind::Member { field, .. } => Some(field.as_str()),
-                        _ => None,
-                    }),
-                _ => None,
-            };
-            if let Some(field) = member_field {
-                if UNCHECKED_VALUE_METHODS.iter().any(|&m| m == field) {
-                    return true;
-                }
-            }
+    if let ExprKind::Call { callee, .. } = &expr.kind
+        && let Some(callee_expr) = ast.expressions.get(*callee as usize)
+    {
+        let member_field = match &callee_expr.kind {
+            ExprKind::Member { field, .. } => Some(field.as_str()),
+            ExprKind::CallOptions { callee: inner, .. } => ast
+                .expressions
+                .get(*inner as usize)
+                .and_then(|e| match &e.kind {
+                    ExprKind::Member { field, .. } => Some(field.as_str()),
+                    _ => None,
+                }),
+            _ => None,
+        };
+        if let Some(field) = member_field
+            && UNCHECKED_VALUE_METHODS.contains(&field)
+        {
+            return true;
         }
     }
     false
@@ -408,7 +408,7 @@ fn is_hardcoded_gas_call(ast: &NormalizedAst, expr: &chainvet_core::norm::Expr) 
             CallTarget::Member { name, .. } => name.as_str(),
             CallTarget::Unknown => "",
         };
-        if HARDCODED_GAS_METHODS.iter().any(|&m| m == name) {
+        if HARDCODED_GAS_METHODS.contains(&name) {
             return true;
         }
     }
@@ -416,14 +416,12 @@ fn is_hardcoded_gas_call(ast: &NormalizedAst, expr: &chainvet_core::norm::Expr) 
     // Strategy 2: Inspect the callee expression directly for Member access.
     // Covers patterns like `payable(addr).transfer(amt)` where the parser
     // produces CallTarget::Unknown but the callee field is visible.
-    if let ExprKind::Call { callee, .. } = &expr.kind {
-        if let Some(callee_expr) = ast.expressions.get(*callee as usize) {
-            if let ExprKind::Member { field, .. } = &callee_expr.kind {
-                if HARDCODED_GAS_METHODS.iter().any(|&m| m == field.as_str()) {
-                    return true;
-                }
-            }
-        }
+    if let ExprKind::Call { callee, .. } = &expr.kind
+        && let Some(callee_expr) = ast.expressions.get(*callee as usize)
+        && let ExprKind::Member { field, .. } = &callee_expr.kind
+        && HARDCODED_GAS_METHODS.contains(&field.as_str())
+    {
+        return true;
     }
 
     false
@@ -439,20 +437,18 @@ fn is_external_call(ast: &NormalizedAst, expr: &chainvet_core::norm::Expr) -> bo
             CallTarget::Member { name, .. } => name.as_str(),
             CallTarget::Unknown => "",
         };
-        if EXTERNAL_CALL_METHODS.iter().any(|&m| m == name) {
+        if EXTERNAL_CALL_METHODS.contains(&name) {
             return true;
         }
     }
 
     // Strategy 2: Member field name on the callee.
-    if let ExprKind::Call { callee, .. } = &expr.kind {
-        if let Some(callee_expr) = ast.expressions.get(*callee as usize) {
-            if let ExprKind::Member { field, .. } = &callee_expr.kind {
-                if EXTERNAL_CALL_METHODS.iter().any(|&m| m == field.as_str()) {
-                    return true;
-                }
-            }
-        }
+    if let ExprKind::Call { callee, .. } = &expr.kind
+        && let Some(callee_expr) = ast.expressions.get(*callee as usize)
+        && let ExprKind::Member { field, .. } = &callee_expr.kind
+        && EXTERNAL_CALL_METHODS.contains(&field.as_str())
+    {
+        return true;
     }
 
     // Strategy 3: CallOptions with a `value` option (low-level `.call{value: ...}`).
@@ -471,23 +467,20 @@ fn is_external_call(ast: &NormalizedAst, expr: &chainvet_core::norm::Expr) -> bo
 /// Checks both the call metadata and the callee identifier.
 fn is_selfdestruct_call(ast: &NormalizedAst, expr: &chainvet_core::norm::Expr) -> bool {
     // Strategy 1: CallMeta with Direct target named "selfdestruct" or "suicide".
-    if let Some(call) = &expr.meta.call {
-        if let CallTarget::Direct { name } = &call.target {
-            if name == "selfdestruct" || name == "suicide" {
-                return true;
-            }
-        }
+    if let Some(call) = &expr.meta.call
+        && let CallTarget::Direct { name } = &call.target
+        && (name == "selfdestruct" || name == "suicide")
+    {
+        return true;
     }
 
     // Strategy 2: Call whose callee is an Ident("selfdestruct") or Ident("suicide").
-    if let ExprKind::Call { callee, .. } = &expr.kind {
-        if let Some(callee_expr) = ast.expressions.get(*callee as usize) {
-            if let ExprKind::Ident(name) = &callee_expr.kind {
-                if name == "selfdestruct" || name == "suicide" {
-                    return true;
-                }
-            }
-        }
+    if let ExprKind::Call { callee, .. } = &expr.kind
+        && let Some(callee_expr) = ast.expressions.get(*callee as usize)
+        && let ExprKind::Ident(name) = &callee_expr.kind
+        && (name == "selfdestruct" || name == "suicide")
+    {
+        return true;
     }
 
     false
@@ -509,56 +502,47 @@ fn contains_this_balance(ast: &NormalizedAst, expr_id: u32) -> bool {
 
     // --- Pattern 1: Chain metadata [this, balance] ---
     if let Some(chain) = expr.meta.chain.as_deref() {
-        if chain.len() == 2 {
-            if let (ChainSegment::Ident(base), ChainSegment::Member(member)) =
+        if chain.len() == 2
+            && let (ChainSegment::Ident(base), ChainSegment::Member(member)) =
                 (&chain[0], &chain[1])
-            {
-                if base == "this" && member == "balance" {
-                    return true;
-                }
-            }
+            && base == "this"
+            && member == "balance"
+        {
+            return true;
         }
         // Also check for address(this).balance chain: [address, Call, balance]
-        if chain.len() >= 3 {
-            if let ChainSegment::Member(last) = &chain[chain.len() - 1] {
-                if last == "balance" {
-                    if let ChainSegment::Ident(first) = &chain[0] {
-                        if first == "address" {
-                            return true;
-                        }
-                    }
-                }
-            }
+        if chain.len() >= 3
+            && let ChainSegment::Member(last) = &chain[chain.len() - 1]
+            && last == "balance"
+            && let ChainSegment::Ident(first) = &chain[0]
+            && first == "address"
+        {
+            return true;
         }
     }
 
     // --- Pattern 2: Member AST node  `.balance` on `this` ---
-    if let ExprKind::Member { base, field } = &expr.kind {
-        if field == "balance" {
-            if let Some(base_expr) = ast.expressions.get(*base as usize) {
-                // Direct `this.balance`
-                if let ExprKind::Ident(name) = &base_expr.kind {
-                    if name == "this" {
-                        return true;
-                    }
-                }
-                // `address(this).balance` — base is Call(address, [this])
-                if let ExprKind::Call { callee, args } = &base_expr.kind {
-                    if let Some(callee_expr) = ast.expressions.get(*callee as usize) {
-                        if let ExprKind::Ident(name) = &callee_expr.kind {
-                            if name == "address" && args.len() == 1 {
-                                if let Some(arg) = ast.expressions.get(args[0] as usize) {
-                                    if let ExprKind::Ident(arg_name) = &arg.kind {
-                                        if arg_name == "this" {
-                                            return true;
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+    if let ExprKind::Member { base, field } = &expr.kind
+        && field == "balance"
+        && let Some(base_expr) = ast.expressions.get(*base as usize)
+    {
+        // Direct `this.balance`
+        if let ExprKind::Ident(name) = &base_expr.kind
+            && name == "this"
+        {
+            return true;
+        }
+        // `address(this).balance` — base is Call(address, [this])
+        if let ExprKind::Call { callee, args } = &base_expr.kind
+            && let Some(callee_expr) = ast.expressions.get(*callee as usize)
+            && let ExprKind::Ident(name) = &callee_expr.kind
+            && name == "address"
+            && args.len() == 1
+            && let Some(arg) = ast.expressions.get(args[0] as usize)
+            && let ExprKind::Ident(arg_name) = &arg.kind
+            && arg_name == "this"
+        {
+            return true;
         }
     }
 
@@ -568,24 +552,22 @@ fn contains_this_balance(ast: &NormalizedAst, expr_id: u32) -> bool {
 
 /// Returns `true` if the expression is or contains a call to `require(...)`.
 fn is_require_or_assert_call(expr: &chainvet_core::norm::Expr) -> bool {
-    if let Some(call) = &expr.meta.call {
-        if let CallTarget::Direct { name } = &call.target {
-            if name == "require" || name == "assert" {
-                return true;
-            }
-        }
+    if let Some(call) = &expr.meta.call
+        && let CallTarget::Direct { name } = &call.target
+        && (name == "require" || name == "assert")
+    {
+        return true;
     }
     false
 }
 
 /// Returns `true` if the expression is a call to `require(...)`.
 fn is_require_call(expr: &chainvet_core::norm::Expr) -> bool {
-    if let Some(call) = &expr.meta.call {
-        if let CallTarget::Direct { name } = &call.target {
-            if name == "require" {
-                return true;
-            }
-        }
+    if let Some(call) = &expr.meta.call
+        && let CallTarget::Direct { name } = &call.target
+        && name == "require"
+    {
+        return true;
     }
     false
 }
@@ -610,14 +592,12 @@ fn contains_send_call(ast: &NormalizedAst, expr_id: u32) -> bool {
     }
 
     // Check Member field on callee.
-    if let ExprKind::Call { callee, .. } = &expr.kind {
-        if let Some(callee_expr) = ast.expressions.get(*callee as usize) {
-            if let ExprKind::Member { field, .. } = &callee_expr.kind {
-                if field == "send" {
-                    return true;
-                }
-            }
-        }
+    if let ExprKind::Call { callee, .. } = &expr.kind
+        && let Some(callee_expr) = ast.expressions.get(*callee as usize)
+        && let ExprKind::Member { field, .. } = &callee_expr.kind
+        && field == "send"
+    {
+        return true;
     }
 
     // Recurse into sub-expressions.
@@ -653,10 +633,10 @@ fn cond_uses_dynamic_length(ast: &NormalizedAst, cond_id: u32) -> bool {
             return;
         }
         // Look for `.length` member access.
-        if let ExprKind::Member { field, .. } = &expr.kind {
-            if field == "length" {
-                found = true;
-            }
+        if let ExprKind::Member { field, .. } = &expr.kind
+            && field == "length"
+        {
+            found = true;
         }
     });
     found
@@ -683,14 +663,12 @@ fn body_contains_push(ast: &NormalizedAst, body_id: u32) -> bool {
             }
         }
         // Check Member field on callee.
-        if let ExprKind::Call { callee, .. } = &expr.kind {
-            if let Some(callee_expr) = ast.expressions.get(*callee as usize) {
-                if let ExprKind::Member { field, .. } = &callee_expr.kind {
-                    if field == "push" {
-                        found = true;
-                    }
-                }
-            }
+        if let ExprKind::Call { callee, .. } = &expr.kind
+            && let Some(callee_expr) = ast.expressions.get(*callee as usize)
+            && let ExprKind::Member { field, .. } = &callee_expr.kind
+            && field == "push"
+        {
+            found = true;
         }
     });
     found
@@ -718,9 +696,7 @@ fn recurse_contains(
                 })
         }
         ExprKind::Assign { lhs, rhs, .. } => pred(ast, *lhs) || pred(ast, *rhs),
-        ExprKind::Index { base, index } => {
-            pred(ast, *base) || index.map_or(false, |i| pred(ast, i))
-        }
+        ExprKind::Index { base, index } => pred(ast, *base) || index.is_some_and(|i| pred(ast, i)),
         ExprKind::Conditional {
             cond,
             then_expr,
@@ -799,16 +775,15 @@ fn detected_method_name(ast: &NormalizedAst, expr: &chainvet_core::norm::Expr) -
     }
 
     // Fall back to callee Member field.
-    if let ExprKind::Call { callee, .. } = &expr.kind {
-        if let Some(callee_expr) = ast.expressions.get(*callee as usize) {
-            if let ExprKind::Member { field, .. } = &callee_expr.kind {
-                if field == "transfer" {
-                    return "transfer";
-                }
-                if field == "send" {
-                    return "send";
-                }
-            }
+    if let ExprKind::Call { callee, .. } = &expr.kind
+        && let Some(callee_expr) = ast.expressions.get(*callee as usize)
+        && let ExprKind::Member { field, .. } = &callee_expr.kind
+    {
+        if field == "transfer" {
+            return "transfer";
+        }
+        if field == "send" {
+            return "send";
         }
     }
 
@@ -948,67 +923,6 @@ fn detect_locked_ether(ast: &NormalizedAst) -> Vec<Finding> {
     findings
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use chainvet_core::norm::SourceFile;
-    use chainvet_frontend::frontend::parser::load_via_parser_sources;
-
-    fn parse(source: &str) -> NormalizedAst {
-        load_via_parser_sources(vec![SourceFile {
-            id: 0,
-            path: "test.sol".to_string(),
-            source: source.to_string(),
-        }])
-        .expect("parser should succeed")
-    }
-
-    #[test]
-    fn call_value_withdraw_is_not_locked_ether() {
-        let ast = parse(
-            r#"
-            pragma solidity ^0.4.24;
-            contract Bank {
-                mapping(address => uint256) public balances;
-                function deposit() public payable {
-                    balances[msg.sender] += msg.value;
-                }
-                function collect(uint256 amount) public payable {
-                    if (balances[msg.sender] >= amount) {
-                        msg.sender.call.value(amount)();
-                    }
-                }
-            }
-            "#,
-        );
-
-        let findings = detect_locked_ether(&ast);
-        assert!(
-            findings.is_empty(),
-            "old-style .call.value(...)() withdrawals should count as Ether exit paths"
-        );
-    }
-
-    #[test]
-    fn payable_contract_without_exit_is_locked_ether() {
-        let ast = parse(
-            r#"
-            pragma solidity ^0.4.24;
-            contract PiggyBank {
-                function deposit() public payable {}
-            }
-            "#,
-        );
-
-        let findings = detect_locked_ether(&ast);
-        assert!(
-            findings
-                .iter()
-                .any(|finding| finding.kind == FindingKind::LockedEther)
-        );
-    }
-}
-
 // ── DS-03  DoS with Block Gas Limit ─────────────────────────────────────────
 //
 // When the iteration count of a loop depends on a dynamically sized array
@@ -1115,13 +1029,14 @@ fn detect_dos_block_gas_limit(ast: &NormalizedAst) -> Vec<Finding> {
             }
         });
 
-        if findings.len() == baseline {
-            if let Some(source_lower) = source_lower.as_deref() {
-                let dynamic_bound = source_lower.contains(".length")
-                    || source_lower.contains("msg.gas")
-                    || source_lower.contains("gasleft(");
-                if source_contains_loop(source_lower) && dynamic_bound {
-                    findings.push(Finding {
+        if findings.len() == baseline
+            && let Some(source_lower) = source_lower.as_deref()
+        {
+            let dynamic_bound = source_lower.contains(".length")
+                || source_lower.contains("msg.gas")
+                || source_lower.contains("gasleft(");
+            if source_contains_loop(source_lower) && dynamic_bound {
+                findings.push(Finding {
                         kind: FindingKind::DosBlockGasLimit,
                         severity: Severity::Medium,
                         message: format!(
@@ -1131,7 +1046,6 @@ fn detect_dos_block_gas_limit(ast: &NormalizedAst) -> Vec<Finding> {
                         span: func.span,
                         function: Some(func.id),
                     });
-                }
             }
         }
     }
@@ -1208,32 +1122,30 @@ fn detect_dos_with_failed_call(ast: &NormalizedAst) -> Vec<Finding> {
                 // `do { ... externalCall ... } while (...)`
                 StmtKind::DoWhile {
                     body: loop_body, ..
-                } => {
-                    if stmt_body_contains_external_call(ast, *loop_body) {
-                        let func_name = func.name.as_deref().unwrap_or("<anonymous>");
-                        findings.push(Finding {
-                            kind: FindingKind::DosWithFailedCall,
-                            severity: Severity::High,
-                            message: format!(
-                                "DS-04: external call inside `do-while` loop in `{func_name}`; \
+                } if stmt_body_contains_external_call(ast, *loop_body) => {
+                    let func_name = func.name.as_deref().unwrap_or("<anonymous>");
+                    findings.push(Finding {
+                        kind: FindingKind::DosWithFailedCall,
+                        severity: Severity::High,
+                        message: format!(
+                            "DS-04: external call inside `do-while` loop in `{func_name}`; \
                                 if any single call fails the entire transaction reverts — \
                                 use a pull-payment (withdrawal) pattern instead"
-                            ),
-                            span: stmt.span,
-                            function: Some(func.id),
-                        });
-                    }
+                        ),
+                        span: stmt.span,
+                        function: Some(func.id),
+                    });
                 }
                 _ => {}
             }
         });
 
-        if findings.len() == baseline {
-            if let Some(source_lower) = source_lower.as_deref() {
-                if source_contains_loop(source_lower)
-                    && source_contains_external_payout(source_lower)
-                {
-                    findings.push(Finding {
+        if findings.len() == baseline
+            && let Some(source_lower) = source_lower.as_deref()
+            && source_contains_loop(source_lower)
+            && source_contains_external_payout(source_lower)
+        {
+            findings.push(Finding {
                         kind: FindingKind::DosWithFailedCall,
                         severity: Severity::High,
                         message: format!(
@@ -1243,13 +1155,12 @@ fn detect_dos_with_failed_call(ast: &NormalizedAst) -> Vec<Finding> {
                         span: func.span,
                         function: Some(func.id),
                     });
-                }
-            }
         }
 
-        if let Some(source_lower) = source_lower.as_deref() {
-            if source_contains_failed_refund_guard(source_lower) {
-                findings.push(Finding {
+        if let Some(source_lower) = source_lower.as_deref()
+            && source_contains_failed_refund_guard(source_lower)
+        {
+            findings.push(Finding {
                     kind: FindingKind::DosWithFailedCall,
                     severity: Severity::High,
                     message: format!(
@@ -1259,7 +1170,6 @@ fn detect_dos_with_failed_call(ast: &NormalizedAst) -> Vec<Finding> {
                     span: func.span,
                     function: Some(func.id),
                 });
-            }
         }
     }
 
@@ -1388,4 +1298,65 @@ fn detect_unsafe_send_in_require(ast: &NormalizedAst) -> Vec<Finding> {
     }
 
     findings
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chainvet_core::norm::SourceFile;
+    use chainvet_frontend::frontend::parser::load_via_parser_sources;
+
+    fn parse(source: &str) -> NormalizedAst {
+        load_via_parser_sources(vec![SourceFile {
+            id: 0,
+            path: "test.sol".to_string(),
+            source: source.to_string(),
+        }])
+        .expect("parser should succeed")
+    }
+
+    #[test]
+    fn call_value_withdraw_is_not_locked_ether() {
+        let ast = parse(
+            r#"
+            pragma solidity ^0.4.24;
+            contract Bank {
+                mapping(address => uint256) public balances;
+                function deposit() public payable {
+                    balances[msg.sender] += msg.value;
+                }
+                function collect(uint256 amount) public payable {
+                    if (balances[msg.sender] >= amount) {
+                        msg.sender.call.value(amount)();
+                    }
+                }
+            }
+            "#,
+        );
+
+        let findings = detect_locked_ether(&ast);
+        assert!(
+            findings.is_empty(),
+            "old-style .call.value(...)() withdrawals should count as Ether exit paths"
+        );
+    }
+
+    #[test]
+    fn payable_contract_without_exit_is_locked_ether() {
+        let ast = parse(
+            r#"
+            pragma solidity ^0.4.24;
+            contract PiggyBank {
+                function deposit() public payable {}
+            }
+            "#,
+        );
+
+        let findings = detect_locked_ether(&ast);
+        assert!(
+            findings
+                .iter()
+                .any(|finding| finding.kind == FindingKind::LockedEther)
+        );
+    }
 }

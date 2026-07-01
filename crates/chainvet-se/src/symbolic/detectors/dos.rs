@@ -25,6 +25,12 @@ pub struct DosDetector {
     tracker: CalleeTracker,
 }
 
+impl Default for DosDetector {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DosDetector {
     pub fn new() -> Self {
         Self {

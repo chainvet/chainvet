@@ -258,25 +258,22 @@ fn is_ecrecover_call(ast: &NormalizedAst, expr: &chainvet_core::norm::Expr) -> b
     // Strategy 1: Check call metadata resolved by the normalizer.
     // The normalizer populates `expr.meta.call` with a `CallTarget::Direct`
     // when it can resolve the callee to a known function name.
-    if let Some(call) = &expr.meta.call {
-        if let CallTarget::Direct { name } = &call.target {
-            if name == "ecrecover" {
-                return true;
-            }
-        }
+    if let Some(call) = &expr.meta.call
+        && let CallTarget::Direct { name } = &call.target
+        && name == "ecrecover"
+    {
+        return true;
     }
 
     // Strategy 2: For cases where the normalizer produced `CallTarget::Unknown`,
     // fall back to inspecting the callee expression node directly.
     // `ExprKind::Call { callee, .. }` where callee is `Ident("ecrecover")`.
-    if let ExprKind::Call { callee, .. } = &expr.kind {
-        if let Some(callee_expr) = ast.expressions.get(*callee as usize) {
-            if let ExprKind::Ident(name) = &callee_expr.kind {
-                if name == "ecrecover" {
-                    return true;
-                }
-            }
-        }
+    if let ExprKind::Call { callee, .. } = &expr.kind
+        && let Some(callee_expr) = ast.expressions.get(*callee as usize)
+        && let ExprKind::Ident(name) = &callee_expr.kind
+        && name == "ecrecover"
+    {
+        return true;
     }
 
     false
@@ -320,7 +317,7 @@ fn contains_ecrecover_call(ast: &NormalizedAst, expr_id: u32) -> bool {
         ExprKind::Tuple(entries) => entries.iter().any(|&e| contains_ecrecover_call(ast, e)),
         ExprKind::Index { base, index } => {
             contains_ecrecover_call(ast, *base)
-                || index.map_or(false, |i| contains_ecrecover_call(ast, i))
+                || index.is_some_and(|i| contains_ecrecover_call(ast, i))
         }
         ExprKind::Conditional {
             cond,
@@ -346,20 +343,16 @@ fn is_zero_address(ast: &NormalizedAst, expr_id: u32) -> bool {
 
     // Pattern 1: `address(0)` — a type-cast call whose argument is literal 0.
     //   ExprKind::Call { callee: Ident("address"), args: [Literal("0")] }
-    if let ExprKind::Call { callee, args } = &expr.kind {
-        if let Some(callee_expr) = ast.expressions.get(*callee as usize) {
-            if let ExprKind::Ident(name) = &callee_expr.kind {
-                if name == "address" && args.len() == 1 {
-                    if let Some(arg_expr) = ast.expressions.get(args[0] as usize) {
-                        if let ExprKind::Literal(lit) = &arg_expr.kind {
-                            if lit.value == "0" {
-                                return true;
-                            }
-                        }
-                    }
-                }
-            }
-        }
+    if let ExprKind::Call { callee, args } = &expr.kind
+        && let Some(callee_expr) = ast.expressions.get(*callee as usize)
+        && let ExprKind::Ident(name) = &callee_expr.kind
+        && name == "address"
+        && args.len() == 1
+        && let Some(arg_expr) = ast.expressions.get(args[0] as usize)
+        && let ExprKind::Literal(lit) = &arg_expr.kind
+        && lit.value == "0"
+    {
+        return true;
     }
 
     // Pattern 2: Literal zero address `0x0000000000000000000000000000000000000000`.
@@ -388,25 +381,22 @@ fn collect_ecrecover_result_vars(ast: &NormalizedAst, body: u32) -> Vec<String> 
             names,
             init: Some(init),
         } = &stmt.kind
+            && contains_ecrecover_call(ast, *init)
         {
-            if contains_ecrecover_call(ast, *init) {
-                for name in names {
-                    vars.push(name.clone());
-                }
+            for name in names {
+                vars.push(name.clone());
             }
         }
     });
 
     // Also check assignments:  `signer = ecrecover(...);`
     for_each_expr_in_stmt(ast, body, &mut |_eid, expr| {
-        if let ExprKind::Assign { lhs, rhs, .. } = &expr.kind {
-            if contains_ecrecover_call(ast, *rhs) {
-                if let Some(lhs_expr) = ast.expressions.get(*lhs as usize) {
-                    if let ExprKind::Ident(name) = &lhs_expr.kind {
-                        vars.push(name.clone());
-                    }
-                }
-            }
+        if let ExprKind::Assign { lhs, rhs, .. } = &expr.kind
+            && contains_ecrecover_call(ast, *rhs)
+            && let Some(lhs_expr) = ast.expressions.get(*lhs as usize)
+            && let ExprKind::Ident(name) = &lhs_expr.kind
+        {
+            vars.push(name.clone());
         }
     });
 
@@ -462,12 +452,11 @@ fn body_has_zero_address_check(ast: &NormalizedAst, body: u32) -> bool {
                 }
             }
             // Recurse into `&&` / `||` chains inside require() args.
-            if op == "&&" || op == "||" {
-                if body_expr_has_zero_check(ast, *lhs, &ecrecover_vars)
-                    || body_expr_has_zero_check(ast, *rhs, &ecrecover_vars)
-                {
-                    found = true;
-                }
+            if (op == "&&" || op == "||")
+                && (body_expr_has_zero_check(ast, *lhs, &ecrecover_vars)
+                    || body_expr_has_zero_check(ast, *rhs, &ecrecover_vars))
+            {
+                found = true;
             }
         }
     });
@@ -516,12 +505,11 @@ fn body_relies_on_msg_sender_for_sig(ast: &NormalizedAst, body: u32) -> bool {
         }
 
         // Detect `msg.sender` used in a comparison (== or !=).
-        if let ExprKind::Binary { op, lhs, rhs } = &expr.kind {
-            if op == "==" || op == "!=" {
-                if contains_msg_sender(ast, *lhs) || contains_msg_sender(ast, *rhs) {
-                    has_msg_sender_check = true;
-                }
-            }
+        if let ExprKind::Binary { op, lhs, rhs } = &expr.kind
+            && (op == "==" || op == "!=")
+            && (contains_msg_sender(ast, *lhs) || contains_msg_sender(ast, *rhs))
+        {
+            has_msg_sender_check = true;
         }
     });
 
@@ -543,29 +531,23 @@ fn contains_msg_sender(ast: &NormalizedAst, expr_id: u32) -> bool {
     };
 
     // Chain metadata: [Ident("msg"), Member("sender")]
-    if let Some(chain) = expr.meta.chain.as_deref() {
-        if chain.len() == 2 {
-            if let (ChainSegment::Ident(base), ChainSegment::Member(member)) =
-                (&chain[0], &chain[1])
-            {
-                if base == "msg" && member == "sender" {
-                    return true;
-                }
-            }
-        }
+    if let Some(chain) = expr.meta.chain.as_deref()
+        && chain.len() == 2
+        && let (ChainSegment::Ident(base), ChainSegment::Member(member)) = (&chain[0], &chain[1])
+        && base == "msg"
+        && member == "sender"
+    {
+        return true;
     }
 
     // AST Member node: msg.sender
-    if let ExprKind::Member { base, field } = &expr.kind {
-        if field == "sender" {
-            if let Some(base_expr) = ast.expressions.get(*base as usize) {
-                if let ExprKind::Ident(name) = &base_expr.kind {
-                    if name == "msg" {
-                        return true;
-                    }
-                }
-            }
-        }
+    if let ExprKind::Member { base, field } = &expr.kind
+        && field == "sender"
+        && let Some(base_expr) = ast.expressions.get(*base as usize)
+        && let ExprKind::Ident(name) = &base_expr.kind
+        && name == "msg"
+    {
+        return true;
     }
 
     // Recurse into sub-expressions.
@@ -583,7 +565,7 @@ fn contains_msg_sender(ast: &NormalizedAst, expr_id: u32) -> bool {
         }
         ExprKind::Tuple(entries) => entries.iter().any(|&e| contains_msg_sender(ast, e)),
         ExprKind::Index { base, index } => {
-            contains_msg_sender(ast, *base) || index.map_or(false, |i| contains_msg_sender(ast, i))
+            contains_msg_sender(ast, *base) || index.is_some_and(|i| contains_msg_sender(ast, i))
         }
         ExprKind::Conditional {
             cond,
@@ -645,7 +627,7 @@ fn body_uses_safe_recover(ast: &NormalizedAst, body: u32) -> bool {
                 CallTarget::Member { name, .. } => name.as_str(),
                 CallTarget::Unknown => "",
             };
-            if SAFE_RECOVER_WRAPPERS.iter().any(|&w| w == name) {
+            if SAFE_RECOVER_WRAPPERS.contains(&name) {
                 found = true;
                 return;
             }
@@ -654,22 +636,21 @@ fn body_uses_safe_recover(ast: &NormalizedAst, body: u32) -> bool {
         // Strategy 2: Callee is a Member expression whose `field` is a
         // safe wrapper name (covers cases where CallMeta is Unknown but
         // the AST can see `ECDSA.recover(...)`).
-        if let ExprKind::Call { callee, .. } = &expr.kind {
-            if let Some(callee_expr) = ast.expressions.get(*callee as usize) {
-                if let ExprKind::Member { field, .. } = &callee_expr.kind {
-                    if SAFE_RECOVER_WRAPPERS.iter().any(|&w| w == field.as_str()) {
-                        found = true;
-                        return;
-                    }
-                }
-                // Also match direct `recover(...)` calls (possible via
-                // `using ECDSA for bytes32`).
-                if let ExprKind::Ident(name) = &callee_expr.kind {
-                    if SAFE_RECOVER_WRAPPERS.iter().any(|&w| w == name.as_str()) {
-                        found = true;
-                        return;
-                    }
-                }
+        if let ExprKind::Call { callee, .. } = &expr.kind
+            && let Some(callee_expr) = ast.expressions.get(*callee as usize)
+        {
+            if let ExprKind::Member { field, .. } = &callee_expr.kind
+                && SAFE_RECOVER_WRAPPERS.contains(&field.as_str())
+            {
+                found = true;
+                return;
+            }
+            // Also match direct `recover(...)` calls (possible via
+            // `using ECDSA for bytes32`).
+            if let ExprKind::Ident(name) = &callee_expr.kind
+                && SAFE_RECOVER_WRAPPERS.contains(&name.as_str())
+            {
+                found = true;
             }
         }
     });
@@ -721,18 +702,18 @@ fn expr_is_s_ident(ast: &NormalizedAst, expr_id: u32) -> bool {
     };
 
     // Direct identifier: `s`
-    if let ExprKind::Ident(name) = &expr.kind {
-        if name == "s" {
-            return true;
-        }
+    if let ExprKind::Ident(name) = &expr.kind
+        && name == "s"
+    {
+        return true;
     }
 
     // Type-cast: `uint256(s)` — the normalizer represents this as a Call
     // whose callee is the type name and the single arg is the value.
-    if let ExprKind::Call { args, .. } = &expr.kind {
-        if args.len() == 1 {
-            return expr_is_s_ident(ast, args[0]);
-        }
+    if let ExprKind::Call { args, .. } = &expr.kind
+        && args.len() == 1
+    {
+        return expr_is_s_ident(ast, args[0]);
     }
 
     false
@@ -781,20 +762,20 @@ fn body_validates_recovered_signer(ast: &NormalizedAst, body: u32) -> bool {
             return;
         }
 
-        if let ExprKind::Binary { op, lhs, rhs } = &expr.kind {
-            if op == "==" || op == "!=" {
-                let lhs_ec = contains_ecrecover_call(ast, *lhs)
-                    || expr_is_one_of(ast, *lhs, &ecrecover_vars);
-                let rhs_ec = contains_ecrecover_call(ast, *rhs)
-                    || expr_is_one_of(ast, *rhs, &ecrecover_vars);
+        if let ExprKind::Binary { op, lhs, rhs } = &expr.kind
+            && (op == "==" || op == "!=")
+        {
+            let lhs_ec =
+                contains_ecrecover_call(ast, *lhs) || expr_is_one_of(ast, *lhs, &ecrecover_vars);
+            let rhs_ec =
+                contains_ecrecover_call(ast, *rhs) || expr_is_one_of(ast, *rhs, &ecrecover_vars);
 
-                if lhs_ec || rhs_ec {
-                    // The other side must NOT be address(0) — that's the
-                    // zero-check handled separately.
-                    let other_side = if lhs_ec { *rhs } else { *lhs };
-                    if !is_zero_address(ast, other_side) {
-                        found = true;
-                    }
+            if lhs_ec || rhs_ec {
+                // The other side must NOT be address(0) — that's the
+                // zero-check handled separately.
+                let other_side = if lhs_ec { *rhs } else { *lhs };
+                if !is_zero_address(ast, other_side) {
+                    found = true;
                 }
             }
         }

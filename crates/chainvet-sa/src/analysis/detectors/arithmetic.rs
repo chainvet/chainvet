@@ -5,7 +5,7 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::analysis::taint::TaintSummary;
-use chainvet_core::norm::{CallOption, CallTarget, ExprKind, NormalizedAst, Span, StmtKind};
+use chainvet_core::norm::{CallOption, ExprKind, NormalizedAst, Span, StmtKind};
 
 use super::{Finding, FindingKind, Severity};
 
@@ -44,10 +44,10 @@ fn expr_touches_tainted(ast: &NormalizedAst, expr_id: u32, tainted: &HashSet<&st
     }
     let mut hit = false;
     for_each_expr(ast, expr_id, &mut |_id, expr| {
-        if let ExprKind::Ident(name) = &expr.kind {
-            if tainted.contains(name.as_str()) {
-                hit = true;
-            }
+        if let ExprKind::Ident(name) = &expr.kind
+            && tainted.contains(name.as_str())
+        {
+            hit = true;
         }
     });
     hit
@@ -323,7 +323,7 @@ fn expr_references_any_ident(
         }
         ExprKind::Index { base, index } => {
             expr_references_any_ident(ast, *base, names)
-                || index.map_or(false, |i| expr_references_any_ident(ast, i, names))
+                || index.is_some_and(|i| expr_references_any_ident(ast, i, names))
         }
         _ => false,
     }
@@ -360,14 +360,8 @@ fn detect_division_before_multiplication(ast: &NormalizedAst) -> Vec<Finding> {
                 }
 
                 // Check if the left or right operand is a division
-                let lhs_is_div = ast
-                    .expressions
-                    .get(*lhs as usize)
-                    .map_or(false, is_division);
-                let rhs_is_div = ast
-                    .expressions
-                    .get(*rhs as usize)
-                    .map_or(false, is_division);
+                let lhs_is_div = ast.expressions.get(*lhs as usize).is_some_and(is_division);
+                let rhs_is_div = ast.expressions.get(*rhs as usize).is_some_and(is_division);
 
                 if lhs_is_div || rhs_is_div {
                     findings.push(Finding {
@@ -550,7 +544,7 @@ fn detect_unsafe_array_length_assignment(ast: &NormalizedAst) -> Vec<Finding> {
                 let lhs_is_length = ast
                     .expressions
                     .get(*lhs as usize)
-                    .map_or(false, |lhs_expr| {
+                    .is_some_and(|lhs_expr| {
                         matches!(&lhs_expr.kind, ExprKind::Member { field, .. } if field == "length")
                     });
 

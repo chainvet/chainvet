@@ -301,18 +301,18 @@ fn check_timestamp_dependency(
             )),
             _ => None,
         };
-        if let Some(message) = message {
-            if seen_functions.insert(event.function_id) {
-                let hash = hash_finding("timestamp", event.function_id, "branch");
-                findings.push(FuzzFinding {
-                    span: event.span,
-                    kind: FuzzFindingKind::TimestampDependency,
-                    severity: FuzzSeverity::Medium,
-                    message,
-                    tx_sequence: tx_sequence.to_vec(),
-                    trace_hash: hash,
-                });
-            }
+        if let Some(message) = message
+            && seen_functions.insert(event.function_id)
+        {
+            let hash = hash_finding("timestamp", event.function_id, "branch");
+            findings.push(FuzzFinding {
+                span: event.span,
+                kind: FuzzFindingKind::TimestampDependency,
+                severity: FuzzSeverity::Medium,
+                message,
+                tx_sequence: tx_sequence.to_vec(),
+                trace_hash: hash,
+            });
         }
     }
 
@@ -632,14 +632,14 @@ fn check_wrong_constructor_name(
             function_name,
             slot_key,
         } = &event.kind
+            && seen.insert(event.function_id)
         {
-            if seen.insert(event.function_id) {
-                let hash = hash_finding(
-                    "wrong-constructor-name",
-                    event.function_id,
-                    function_name.as_str(),
-                );
-                findings.push(FuzzFinding {
+            let hash = hash_finding(
+                "wrong-constructor-name",
+                event.function_id,
+                function_name.as_str(),
+            );
+            findings.push(FuzzFinding {
                     span: None,
                     kind: FuzzFindingKind::WrongConstructorName,
                     severity: FuzzSeverity::High,
@@ -650,7 +650,6 @@ fn check_wrong_constructor_name(
                     tx_sequence: tx_sequence.to_vec(),
                     trace_hash: hash,
                 });
-            }
         }
     }
 
@@ -663,10 +662,11 @@ fn check_tx_origin(trace: &ExecutionTrace, tx_sequence: &[Transaction]) -> Vec<F
     let mut seen_functions = std::collections::HashSet::new();
 
     for event in &trace.events {
-        if let TraceEventKind::TxOriginUsed = &event.kind {
-            if seen_functions.insert(event.function_id) {
-                let hash = hash_finding("tx-origin", event.function_id, "used");
-                findings.push(FuzzFinding {
+        if let TraceEventKind::TxOriginUsed = &event.kind
+            && seen_functions.insert(event.function_id)
+        {
+            let hash = hash_finding("tx-origin", event.function_id, "used");
+            findings.push(FuzzFinding {
                     span: event.span,
                     kind: FuzzFindingKind::TxOriginAuth,
                     severity: FuzzSeverity::Medium,
@@ -677,7 +677,6 @@ fn check_tx_origin(trace: &ExecutionTrace, tx_sequence: &[Transaction]) -> Vec<F
                     tx_sequence: tx_sequence.to_vec(),
                     trace_hash: hash,
                 });
-            }
         }
     }
 
@@ -1007,12 +1006,14 @@ fn check_integer_underflow(
             rhs,
             result,
         } = &event.kind
+            && op == "-"
+            && *result > *lhs
+            && *rhs > 0
         {
-            if op == "-" && *result > *lhs && *rhs > 0 {
-                let key = (event.function_id, op.clone());
-                if seen.insert(key) {
-                    let hash = hash_finding("underflow", event.function_id, op);
-                    findings.push(FuzzFinding {
+            let key = (event.function_id, op.clone());
+            if seen.insert(key) {
+                let hash = hash_finding("underflow", event.function_id, op);
+                findings.push(FuzzFinding {
                     span: event.span,
                         kind: FuzzFindingKind::IntegerUnderflow,
                         severity: FuzzSeverity::High,
@@ -1023,7 +1024,6 @@ fn check_integer_underflow(
                         tx_sequence: tx_sequence.to_vec(),
                         trace_hash: hash,
                     });
-                }
             }
         }
     }
@@ -1084,10 +1084,11 @@ fn check_weak_prng(trace: &ExecutionTrace, tx_sequence: &[Transaction]) -> Vec<F
     let mut seen_functions = std::collections::HashSet::new();
 
     for event in &trace.events {
-        if let TraceEventKind::BlockNumberUsed = &event.kind {
-            if seen_functions.insert(event.function_id) {
-                let hash = hash_finding("weak-prng", event.function_id, "block-number");
-                findings.push(FuzzFinding {
+        if let TraceEventKind::BlockNumberUsed = &event.kind
+            && seen_functions.insert(event.function_id)
+        {
+            let hash = hash_finding("weak-prng", event.function_id, "block-number");
+            findings.push(FuzzFinding {
                     span: None,
                     kind: FuzzFindingKind::WeakPRNG,
                     severity: FuzzSeverity::Medium,
@@ -1098,7 +1099,6 @@ fn check_weak_prng(trace: &ExecutionTrace, tx_sequence: &[Transaction]) -> Vec<F
                     tx_sequence: tx_sequence.to_vec(),
                     trace_hash: hash,
                 });
-            }
         }
     }
 
@@ -1336,10 +1336,11 @@ fn check_storage_memory(trace: &ExecutionTrace, tx_sequence: &[Transaction]) -> 
                     });
                 }
             }
-            TraceEventKind::DelegatecallInLoop { callee } => {
-                if seen.insert((event.function_id, callee.clone())) {
-                    let hash = hash_finding("storage-memory", event.function_id, callee);
-                    findings.push(FuzzFinding {
+            TraceEventKind::DelegatecallInLoop { callee }
+                if seen.insert((event.function_id, callee.clone())) =>
+            {
+                let hash = hash_finding("storage-memory", event.function_id, callee);
+                findings.push(FuzzFinding {
                     span: None,
                         kind: FuzzFindingKind::StorageMemoryIssue,
                         severity: FuzzSeverity::High,
@@ -1350,7 +1351,6 @@ fn check_storage_memory(trace: &ExecutionTrace, tx_sequence: &[Transaction]) -> 
                         tx_sequence: tx_sequence.to_vec(),
                         trace_hash: hash,
                     });
-                }
             }
             _ => {}
         }
@@ -1368,10 +1368,11 @@ fn check_division_before_multiplication(
     let mut seen = std::collections::HashSet::new();
 
     for event in &trace.events {
-        if let TraceEventKind::DivisionBeforeMultiplication { function_id_inner } = &event.kind {
-            if seen.insert(*function_id_inner) {
-                let hash = hash_finding("div-before-mul", *function_id_inner, "pattern");
-                findings.push(FuzzFinding {
+        if let TraceEventKind::DivisionBeforeMultiplication { function_id_inner } = &event.kind
+            && seen.insert(*function_id_inner)
+        {
+            let hash = hash_finding("div-before-mul", *function_id_inner, "pattern");
+            findings.push(FuzzFinding {
                     span: None,
                     kind: FuzzFindingKind::DivisionBeforeMultiplication,
                     severity: FuzzSeverity::Medium,
@@ -1382,7 +1383,6 @@ fn check_division_before_multiplication(
                     tx_sequence: tx_sequence.to_vec(),
                     trace_hash: hash,
                 });
-            }
         }
     }
 

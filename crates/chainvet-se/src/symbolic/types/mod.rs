@@ -262,11 +262,11 @@ mod tests {
     fn assert_bv_eq(sv: &SymbolicValue, expected: u64) {
         let bv = sv.as_bv().expect("expected BitVec variant");
         let solver = Solver::new();
-        solver.assert(&bv.eq(&BV::from_u64(expected, bv.get_size())));
+        solver.assert(bv.eq(BV::from_u64(expected, bv.get_size())));
         assert_eq!(solver.check(), SatResult::Sat, "expected bv == {expected}");
         // Also check the negation is unsat to confirm uniqueness
         let solver2 = Solver::new();
-        solver2.assert(&bv.eq(&BV::from_u64(expected, bv.get_size())).not());
+        solver2.assert(bv.eq(BV::from_u64(expected, bv.get_size())).not());
         assert_eq!(
             solver2.check(),
             SatResult::Unsat,
@@ -281,7 +281,7 @@ mod tests {
         if expected {
             solver.assert(b);
         } else {
-            solver.assert(&b.not());
+            solver.assert(b.not());
         }
         assert_eq!(solver.check(), SatResult::Sat);
     }
@@ -383,7 +383,7 @@ mod tests {
         let sv = concrete_bv(99, 256);
         let bv = sv.to_bv(256).unwrap();
         let solver = Solver::new();
-        solver.assert(&bv.eq(&BV::from_u64(99, 256)));
+        solver.assert(bv.eq(BV::from_u64(99, 256)));
         assert_eq!(solver.check(), SatResult::Sat);
     }
 
@@ -394,7 +394,7 @@ mod tests {
         let bv = sv.to_bv(8).unwrap();
         // Truncated to 8 bits: 0xFF = 255
         let solver = Solver::new();
-        solver.assert(&bv.eq(&BV::from_u64(0xFF, 8)));
+        solver.assert(bv.eq(BV::from_u64(0xFF, 8)));
         assert_eq!(solver.check(), SatResult::Sat);
     }
 
@@ -404,7 +404,7 @@ mod tests {
         let sv = concrete_bv(200, 8);
         let bv = sv.to_bv(256).unwrap();
         let solver = Solver::new();
-        solver.assert(&bv.eq(&BV::from_u64(200, 256)));
+        solver.assert(bv.eq(BV::from_u64(200, 256)));
         assert_eq!(solver.check(), SatResult::Sat);
     }
 
@@ -414,7 +414,7 @@ mod tests {
         let sv = concrete_bool(true);
         let bv = sv.to_bv(256).unwrap();
         let solver = Solver::new();
-        solver.assert(&bv.eq(&BV::from_u64(1, 256)));
+        solver.assert(bv.eq(BV::from_u64(1, 256)));
         assert_eq!(solver.check(), SatResult::Sat);
     }
 
@@ -423,7 +423,7 @@ mod tests {
         let sv = concrete_bool(false);
         let bv = sv.to_bv(256).unwrap();
         let solver = Solver::new();
-        solver.assert(&bv.eq(&BV::from_u64(0, 256)));
+        solver.assert(bv.eq(BV::from_u64(0, 256)));
         assert_eq!(solver.check(), SatResult::Sat);
     }
 
@@ -460,7 +460,7 @@ mod tests {
         let sv = zero_bv(256);
         let b = sv.to_bool().unwrap();
         let solver = Solver::new();
-        solver.assert(&b.not());
+        solver.assert(b.not());
         assert_eq!(solver.check(), SatResult::Sat);
         // Also verify the bool is definitely false
         let solver2 = Solver::new();
@@ -539,7 +539,7 @@ mod tests {
         let solver = Solver::new();
         // -1 in two's complement should have all bits set in the low 64 bits
         // and sign-extended to 256 bits via BV::from_i64
-        solver.assert(&bv.eq(&BV::from_i64(-1, 256)));
+        solver.assert(bv.eq(BV::from_i64(-1, 256)));
         assert_eq!(solver.check(), SatResult::Sat);
     }
 
@@ -553,8 +553,8 @@ mod tests {
         let solver = Solver::new();
         let hi_bv = BV::from_u64(1, 256);
         let lo_bv = BV::from_u64(5, 256);
-        let expected = hi_bv.bvshl(&BV::from_u64(64, 256)).bvor(&lo_bv);
-        solver.assert(&bv.eq(&expected));
+        let expected = hi_bv.bvshl(BV::from_u64(64, 256)).bvor(&lo_bv);
+        solver.assert(bv.eq(&expected));
         assert_eq!(solver.check(), SatResult::Sat);
     }
 
@@ -596,7 +596,7 @@ mod tests {
         match &sv {
             SymbolicValue::SymBytes { len, .. } => {
                 let solver = Solver::new();
-                solver.assert(&len.eq(&BV::from_u64(5, 256)));
+                solver.assert(len.eq(BV::from_u64(5, 256)));
                 assert_eq!(solver.check(), SatResult::Sat);
             }
             other => panic!("expected SymBytes, got {:?}", other),

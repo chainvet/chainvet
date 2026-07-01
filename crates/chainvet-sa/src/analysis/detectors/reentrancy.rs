@@ -298,7 +298,7 @@ fn check_expr_external_call(ast: &NormalizedAst, expr_id: u32) -> Option<Externa
         let name = call_target_name(call);
 
         // Low-level calls: .call, .delegatecall, .staticcall
-        if LOW_LEVEL_CALLS.iter().any(|&m| m == name) {
+        if LOW_LEVEL_CALLS.contains(&name) {
             // Check if the call has a `value` option (sends ETH)
             let sends_eth = has_value_option(ast, expr_id);
             return Some(ExternalCallInfo {
@@ -310,7 +310,7 @@ fn check_expr_external_call(ast: &NormalizedAst, expr_id: u32) -> Option<Externa
         }
 
         // High-level transfer / send
-        if TRANSFER_METHODS.iter().any(|&m| m == name) {
+        if TRANSFER_METHODS.contains(&name) {
             return Some(ExternalCallInfo {
                 sends_eth: true,
                 is_transfer_or_send: true,
@@ -323,29 +323,28 @@ fn check_expr_external_call(ast: &NormalizedAst, expr_id: u32) -> Option<Externa
     // ── Strategy 2: Check ExprKind::Call { callee: Member { field } } ────
     // Covers patterns like `payable(addr).transfer(amt)` where the parser
     // produces CallTarget::Unknown but the callee is a Member expression.
-    if let ExprKind::Call { callee, .. } = &expr.kind {
-        if let Some(callee_expr) = ast.expressions.get(*callee as usize) {
-            if let ExprKind::Member { field, .. } = &callee_expr.kind {
-                // Low-level calls
-                if LOW_LEVEL_CALLS.iter().any(|&m| m == field.as_str()) {
-                    let sends_eth = has_value_option(ast, expr_id);
-                    return Some(ExternalCallInfo {
-                        sends_eth,
-                        is_transfer_or_send: false,
-                        is_low_level_call: true,
-                        span: expr.span,
-                    });
-                }
-                // transfer / send
-                if TRANSFER_METHODS.iter().any(|&m| m == field.as_str()) {
-                    return Some(ExternalCallInfo {
-                        sends_eth: true,
-                        is_transfer_or_send: true,
-                        is_low_level_call: false,
-                        span: expr.span,
-                    });
-                }
-            }
+    if let ExprKind::Call { callee, .. } = &expr.kind
+        && let Some(callee_expr) = ast.expressions.get(*callee as usize)
+        && let ExprKind::Member { field, .. } = &callee_expr.kind
+    {
+        // Low-level calls
+        if LOW_LEVEL_CALLS.contains(&field.as_str()) {
+            let sends_eth = has_value_option(ast, expr_id);
+            return Some(ExternalCallInfo {
+                sends_eth,
+                is_transfer_or_send: false,
+                is_low_level_call: true,
+                span: expr.span,
+            });
+        }
+        // transfer / send
+        if TRANSFER_METHODS.contains(&field.as_str()) {
+            return Some(ExternalCallInfo {
+                sends_eth: true,
+                is_transfer_or_send: true,
+                is_low_level_call: false,
+                span: expr.span,
+            });
         }
     }
 
@@ -358,17 +357,16 @@ fn check_expr_external_call(ast: &NormalizedAst, expr_id: u32) -> Option<Externa
             .any(|opt| matches!(opt, CallOption::Value(_)));
         if has_value {
             // Check if the inner callee is a low-level call
-            if let Some(callee_expr) = ast.expressions.get(*callee as usize) {
-                if let ExprKind::Member { field, .. } = &callee_expr.kind {
-                    if LOW_LEVEL_CALLS.iter().any(|&m| m == field.as_str()) {
-                        return Some(ExternalCallInfo {
-                            sends_eth: true,
-                            is_transfer_or_send: false,
-                            is_low_level_call: true,
-                            span: expr.span,
-                        });
-                    }
-                }
+            if let Some(callee_expr) = ast.expressions.get(*callee as usize)
+                && let ExprKind::Member { field, .. } = &callee_expr.kind
+                && LOW_LEVEL_CALLS.contains(&field.as_str())
+            {
+                return Some(ExternalCallInfo {
+                    sends_eth: true,
+                    is_transfer_or_send: false,
+                    is_low_level_call: true,
+                    span: expr.span,
+                });
             }
         }
     }
@@ -434,12 +432,12 @@ fn find_state_updates_in_stmt(ast: &NormalizedAst, stmt_id: u32) -> Vec<StateUpd
     match &stmt.kind {
         // Direct expression statement: `balances[msg.sender] = 0;`
         StmtKind::Expr(expr_id) => {
-            if let Some(expr) = ast.expressions.get(*expr_id as usize) {
-                if let ExprKind::Assign { lhs, .. } = &expr.kind {
-                    let names = collect_assigned_names(ast, *lhs);
-                    if !names.is_empty() {
-                        updates.push(StateUpdateInfo { var_names: names });
-                    }
+            if let Some(expr) = ast.expressions.get(*expr_id as usize)
+                && let ExprKind::Assign { lhs, .. } = &expr.kind
+            {
+                let names = collect_assigned_names(ast, *lhs);
+                if !names.is_empty() {
+                    updates.push(StateUpdateInfo { var_names: names });
                 }
             }
         }
@@ -673,59 +671,53 @@ fn find_cross_contract_calls_in_stmt(ast: &NormalizedAst, stmt_id: u32) -> Vec<E
 
     for_each_expr_in_stmt(ast, stmt_id, &mut |_eid, expr| {
         // Look for calls via Member access: `someContract.someFunc(...)`
-        if let ExprKind::Call { callee, .. } = &expr.kind {
-            if let Some(callee_expr) = ast.expressions.get(*callee as usize) {
-                if let ExprKind::Member { base, field } = &callee_expr.kind {
-                    // Skip known low-level / ETH transfer methods
-                    let is_known = LOW_LEVEL_CALLS.iter().any(|&m| m == field.as_str())
-                        || TRANSFER_METHODS.iter().any(|&m| m == field.as_str());
-                    let is_helper = NON_EXTERNAL_MEMBER_HELPERS
-                        .iter()
-                        .any(|&m| m == field.as_str());
-                    let is_internal_receiver = ast
-                        .expressions
-                        .get(*base as usize)
-                        .map(|base_expr| match &base_expr.kind {
-                            ExprKind::Ident(name) => {
-                                name.eq_ignore_ascii_case("this")
-                                    || name.eq_ignore_ascii_case("super")
-                            }
-                            _ => false,
-                        })
-                        .unwrap_or(false);
-                    if !is_known && !is_helper && !is_internal_receiver {
-                        // This is a member call on another object — likely
-                        // a cross-contract call.
-                        calls.push(ExternalCallInfo {
-                            sends_eth: false,
-                            is_transfer_or_send: false,
-                            is_low_level_call: false,
-                            span: stmt.span,
-                        });
+        if let ExprKind::Call { callee, .. } = &expr.kind
+            && let Some(callee_expr) = ast.expressions.get(*callee as usize)
+            && let ExprKind::Member { base, field } = &callee_expr.kind
+        {
+            // Skip known low-level / ETH transfer methods
+            let is_known = LOW_LEVEL_CALLS.contains(&field.as_str())
+                || TRANSFER_METHODS.contains(&field.as_str());
+            let is_helper = NON_EXTERNAL_MEMBER_HELPERS.contains(&field.as_str());
+            let is_internal_receiver = ast
+                .expressions
+                .get(*base as usize)
+                .map(|base_expr| match &base_expr.kind {
+                    ExprKind::Ident(name) => {
+                        name.eq_ignore_ascii_case("this") || name.eq_ignore_ascii_case("super")
                     }
-                }
+                    _ => false,
+                })
+                .unwrap_or(false);
+            if !is_known && !is_helper && !is_internal_receiver {
+                // This is a member call on another object — likely
+                // a cross-contract call.
+                calls.push(ExternalCallInfo {
+                    sends_eth: false,
+                    is_transfer_or_send: false,
+                    is_low_level_call: false,
+                    span: stmt.span,
+                });
             }
         }
 
         // Also flag calls resolved via CallMeta as Member target
-        if let Some(call) = &expr.meta.call {
-            if let CallTarget::Member { receiver, name } = &call.target {
-                let is_known = LOW_LEVEL_CALLS.iter().any(|&m| m == name.as_str())
-                    || TRANSFER_METHODS.iter().any(|&m| m == name.as_str());
-                let is_helper = NON_EXTERNAL_MEMBER_HELPERS
-                    .iter()
-                    .any(|&m| m == name.as_str());
-                let is_internal_receiver = receiver.last().is_some_and(|segment| {
-                    segment.eq_ignore_ascii_case("this") || segment.eq_ignore_ascii_case("super")
+        if let Some(call) = &expr.meta.call
+            && let CallTarget::Member { receiver, name } = &call.target
+        {
+            let is_known = LOW_LEVEL_CALLS.contains(&name.as_str())
+                || TRANSFER_METHODS.contains(&name.as_str());
+            let is_helper = NON_EXTERNAL_MEMBER_HELPERS.contains(&name.as_str());
+            let is_internal_receiver = receiver.last().is_some_and(|segment| {
+                segment.eq_ignore_ascii_case("this") || segment.eq_ignore_ascii_case("super")
+            });
+            if !is_known && !is_helper && !is_internal_receiver {
+                calls.push(ExternalCallInfo {
+                    sends_eth: false,
+                    is_transfer_or_send: false,
+                    is_low_level_call: false,
+                    span: stmt.span,
                 });
-                if !is_known && !is_helper && !is_internal_receiver {
-                    calls.push(ExternalCallInfo {
-                        sends_eth: false,
-                        is_transfer_or_send: false,
-                        is_low_level_call: false,
-                        span: stmt.span,
-                    });
-                }
             }
         }
     });

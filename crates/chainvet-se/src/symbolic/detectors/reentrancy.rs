@@ -31,6 +31,12 @@ struct ExternalCallInfo {
     call_instruction_count: u32,
 }
 
+impl Default for ReentrancyDetector {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ReentrancyDetector {
     pub fn new() -> Self {
         Self {

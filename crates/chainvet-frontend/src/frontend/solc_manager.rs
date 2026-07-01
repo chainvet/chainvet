@@ -72,12 +72,11 @@ impl SolcManager {
                 {
                     return Ok(local);
                 }
-                if reqs.is_empty() {
-                    if let Some(local) =
+                if reqs.is_empty()
+                    && let Some(local) =
                         find_local_solc_binary(&[], self.platform, Some(&self.cache_dir))
-                    {
-                        return Ok(local);
-                    }
+                {
+                    return Ok(local);
                 }
                 Err(Error::msg(format!(
                     "{err}; set {SOLC_PATH_ENV}=<solc-binary>, set {SOLC_SEARCH_PATHS_ENV}, or pre-populate cache at {}",
@@ -164,18 +163,18 @@ impl SolcManager {
         let path = self.list_path();
         let mut refresh = true;
 
-        if let Ok(meta) = fs::metadata(&path) {
-            if is_fresh(&meta, self.list_ttl) {
-                refresh = false;
-            }
+        if let Ok(meta) = fs::metadata(&path)
+            && is_fresh(&meta, self.list_ttl)
+        {
+            refresh = false;
         }
 
         if refresh && !is_offline_mode() {
             let url = self.list_url();
-            if let Err(err) = download_file(&url, &path) {
-                if !path.exists() {
-                    return Err(err);
-                }
+            if let Err(err) = download_file(&url, &path)
+                && !path.exists()
+            {
+                return Err(err);
             }
         }
 
@@ -215,7 +214,7 @@ impl SolcManager {
             }
         }
 
-        candidates.sort_by(|a, b| a.0.cmp(&b.0));
+        candidates.sort_by_key(|a| a.0);
         Ok(candidates.pop().map(|(_, path)| path))
     }
 
@@ -318,10 +317,10 @@ impl VersionReq {
             }
         }
 
-        if comparators.is_empty() {
-            if let Some(comp) = Comparator::parse(spec) {
-                comparators.push(comp);
-            }
+        if comparators.is_empty()
+            && let Some(comp) = Comparator::parse(spec)
+        {
+            comparators.push(comp);
         }
 
         if comparators.is_empty() {
@@ -667,10 +666,10 @@ fn is_offline_mode() -> bool {
 }
 
 fn is_fresh(meta: &fs::Metadata, ttl: Duration) -> bool {
-    if let Ok(modified) = meta.modified() {
-        if let Ok(elapsed) = modified.elapsed() {
-            return elapsed < ttl;
-        }
+    if let Ok(modified) = meta.modified()
+        && let Ok(elapsed) = modified.elapsed()
+    {
+        return elapsed < ttl;
     }
     false
 }
@@ -685,11 +684,11 @@ fn download_file(url: &str, dest: &Path) -> Result<()> {
     let tmp_str = tmp
         .to_str()
         .ok_or_else(|| Error::msg("download path is not valid UTF-8"))?;
-    if let Err(err) = download_with_command("curl", &["-fsSL", "-o", tmp_str, url]) {
-        if let Err(err2) = download_with_command("wget", &["-q", "-O", tmp_str, url]) {
-            let message = format!("download failed: {err}; fallback failed: {err2}");
-            return Err(Error::msg(message));
-        }
+    if let Err(err) = download_with_command("curl", &["-fsSL", "-o", tmp_str, url])
+        && let Err(err2) = download_with_command("wget", &["-q", "-O", tmp_str, url])
+    {
+        let message = format!("download failed: {err}; fallback failed: {err2}");
+        return Err(Error::msg(message));
     }
 
     fs::rename(tmp, dest)?;
@@ -753,7 +752,7 @@ fn find_local_solc_binaries(
         return Vec::new();
     }
 
-    parsed.sort_by(|a, b| a.0.cmp(&b.0));
+    parsed.sort_by_key(|a| a.0);
     parsed
 }
 
@@ -787,10 +786,10 @@ fn local_solc_search_roots(platform: SolcPlatform, preferred_cache: Option<&Path
         roots.push(profile.join(".cache/static/solc"));
     }
 
-    if matches!(platform, SolcPlatform::WindowsAmd64) {
-        if let Ok(program_data) = env::var("ProgramData") {
-            roots.push(PathBuf::from(program_data));
-        }
+    if matches!(platform, SolcPlatform::WindowsAmd64)
+        && let Ok(program_data) = env::var("ProgramData")
+    {
+        roots.push(PathBuf::from(program_data));
     }
 
     roots
@@ -870,20 +869,20 @@ fn detect_solc_version_hint(path: &Path) -> Option<SolcVersion> {
 }
 
 fn parse_version_hint_component(component: &str) -> Option<SolcVersion> {
-    if let Some(idx) = component.rfind("-v") {
-        if let Some(version) = parse_version_token(&component[idx + 2..]) {
-            return Some(version);
-        }
+    if let Some(idx) = component.rfind("-v")
+        && let Some(version) = parse_version_token(&component[idx + 2..])
+    {
+        return Some(version);
     }
-    if let Some(stripped) = component.strip_prefix("solc-v") {
-        if let Some(version) = parse_version_token(stripped) {
-            return Some(version);
-        }
+    if let Some(stripped) = component.strip_prefix("solc-v")
+        && let Some(version) = parse_version_token(stripped)
+    {
+        return Some(version);
     }
-    if let Some(stripped) = component.strip_prefix("solc-") {
-        if let Some(version) = parse_version_token(stripped) {
-            return Some(version);
-        }
+    if let Some(stripped) = component.strip_prefix("solc-")
+        && let Some(version) = parse_version_token(stripped)
+    {
+        return Some(version);
     }
 
     let trimmed = component.trim_start();
@@ -903,10 +902,10 @@ fn version_hint_components(path: &Path) -> Vec<String> {
         if let Some(name) = parent.file_name().and_then(|value| value.to_str()) {
             out.push(name.to_string());
         }
-        if let Some(grand) = parent.parent() {
-            if let Some(name) = grand.file_name().and_then(|value| value.to_str()) {
-                out.push(name.to_string());
-            }
+        if let Some(grand) = parent.parent()
+            && let Some(name) = grand.file_name().and_then(|value| value.to_str())
+        {
+            out.push(name.to_string());
         }
     }
     out

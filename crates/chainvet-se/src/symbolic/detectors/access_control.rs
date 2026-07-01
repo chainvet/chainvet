@@ -30,6 +30,12 @@ pub struct AccessControlDetector {
     tracker: CalleeTracker,
 }
 
+impl Default for AccessControlDetector {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl AccessControlDetector {
     pub fn new() -> Self {
         Self {
@@ -220,6 +226,67 @@ impl AccessControlDetector {
             );
         }
         vec![]
+    }
+}
+
+fn is_selfdestruct(callee: &IrValue) -> bool {
+    matches!(
+        callee,
+        IrValue::Var(IrVar::Named(n)) if n == "selfdestruct" || n == "suicide"
+    )
+}
+
+fn has_value_option(options: &[IrCallOption]) -> bool {
+    options.iter().any(|o| matches!(o, IrCallOption::Value(_)))
+}
+
+/// Returns true if the callee is not a known constant (not `this`, not a literal).
+fn is_user_controlled_recipient(callee: &IrValue) -> bool {
+    match callee {
+        IrValue::Var(IrVar::Named(n)) => n != "this" && n != "address(this)",
+        IrValue::Var(IrVar::Temp(_)) => true,
+        IrValue::Unknown => true,
+        IrValue::Literal(_) => false,
+    }
+}
+
+/// Returns true if an IrValue is symbolic (not a literal constant).
+fn is_user_controlled_value(val: &IrValue) -> bool {
+    !matches!(val, IrValue::Literal(_))
+}
+
+fn path_bools(state: &SymbolicState) -> Vec<Bool> {
+    state
+        .path_constraints
+        .constraints()
+        .iter()
+        .map(|(c, _)| c.clone())
+        .collect()
+}
+
+/// Confirm path reachability via SAT before emitting a finding.
+fn check_reachable_and_emit(
+    state: &SymbolicState,
+    solver: &dyn SmtSolver,
+    kind: SeVulnKind,
+    severity: Severity,
+    confidence: Confidence,
+    message: &str,
+    span: Span,
+) -> Vec<SeFinding> {
+    let assumptions = path_bools(state);
+    match solver.check_sat_assuming(&assumptions) {
+        SatResult::Sat => {
+            let witness = solver.get_model().map(|m| {
+                let mut w = Witness::from_model(&m, &state.call_context);
+                w.populate_variables(&m, &state.variables);
+                w
+            });
+            vec![make_finding(
+                kind, severity, confidence, message, span, state, witness,
+            )]
+        }
+        _ => vec![],
     }
 }
 
@@ -459,66 +526,5 @@ mod tests {
             "tx.origin as Member place followed by If should emit TxOriginAuth"
         );
         assert_eq!(findings[0].kind, SeVulnKind::TxOriginAuth);
-    }
-}
-
-fn is_selfdestruct(callee: &IrValue) -> bool {
-    matches!(
-        callee,
-        IrValue::Var(IrVar::Named(n)) if n == "selfdestruct" || n == "suicide"
-    )
-}
-
-fn has_value_option(options: &[IrCallOption]) -> bool {
-    options.iter().any(|o| matches!(o, IrCallOption::Value(_)))
-}
-
-/// Returns true if the callee is not a known constant (not `this`, not a literal).
-fn is_user_controlled_recipient(callee: &IrValue) -> bool {
-    match callee {
-        IrValue::Var(IrVar::Named(n)) => n != "this" && n != "address(this)",
-        IrValue::Var(IrVar::Temp(_)) => true,
-        IrValue::Unknown => true,
-        IrValue::Literal(_) => false,
-    }
-}
-
-/// Returns true if an IrValue is symbolic (not a literal constant).
-fn is_user_controlled_value(val: &IrValue) -> bool {
-    !matches!(val, IrValue::Literal(_))
-}
-
-fn path_bools(state: &SymbolicState) -> Vec<Bool> {
-    state
-        .path_constraints
-        .constraints()
-        .iter()
-        .map(|(c, _)| c.clone())
-        .collect()
-}
-
-/// Confirm path reachability via SAT before emitting a finding.
-fn check_reachable_and_emit(
-    state: &SymbolicState,
-    solver: &dyn SmtSolver,
-    kind: SeVulnKind,
-    severity: Severity,
-    confidence: Confidence,
-    message: &str,
-    span: Span,
-) -> Vec<SeFinding> {
-    let assumptions = path_bools(state);
-    match solver.check_sat_assuming(&assumptions) {
-        SatResult::Sat => {
-            let witness = solver.get_model().map(|m| {
-                let mut w = Witness::from_model(&m, &state.call_context);
-                w.populate_variables(&m, &state.variables);
-                w
-            });
-            vec![make_finding(
-                kind, severity, confidence, message, span, state, witness,
-            )]
-        }
-        _ => vec![],
     }
 }

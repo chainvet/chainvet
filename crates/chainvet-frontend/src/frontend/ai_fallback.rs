@@ -595,7 +595,7 @@ fn valid_span(file: &SourceFile, start: Option<u32>, end: Option<u32>) -> Option
     })
 }
 
-fn source_span<'a>(file: &'a SourceFile, span: Span) -> Option<&'a str> {
+fn source_span(file: &SourceFile, span: Span) -> Option<&str> {
     if span.file != file.id {
         return None;
     }

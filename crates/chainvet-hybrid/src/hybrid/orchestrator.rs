@@ -64,11 +64,11 @@ pub fn analyze(output: &FrontendOutput, budget: &HybridBudget) -> Result<HybridJ
     let run_start = Instant::now();
     let mut all_se_findings: Vec<SeFinding> = Vec::new();
     let mut all_seeds = Vec::new();
-    let mut pending_seeds: Vec<fuzzing::types::Individual> = Vec::new();
+    let mut pending_seeds: Vec<fuzzing::types::Individual>;
     let mut se_assists: u32 = 0;
     let mut se_done_functions: HashSet<u32> = HashSet::new();
     let mut total_states = 0usize;
-    let mut symbolic_coverage = symbolic::results::coverage::CoverageReport::default();
+    let symbolic_coverage: symbolic::results::coverage::CoverageReport;
     let mut epochs_run: u32 = 0;
     let mut time_to_first_finding_ms: Option<u128> = None;
 

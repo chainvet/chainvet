@@ -20,6 +20,12 @@ pub struct CryptographicDetector {
     zero_checked: HashSet<IrVar>,
 }
 
+impl Default for CryptographicDetector {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CryptographicDetector {
     pub fn new() -> Self {
         Self {
@@ -121,6 +127,20 @@ impl Detector for CryptographicDetector {
     fn reset(&mut self) {
         self.ecrecover_results.clear();
         self.zero_checked.clear();
+    }
+}
+
+fn is_ecrecover(callee: &IrValue) -> bool {
+    matches!(
+        callee,
+        IrValue::Var(IrVar::Named(n)) if n == "ecrecover"
+    )
+}
+
+fn as_var(val: &IrValue) -> Option<&IrVar> {
+    match val {
+        IrValue::Var(v) => Some(v),
+        _ => None,
     }
 }
 
@@ -252,19 +272,5 @@ mod tests {
                 .any(|f| f.kind == SeVulnKind::MissingSignatureVerification),
             "reset should clear ecrecover_results set"
         );
-    }
-}
-
-fn is_ecrecover(callee: &IrValue) -> bool {
-    matches!(
-        callee,
-        IrValue::Var(IrVar::Named(n)) if n == "ecrecover"
-    )
-}
-
-fn as_var(val: &IrValue) -> Option<&IrVar> {
-    match val {
-        IrValue::Var(v) => Some(v),
-        _ => None,
     }
 }

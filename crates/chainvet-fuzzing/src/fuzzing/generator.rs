@@ -22,11 +22,6 @@ const MAGIC_UINTS: &[u128] = &[
     u128::MAX,
 ];
 
-/// Generate a random FuzzValue for a parameter, optionally using dictionary values.
-pub(crate) fn random_value(rng: &mut impl Rng) -> FuzzValue {
-    random_value_with_dict(rng, None)
-}
-
 /// Generate a random FuzzValue, using dictionary constants when available.
 pub(crate) fn random_value_with_dict(rng: &mut impl Rng, dict: Option<&Dictionary>) -> FuzzValue {
     let strategy: u32 = rng.gen_range(0..12);
@@ -44,11 +39,11 @@ pub(crate) fn random_value_with_dict(rng: &mut impl Rng, dict: Option<&Dictionar
         9 => FuzzValue::Bool(rng.gen_bool(0.5)),
         // 17% chance: dictionary value (falls back to magic number if no dict)
         _ => {
-            if let Some(dict) = dict {
-                if !dict.values.is_empty() {
-                    let idx = rng.gen_range(0..dict.values.len());
-                    return FuzzValue::Uint(dict.values[idx]);
-                }
+            if let Some(dict) = dict
+                && !dict.values.is_empty()
+            {
+                let idx = rng.gen_range(0..dict.values.len());
+                return FuzzValue::Uint(dict.values[idx]);
             }
             // Fallback to magic number
             let idx = rng.gen_range(0..MAGIC_UINTS.len());
@@ -64,17 +59,18 @@ fn random_sender(rng: &mut impl Rng, pool_size: usize) -> usize {
 
 /// Generate a random Ether value for payable functions.
 fn random_value_amount_with_dict(rng: &mut impl Rng, dict: Option<&Dictionary>) -> u128 {
-    if let Some(dict) = dict {
-        if !dict.values.is_empty() && rng.gen_bool(0.35) {
-            let candidates = dict
-                .values
-                .iter()
-                .copied()
-                .filter(|v| *v > 0)
-                .collect::<Vec<_>>();
-            if !candidates.is_empty() {
-                return candidates[rng.gen_range(0..candidates.len())];
-            }
+    if let Some(dict) = dict
+        && !dict.values.is_empty()
+        && rng.gen_bool(0.35)
+    {
+        let candidates = dict
+            .values
+            .iter()
+            .copied()
+            .filter(|v| *v > 0)
+            .collect::<Vec<_>>();
+        if !candidates.is_empty() {
+            return candidates[rng.gen_range(0..candidates.len())];
         }
     }
     let strategy: u32 = rng.gen_range(0..5);
@@ -96,15 +92,6 @@ fn high_payable_seed_value(dict: Option<&Dictionary>) -> u128 {
 fn bootstrap_payable_value(rng: &mut impl Rng, dict: Option<&Dictionary>) -> u128 {
     let value = random_value_amount_with_dict(rng, dict);
     if value == 0 { 1 } else { value }
-}
-
-/// Generate a single random transaction targeting a function from the ABI.
-pub(crate) fn random_transaction(
-    abi: &ContractAbi,
-    rng: &mut impl Rng,
-    config: &FuzzConfig,
-) -> Option<Transaction> {
-    random_transaction_with_dict(abi, rng, config, None)
 }
 
 /// Generate a single random transaction, optionally using dictionary values.
@@ -183,44 +170,44 @@ fn dependency_aware_sequence(
 
         if let Some((rid, _)) = matching.first() {
             // Generate the writer transaction
-            if let Some(func) = abi.functions.iter().find(|f| f.id == *wid) {
-                if func.is_fuzz_callable() {
-                    let args: Vec<FuzzValue> = func
-                        .params
-                        .iter()
-                        .map(|_| random_value_with_dict(rng, dict))
-                        .collect();
-                    txs.push(Transaction {
-                        function_id: func.id,
-                        args,
-                        sender: random_sender(rng, config.address_pool_size),
-                        value: if func.is_payable {
-                            random_value_amount_with_dict(rng, dict)
-                        } else {
-                            0
-                        },
-                    });
-                }
+            if let Some(func) = abi.functions.iter().find(|f| f.id == *wid)
+                && func.is_fuzz_callable()
+            {
+                let args: Vec<FuzzValue> = func
+                    .params
+                    .iter()
+                    .map(|_| random_value_with_dict(rng, dict))
+                    .collect();
+                txs.push(Transaction {
+                    function_id: func.id,
+                    args,
+                    sender: random_sender(rng, config.address_pool_size),
+                    value: if func.is_payable {
+                        random_value_amount_with_dict(rng, dict)
+                    } else {
+                        0
+                    },
+                });
             }
             // Generate the reader transaction
-            if let Some(func) = abi.functions.iter().find(|f| f.id == *rid) {
-                if func.is_fuzz_callable() {
-                    let args: Vec<FuzzValue> = func
-                        .params
-                        .iter()
-                        .map(|_| random_value_with_dict(rng, dict))
-                        .collect();
-                    txs.push(Transaction {
-                        function_id: func.id,
-                        args,
-                        sender: random_sender(rng, config.address_pool_size),
-                        value: if func.is_payable {
-                            random_value_amount_with_dict(rng, dict)
-                        } else {
-                            0
-                        },
-                    });
-                }
+            if let Some(func) = abi.functions.iter().find(|f| f.id == *rid)
+                && func.is_fuzz_callable()
+            {
+                let args: Vec<FuzzValue> = func
+                    .params
+                    .iter()
+                    .map(|_| random_value_with_dict(rng, dict))
+                    .collect();
+                txs.push(Transaction {
+                    function_id: func.id,
+                    args,
+                    sender: random_sender(rng, config.address_pool_size),
+                    value: if func.is_payable {
+                        random_value_amount_with_dict(rng, dict)
+                    } else {
+                        0
+                    },
+                });
             }
         }
     }
@@ -266,18 +253,17 @@ fn collect_literals_from_instr(
     let collect = |val: &chainvet_core::ir::IrValue,
                    seen: &mut std::collections::HashSet<u128>,
                    values: &mut Vec<u128>| {
-        if let chainvet_core::ir::IrValue::Literal(lit) = val {
-            if let Ok(n) = lit.value.parse::<u128>() {
-                if seen.insert(n) {
-                    values.push(n);
-                    // Also add boundary neighbors
-                    if n > 0 && seen.insert(n - 1) {
-                        values.push(n - 1);
-                    }
-                    if n < u128::MAX && seen.insert(n + 1) {
-                        values.push(n + 1);
-                    }
-                }
+        if let chainvet_core::ir::IrValue::Literal(lit) = val
+            && let Ok(n) = lit.value.parse::<u128>()
+            && seen.insert(n)
+        {
+            values.push(n);
+            // Also add boundary neighbors
+            if n > 0 && seen.insert(n - 1) {
+                values.push(n - 1);
+            }
+            if n < u128::MAX && seen.insert(n + 1) {
+                values.push(n + 1);
             }
         }
     };
@@ -615,11 +601,11 @@ mod tests {
         let mut found_dict_val = false;
         for _ in 0..100 {
             let val = random_value_with_dict(&mut rng, Some(&dict));
-            if let FuzzValue::Uint(v) = val {
-                if dict.values.contains(&v) {
-                    found_dict_val = true;
-                    break;
-                }
+            if let FuzzValue::Uint(v) = val
+                && dict.values.contains(&v)
+            {
+                found_dict_val = true;
+                break;
             }
         }
         assert!(

@@ -123,7 +123,7 @@ fn lower_stmt(stmt_id: u32, ast: &NormalizedAst, instrs: &mut Vec<IrInstr>, ctx:
                     span: stmt.span,
                 });
                 if let Some(init_expr) = init {
-                    lower_tuple_decl_init(&names, *init_expr, stmt.span, ast, instrs, ctx);
+                    lower_tuple_decl_init(names, *init_expr, stmt.span, ast, instrs, ctx);
                 }
             }
         }
@@ -438,11 +438,11 @@ fn lower_assign_expr(
     instrs: &mut Vec<IrInstr>,
     ctx: &mut LowerCtx,
 ) -> IrValue {
-    if op == "=" {
-        if let Some(tuple_entries) = tuple_entries(ast, lhs) {
-            lower_tuple_assign(&tuple_entries, rhs, span, ast, instrs, ctx);
-            return IrValue::Unknown;
-        }
+    if op == "="
+        && let Some(tuple_entries) = tuple_entries(ast, lhs)
+    {
+        lower_tuple_assign(&tuple_entries, rhs, span, ast, instrs, ctx);
+        return IrValue::Unknown;
     }
     let target = lower_lvalue(lhs, ast, instrs, ctx);
     let rhs_val = lower_value(rhs, ast, instrs, ctx);
@@ -823,12 +823,11 @@ fn resolve_call(
     callee_id: u32,
 ) -> (u32, Vec<CallOption>) {
     let (callee_id, mut options) = unwrap_call_options(ast, callee_id);
-    if options.is_empty() {
-        if let Some(call) = expr.meta.call.as_ref() {
-            if !call.options.is_empty() {
-                options = call.options.clone();
-            }
-        }
+    if options.is_empty()
+        && let Some(call) = expr.meta.call.as_ref()
+        && !call.options.is_empty()
+    {
+        options = call.options.clone();
     }
     (callee_id, options)
 }
@@ -841,10 +840,10 @@ fn lower_callee_value(
     ctx: &mut LowerCtx,
 ) -> IrValue {
     let value = lower_value(callee_id, ast, instrs, ctx);
-    if matches!(value, IrValue::Unknown) {
-        if let Some(fallback) = call_target_value(expr) {
-            return fallback;
-        }
+    if matches!(value, IrValue::Unknown)
+        && let Some(fallback) = call_target_value(expr)
+    {
+        return fallback;
     }
     value
 }
@@ -865,10 +864,7 @@ fn call_target_value(expr: &crate::norm::Expr) -> Option<IrValue> {
     }
 }
 
-fn call_expr<'a>(
-    ast: &'a NormalizedAst,
-    expr_id: u32,
-) -> Option<(&'a crate::norm::Expr, u32, &'a [u32])> {
+fn call_expr(ast: &NormalizedAst, expr_id: u32) -> Option<(&crate::norm::Expr, u32, &[u32])> {
     let expr = ast.expressions.get(expr_id as usize)?;
     match &expr.kind {
         ExprKind::Call { callee, args } => Some((expr, *callee, args.as_slice())),
@@ -880,10 +876,10 @@ fn is_revert_call(expr: &crate::norm::Expr, ast: &NormalizedAst) -> bool {
     let ExprKind::Call { callee, .. } = &expr.kind else {
         return false;
     };
-    if let Some(callee_expr) = ast.expressions.get(*callee as usize) {
-        if let ExprKind::Ident(name) = &callee_expr.kind {
-            return name == "revert";
-        }
+    if let Some(callee_expr) = ast.expressions.get(*callee as usize)
+        && let ExprKind::Ident(name) = &callee_expr.kind
+    {
+        return name == "revert";
     }
     match expr.meta.call.as_ref().map(|call| &call.target) {
         Some(crate::norm::CallTarget::Direct { name }) => name == "revert",

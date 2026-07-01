@@ -227,25 +227,6 @@ fn extract_function_id_from_message(message: &str) -> Option<u32> {
     digits.parse().ok()
 }
 
-fn category_for_hybrid_kind(kind: &str) -> Option<&'static str> {
-    match kind {
-        "reentrancy"
-        | "reentrancy-negative-events"
-        | "reentrancy-transfer"
-        | "reentrancy-same-effect"
-        | "reentrancy-eth-transfer"
-        | "reentrancy-no-eth-transfer" => Some("Reentrancy"),
-        "unsafe-delegatecall"
-        | "unprotected-ether-withdrawal"
-        | "unprotected-selfdestruct"
-        | "unused-return-value"
-        | "arbitrary-storage-write" => Some("Access Control"),
-        "delegatecall-in-loop" => Some("Storage and Memory"),
-        "dos-with-failed-call" => Some("Denial of Service"),
-        _ => None,
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct DedupKey {
     kind: String,
