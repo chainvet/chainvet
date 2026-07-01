@@ -36,6 +36,19 @@ Integrations live in their own repositories: **chainvet-vscode** (VS Code
 extension → LSP), **chainvet-web** (web UI → server), **chainvet-action**
 (GitHub Action → CI).
 
+## Install
+
+**Linux (x86_64)** — install the `chainvet` CLI with one command:
+
+```sh
+curl -fsSL https://install.chainvet.dev/install.sh | sh
+```
+
+This installs the [Z3](https://github.com/Z3Prover/z3) runtime and the latest
+`chainvet` release binary (verifying its checksum). Prebuilt binaries live on the
+[releases page](https://github.com/chainvet/chainvet/releases); other platforms
+build from source (below).
+
 ## Build from source
 
 Requires a Rust toolchain and the **Z3** system library:
