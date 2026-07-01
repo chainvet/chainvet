@@ -1,4 +1,6 @@
-# Chainvet
+<p align="center">
+  <img src="assets/chainvet-horizontal-logo.png" alt="Chainvet Horizontal Logo">
+</p>
 
 A hybrid security analyzer for Solidity smart contracts. Chainvet combines three
 engines over a shared frontend and IR — **static analysis** (45+ detectors),
