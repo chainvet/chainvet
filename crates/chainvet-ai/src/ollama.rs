@@ -125,18 +125,104 @@ fn http_post_json(
         .write_all(request.as_bytes())
         .map_err(|err| format!("failed to write Ollama request: {err}"))?;
 
-    let mut response = String::new();
+    // Read raw bytes: a chunked body must be de-framed on byte boundaries (the
+    // JSON payload can contain multibyte UTF-8, so we can't slice a String).
+    let mut response = Vec::new();
     stream
-        .read_to_string(&mut response)
+        .read_to_end(&mut response)
         .map_err(|err| format!("failed to read Ollama response: {err}"))?;
-    let Some((headers, body)) = response.split_once("\r\n\r\n") else {
+    let Some(sep) = find_subslice(&response, b"\r\n\r\n") else {
         return Err("invalid HTTP response from Ollama".to_string());
     };
+    let headers = String::from_utf8_lossy(&response[..sep]);
+    let body = &response[sep + 4..];
     if !headers.starts_with("HTTP/1.1 200") && !headers.starts_with("HTTP/1.0 200") {
         return Err(format!(
             "Ollama returned non-200 response: {}",
             headers.lines().next().unwrap_or("unknown status")
         ));
     }
-    Ok(body.to_string())
+    // Ollama switches to `Transfer-Encoding: chunked` once the response outgrows
+    // its ~4 KB buffer (which real review prompts do). De-chunk before decoding.
+    let is_chunked = headers.lines().any(|line| {
+        line.to_ascii_lowercase().starts_with("transfer-encoding:")
+            && line.to_ascii_lowercase().contains("chunked")
+    });
+    let body = if is_chunked {
+        dechunk(body)
+    } else {
+        body.to_vec()
+    };
+    Ok(String::from_utf8_lossy(&body).into_owned())
+}
+
+/// Find the first occurrence of `needle` in `haystack`, returning its start.
+fn find_subslice(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+    haystack
+        .windows(needle.len())
+        .position(|window| window == needle)
+}
+
+/// Decode an HTTP/1.1 chunked-transfer body: each chunk is `<hex-size>[;ext]\r\n`
+/// then that many payload bytes then `\r\n`, terminated by a zero-size chunk.
+/// Tolerant of a truncated tail (returns what was decoded so far).
+fn dechunk(mut data: &[u8]) -> Vec<u8> {
+    let mut out = Vec::new();
+    while let Some(eol) = find_subslice(data, b"\r\n") {
+        let size_line = String::from_utf8_lossy(&data[..eol]);
+        let size_hex = size_line.split(';').next().unwrap_or("").trim();
+        let Ok(size) = usize::from_str_radix(size_hex, 16) else {
+            break;
+        };
+        data = &data[eol + 2..]; // past the size line's CRLF
+        if size == 0 {
+            break; // last chunk
+        }
+        let take = size.min(data.len());
+        out.extend_from_slice(&data[..take]);
+        data = &data[take..];
+        if data.starts_with(b"\r\n") {
+            data = &data[2..]; // CRLF trailing the chunk data
+        }
+    }
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dechunk_reassembles_multiple_chunks() {
+        // "{\"a\":1}" split as 3 + 4 bytes, then a zero terminator.
+        let raw = b"3\r\n{\"a\r\n4\r\n\":1}\r\n0\r\n\r\n";
+        assert_eq!(dechunk(raw), b"{\"a\":1}");
+    }
+
+    #[test]
+    fn dechunk_preserves_multibyte_utf8_across_the_boundary() {
+        // The payload is `{"r":"✓"}` — the ✓ is 3 bytes; a chunk size counts
+        // bytes, so splitting mid-string must not corrupt the character.
+        let payload = "{\"r\":\"✓ ok\"}".as_bytes();
+        let (a, b) = payload.split_at(6); // splits inside the multibyte region
+        let mut raw = Vec::new();
+        raw.extend_from_slice(format!("{:x}\r\n", a.len()).as_bytes());
+        raw.extend_from_slice(a);
+        raw.extend_from_slice(b"\r\n");
+        raw.extend_from_slice(format!("{:x}\r\n", b.len()).as_bytes());
+        raw.extend_from_slice(b);
+        raw.extend_from_slice(b"\r\n0\r\n\r\n");
+        let decoded = dechunk(&raw);
+        assert_eq!(decoded, payload);
+        // And the reassembled bytes parse as the JSON we started with.
+        let value: Value = serde_json::from_slice(&decoded).unwrap();
+        assert_eq!(value["r"], "✓ ok");
+    }
+
+    #[test]
+    fn dechunk_tolerates_a_truncated_tail() {
+        // Missing the terminating zero-chunk: return what decoded cleanly.
+        let raw = b"5\r\nhello\r\n";
+        assert_eq!(dechunk(raw), b"hello");
+    }
 }
