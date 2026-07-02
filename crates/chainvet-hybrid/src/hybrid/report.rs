@@ -118,7 +118,7 @@ impl HybridFindingRow {
             // (e.g. aggregate findings like reentrancy).
             let function_id = extract_function_id_from_message(&finding.message);
             let function_span = function_id
-                .and_then(|id| ast.functions.get(id as usize))
+                .and_then(|id| ast.functions.iter().find(|f| f.id == id))
                 .map(|function| function.span);
             let loc = finding.span.or(function_span);
             rows.push(Self {
@@ -220,10 +220,12 @@ pub fn print_hybrid_report(report: &HybridJsonReport, format: OutputFormat) -> R
     }
 }
 
+/// Pull the function id out of an oracle message. The id follows the word
+/// `function` (e.g. "... in function 1 —"); parsing the first digit run instead
+/// wrongly grabs numbers from IR temp names like `$t3`.
 fn extract_function_id_from_message(message: &str) -> Option<u32> {
-    let digits = message
-        .split(|ch: char| !ch.is_ascii_digit())
-        .find(|part| !part.is_empty())?;
+    let after = message.split_once("function ")?.1;
+    let digits: String = after.chars().take_while(|c| c.is_ascii_digit()).collect();
     digits.parse().ok()
 }
 

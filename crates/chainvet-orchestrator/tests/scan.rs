@@ -12,10 +12,10 @@ const REENTRANCY: &str = concat!(
 fn hybrid_scan_matches_cli_finding_count() {
     let r = scan_path(REENTRANCY, ScanMode::Hybrid, &HybridBudget::default()).unwrap();
     assert!(r.hybrid.is_some(), "hybrid mode carries run telemetry");
-    // The CLI's `--hybrid --json` reports 24 deduplicated findings on this fixture.
+    // The CLI's `--hybrid --json` reports 23 deduplicated findings on this fixture.
     assert_eq!(
         r.findings.len(),
-        24,
+        23,
         "orchestrator hybrid findings must match the CLI"
     );
 }
