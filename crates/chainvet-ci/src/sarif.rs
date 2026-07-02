@@ -75,13 +75,21 @@ pub fn to_sarif(result: &ScanResult) -> Value {
     })
 }
 
+/// Make a path repo-relative when possible. GitHub code scanning maps artifact
+/// URIs against the repository root, so absolute paths (e.g. the runner's
+/// checkout dir) don't resolve to files.
+fn relativize(path: &str) -> String {
+    use std::path::Path;
+    if let Ok(cwd) = std::env::current_dir()
+        && let Ok(rel) = Path::new(path).strip_prefix(&cwd)
+    {
+        return rel.to_string_lossy().into_owned();
+    }
+    path.to_string()
+}
+
 fn result_for(f: &ScanFinding, sources: &HashMap<String, String>) -> Value {
-    let line = match (&f.file, f.start) {
-        (Some(path), Some(start)) => sources.get(path).map(|c| line_of(c, start)).unwrap_or(1),
-        _ => 1,
-    };
-    let uri = f.file.clone().unwrap_or_default();
-    json!({
+    let mut result = json!({
         "ruleId": f.kind,
         "level": level_for(f.severity.as_deref()),
         "message": { "text": f.message },
@@ -90,12 +98,64 @@ fn result_for(f: &ScanFinding, sources: &HashMap<String, String>) -> Value {
             "provenance": f.provenance,
             "category": f.category,
             "severity": f.severity,
-        },
-        "locations": [{
+        }
+    });
+
+    // Only attach a location when the finding has a file. GitHub rejects the whole
+    // SARIF if any result carries a location with an empty/missing artifactLocation
+    // ("expected artifact location"); a result with no locations is valid.
+    if let Some(path) = &f.file {
+        let line = f
+            .start
+            .and_then(|start| sources.get(path).map(|c| line_of(c, start)))
+            .unwrap_or(1);
+        result["locations"] = json!([{
             "physicalLocation": {
-                "artifactLocation": { "uri": uri },
+                "artifactLocation": { "uri": relativize(path) },
                 "region": { "startLine": line }
             }
-        }]
-    })
+        }]);
+    }
+    result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chainvet_orchestrator::ScanFinding;
+
+    fn finding(file: Option<&str>) -> ScanFinding {
+        ScanFinding {
+            tier: "candidate".to_string(),
+            provenance: "static".to_string(),
+            provenances: Vec::new(),
+            kind: "reentrancy".to_string(),
+            severity: Some("high".to_string()),
+            confidence: None,
+            category: Some("Reentrancy".to_string()),
+            message: "example".to_string(),
+            function_id: None,
+            file: file.map(String::from),
+            start: Some(0),
+            end: None,
+        }
+    }
+
+    // GitHub rejects the whole SARIF ("expected artifact location") if a result
+    // carries a location with no artifactLocation URI — so a file-less finding
+    // must omit `locations` entirely rather than emit an empty URI.
+    #[test]
+    fn file_less_finding_has_no_locations() {
+        let r = result_for(&finding(None), &HashMap::new());
+        assert!(r.get("locations").is_none());
+    }
+
+    #[test]
+    fn finding_with_file_emits_a_location_uri() {
+        let r = result_for(&finding(Some("contracts/A.sol")), &HashMap::new());
+        assert_eq!(
+            r["locations"][0]["physicalLocation"]["artifactLocation"]["uri"],
+            "contracts/A.sol"
+        );
+    }
 }
