@@ -33,15 +33,19 @@ pub fn to_sarif(result: &ScanResult) -> Value {
         }
     }
 
+    // Code scanning requires every result to be anchored to a file location, so
+    // drop findings that have no file — they can't be represented in SARIF, and
+    // GitHub rejects the whole document otherwise ("expected at least one location").
     let results: Vec<Value> = result
         .findings
         .iter()
+        .filter(|f| f.file.is_some())
         .map(|f| result_for(f, &sources))
         .collect();
 
-    // One rule per distinct finding kind.
+    // One rule per distinct finding kind (of the findings we keep).
     let mut seen = HashMap::new();
-    for f in &result.findings {
+    for f in result.findings.iter().filter(|f| f.file.is_some()) {
         seen.entry(f.kind.clone()).or_insert_with(|| {
             f.category
                 .clone()
@@ -122,7 +126,7 @@ fn result_for(f: &ScanFinding, sources: &HashMap<String, String>) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chainvet_orchestrator::ScanFinding;
+    use chainvet_orchestrator::{ScanFinding, ScanMode, ScanResult};
 
     fn finding(file: Option<&str>) -> ScanFinding {
         ScanFinding {
@@ -157,5 +161,32 @@ mod tests {
             r["locations"][0]["physicalLocation"]["artifactLocation"]["uri"],
             "contracts/A.sol"
         );
+    }
+
+    #[test]
+    fn to_sarif_drops_file_less_findings_and_keeps_locations() {
+        let result = ScanResult {
+            mode: ScanMode::Static,
+            findings: vec![
+                finding(None),
+                finding(Some("contracts/A.sol")),
+                finding(None),
+            ],
+            hybrid: None,
+        };
+        let sarif = to_sarif(&result);
+        let results = sarif["runs"][0]["results"].as_array().unwrap();
+        assert_eq!(results.len(), 1, "file-less findings must be dropped");
+        for r in results {
+            let locs = r["locations"]
+                .as_array()
+                .expect("every result needs locations");
+            assert!(!locs.is_empty(), "every result needs >= 1 location");
+            let uri = locs[0]["physicalLocation"]["artifactLocation"]["uri"].as_str();
+            assert!(
+                uri.is_some_and(|u| !u.is_empty()),
+                "location needs a non-empty uri"
+            );
+        }
     }
 }
