@@ -22,8 +22,36 @@ use chainvet_orchestrator::{HybridBudget, ScanMode, ScanResult, scan_path};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
+/// Handle `-V`/`--version` and `-h`/`--help` before starting the runtime.
+/// Returns `true` if the process should exit immediately.
+fn handled_cli_flag() -> bool {
+    for arg in std::env::args().skip(1) {
+        match arg.as_str() {
+            "-V" | "--version" => {
+                println!("chainvet-server {}", env!("CARGO_PKG_VERSION"));
+                return true;
+            }
+            "-h" | "--help" => {
+                println!(
+                    "chainvet-server {} — REST API over the Chainvet analyzer.\n\n\
+                     Configuration is via environment variables:\n  \
+                     CHAINVET_SERVER_ADDR   listen address (default 127.0.0.1:8080)\n  \
+                     CHAINVET_SERVER_ROOT   directory scans are resolved against (default: cwd)",
+                    env!("CARGO_PKG_VERSION")
+                );
+                return true;
+            }
+            _ => {}
+        }
+    }
+    false
+}
+
 #[tokio::main]
 async fn main() {
+    if handled_cli_flag() {
+        return;
+    }
     let root = std::env::var("CHAINVET_SERVER_ROOT")
         .map(PathBuf::from)
         .unwrap_or_else(|_| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));

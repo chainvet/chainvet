@@ -68,9 +68,13 @@ chainvet scan <path.sol>               # hybrid analysis (the default mode)
 chainvet scan -m static <path.sol>     # one engine: static | symbolic | fuzzing | hybrid
 chainvet scan -f json <path.sol>       # machine-readable output
 chainvet scan -s high <path.sol>       # only findings at/above a severity
+chainvet scan -c confirmed <path.sol>  # only findings at/above a confidence tier
 chainvet scan -o report.txt <path.sol> # write the report to a file
 chainvet ir <path.sol> -f text         # inspect the IR (text | json | tuple)
 ```
+
+Confidence tiers: `candidate` is a static-only heuristic detection; `confirmed`
+was corroborated by symbolic/fuzz execution.
 
 The human report is colored and tabular on a terminal (auto-plain when piped or
 under `NO_COLOR`; force off with `--no-color`). Run `chainvet scan --help` for
@@ -84,8 +88,10 @@ chainvet-ci contracts/ --mode hybrid --fail-on high --sarif chainvet.sarif
 ```
 
 Emits a SARIF 2.1.0 report and exits non-zero when a finding meets `--fail-on`
-(`high`/`medium`/`low`/`none`). See **chainvet-action** for a ready-made GitHub
-workflow that uploads the SARIF to code scanning.
+(`high`/`medium`/`low`/`none`). Add `--fail-on-confidence confirmed` to gate only
+on execution-corroborated findings and let static-only candidates through. See
+**chainvet-action** for a ready-made GitHub workflow that uploads the SARIF to
+code scanning.
 
 ### Server (REST)
 

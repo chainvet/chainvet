@@ -235,8 +235,34 @@ fn write_temp(source: &str) -> std::io::Result<String> {
     Ok(path.to_string_lossy().into_owned())
 }
 
+/// Handle `-V`/`--version` and `-h`/`--help` before speaking LSP on stdio.
+/// Returns `true` if the process should exit immediately.
+fn handled_cli_flag() -> bool {
+    for arg in std::env::args().skip(1) {
+        match arg.as_str() {
+            "-V" | "--version" => {
+                println!("chainvet-lsp {}", env!("CARGO_PKG_VERSION"));
+                return true;
+            }
+            "-h" | "--help" => {
+                println!(
+                    "chainvet-lsp {} — Chainvet language server (LSP over stdio).\n\n\
+                     Takes no arguments; launch it from your editor's LSP client.",
+                    env!("CARGO_PKG_VERSION")
+                );
+                return true;
+            }
+            _ => {}
+        }
+    }
+    false
+}
+
 #[tokio::main]
 async fn main() {
+    if handled_cli_flag() {
+        return;
+    }
     let stdin = tokio::io::stdin();
     let stdout = tokio::io::stdout();
     let (service, socket) = LspService::new(|client| Backend { client });

@@ -13,7 +13,7 @@ use chainvet_orchestrator::{ScanFinding, ScanMode, ScanResult};
 use comfy_table::{Cell, Color, ContentArrangement, Table};
 use owo_colors::OwoColorize;
 
-use crate::{Format, ScanArgs, Severity};
+use crate::{Confidence, Format, ScanArgs, Severity};
 
 pub fn render(result: &ScanResult, args: &ScanArgs) -> Result<()> {
     match args.format {
@@ -44,12 +44,14 @@ fn render_pretty(result: &ScanResult, args: &ScanArgs) -> Result<()> {
         print_banner(&args.path, result.mode, banner_color);
     }
 
-    // Filter is a display concern (JSON stays complete for tooling parity).
+    // Filters are a display concern (JSON stays complete for tooling parity).
     let min = args.min_severity.map(sev_rank_enum).unwrap_or(0);
+    let min_tier = args.min_confidence.map(tier_rank_enum).unwrap_or(0);
     let mut findings: Vec<&ScanFinding> = result
         .findings
         .iter()
         .filter(|f| sev_rank(f.severity.as_deref()) >= min)
+        .filter(|f| tier_rank(&f.tier) >= min_tier)
         .collect();
     findings.sort_by(|a, b| {
         sev_rank(b.severity.as_deref())
@@ -206,6 +208,21 @@ fn sev_rank_enum(sev: Severity) -> u8 {
         Severity::High => 3,
         Severity::Medium => 2,
         Severity::Low => 1,
+    }
+}
+
+/// Confidence-tier rank: `confirmed` (2) outranks `candidate` (1); unknown → 1.
+fn tier_rank(tier: &str) -> u8 {
+    match tier {
+        "confirmed" => 2,
+        _ => 1, // candidate + unknown
+    }
+}
+
+fn tier_rank_enum(tier: Confidence) -> u8 {
+    match tier {
+        Confidence::Confirmed => 2,
+        Confidence::Candidate => 1,
     }
 }
 
