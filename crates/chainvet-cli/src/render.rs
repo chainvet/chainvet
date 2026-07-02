@@ -45,13 +45,29 @@ fn render_pretty(result: &ScanResult, args: &ScanArgs) -> Result<()> {
     }
 
     // Filters are a display concern (JSON stays complete for tooling parity).
+    // An exact `--severity`/`--confidence` set (when given) takes precedence over
+    // the `--min-*` floor for that axis; clap already forbids passing both.
     let min = args.min_severity.map(sev_rank_enum).unwrap_or(0);
     let min_tier = args.min_confidence.map(tier_rank_enum).unwrap_or(0);
     let mut findings: Vec<&ScanFinding> = result
         .findings
         .iter()
-        .filter(|f| sev_rank(f.severity.as_deref()) >= min)
-        .filter(|f| tier_rank(&f.tier) >= min_tier)
+        .filter(|f| {
+            let r = sev_rank(f.severity.as_deref());
+            if args.severity.is_empty() {
+                r >= min
+            } else {
+                args.severity.iter().any(|s| sev_rank_enum(*s) == r)
+            }
+        })
+        .filter(|f| {
+            let r = tier_rank(&f.tier);
+            if args.confidence.is_empty() {
+                r >= min_tier
+            } else {
+                args.confidence.iter().any(|c| tier_rank_enum(*c) == r)
+            }
+        })
         .collect();
     findings.sort_by(|a, b| {
         sev_rank(b.severity.as_deref())

@@ -38,13 +38,33 @@ pub struct ScanArgs {
     pub output: Option<String>,
 
     /// Only report findings at or above this severity.
-    #[arg(short = 's', long, value_enum, value_name = "SEVERITY")]
+    #[arg(
+        short = 's',
+        long,
+        value_enum,
+        value_name = "SEVERITY",
+        conflicts_with = "severity"
+    )]
     pub min_severity: Option<Severity>,
+
+    /// Only report findings of exactly this severity (repeatable).
+    #[arg(long, value_enum, value_name = "SEVERITY")]
+    pub severity: Vec<Severity>,
 
     /// Only report findings at or above this confidence tier
     /// (candidate = static heuristic; confirmed = corroborated by execution).
-    #[arg(short = 'c', long, value_enum, value_name = "TIER")]
+    #[arg(
+        short = 'c',
+        long,
+        value_enum,
+        value_name = "TIER",
+        conflicts_with = "confidence"
+    )]
     pub min_confidence: Option<Confidence>,
+
+    /// Only report findings of exactly this confidence tier (repeatable).
+    #[arg(long, value_enum, value_name = "TIER")]
+    pub confidence: Vec<Confidence>,
 
     /// Suppress the banner.
     #[arg(short, long)]

@@ -67,14 +67,17 @@ binary is just `chainvet`); plain `cargo build --release` builds all four.
 chainvet scan <path.sol>               # hybrid analysis (the default mode)
 chainvet scan -m static <path.sol>     # one engine: static | symbolic | fuzzing | hybrid
 chainvet scan -f json <path.sol>       # machine-readable output
-chainvet scan -s high <path.sol>       # only findings at/above a severity
-chainvet scan -c confirmed <path.sol>  # only findings at/above a confidence tier
+chainvet scan -s high <path.sol>       # findings at/above a severity (floor)
+chainvet scan --severity medium <path> # findings of exactly a severity (repeatable)
+chainvet scan -c confirmed <path.sol>  # findings at/above a confidence tier (floor)
+chainvet scan --confidence candidate . # findings of exactly a tier (repeatable)
 chainvet scan -o report.txt <path.sol> # write the report to a file
 chainvet ir <path.sol> -f text         # inspect the IR (text | json | tuple)
 ```
 
 Confidence tiers: `candidate` is a static-only heuristic detection; `confirmed`
-was corroborated by symbolic/fuzz execution.
+was corroborated by symbolic/fuzz execution. The `--min-*` floors and the exact
+`--severity`/`--confidence` filters are mutually exclusive per axis.
 
 The human report is colored and tabular on a terminal (auto-plain when piped or
 under `NO_COLOR`; force off with `--no-color`). Run `chainvet scan --help` for
