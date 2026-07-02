@@ -101,20 +101,29 @@ fn result_for(
     // Precise location from the finding's own file+offset; otherwise the fallback
     // file at line 1. `None` only when the finding has no file and no fallback
     // exists (would break the SARIF, so it's skipped — extremely rare).
-    let (uri, line) = match &f.file {
+    let (uri, line, message) = match &f.file {
         Some(path) => {
             let line = f
                 .start
                 .and_then(|start| sources.get(path).map(|c| line_of(c, start)))
                 .unwrap_or(1);
-            (relativize(path), line)
+            (relativize(path), line, f.message.clone())
         }
-        None => (relativize(fallback?), 1),
+        // No source line: anchor at the fallback file, line 1, and say so in the
+        // message so the line-1 anchor isn't mistaken for a precise location.
+        None => (
+            relativize(fallback?),
+            1,
+            format!(
+                "{} — file-level finding (no specific source line)",
+                f.message
+            ),
+        ),
     };
     Some(json!({
         "ruleId": f.kind,
         "level": level_for(f.severity.as_deref()),
-        "message": { "text": f.message },
+        "message": { "text": message },
         "properties": {
             "tier": f.tier,
             "provenance": f.provenance,
@@ -164,6 +173,13 @@ mod tests {
         assert_eq!(
             r["locations"][0]["physicalLocation"]["region"]["startLine"],
             1
+        );
+        // the message must flag that this is a file-level (line-less) finding
+        assert!(
+            r["message"]["text"]
+                .as_str()
+                .unwrap()
+                .contains("file-level")
         );
     }
 
