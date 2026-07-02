@@ -33,19 +33,20 @@ pub fn to_sarif(result: &ScanResult) -> Value {
         }
     }
 
-    // Code scanning requires every result to be anchored to a file location, so
-    // drop findings that have no file — they can't be represented in SARIF, and
-    // GitHub rejects the whole document otherwise ("expected at least one location").
+    // GitHub needs every result anchored to a file location. For findings with no
+    // file of their own (contract-level invariants like public-mint-burn), fall
+    // back to the first file any finding references, at line 1 — so nothing is
+    // dropped. A result is skipped only when NO finding has any file (degenerate).
+    let fallback = result.findings.iter().find_map(|f| f.file.clone());
     let results: Vec<Value> = result
         .findings
         .iter()
-        .filter(|f| f.file.is_some())
-        .map(|f| result_for(f, &sources))
+        .filter_map(|f| result_for(f, &sources, fallback.as_deref()))
         .collect();
 
-    // One rule per distinct finding kind (of the findings we keep).
+    // One rule per distinct finding kind.
     let mut seen = HashMap::new();
-    for f in result.findings.iter().filter(|f| f.file.is_some()) {
+    for f in &result.findings {
         seen.entry(f.kind.clone()).or_insert_with(|| {
             f.category
                 .clone()
@@ -92,8 +93,25 @@ fn relativize(path: &str) -> String {
     path.to_string()
 }
 
-fn result_for(f: &ScanFinding, sources: &HashMap<String, String>) -> Value {
-    let mut result = json!({
+fn result_for(
+    f: &ScanFinding,
+    sources: &HashMap<String, String>,
+    fallback: Option<&str>,
+) -> Option<Value> {
+    // Precise location from the finding's own file+offset; otherwise the fallback
+    // file at line 1. `None` only when the finding has no file and no fallback
+    // exists (would break the SARIF, so it's skipped — extremely rare).
+    let (uri, line) = match &f.file {
+        Some(path) => {
+            let line = f
+                .start
+                .and_then(|start| sources.get(path).map(|c| line_of(c, start)))
+                .unwrap_or(1);
+            (relativize(path), line)
+        }
+        None => (relativize(fallback?), 1),
+    };
+    Some(json!({
         "ruleId": f.kind,
         "level": level_for(f.severity.as_deref()),
         "message": { "text": f.message },
@@ -102,25 +120,14 @@ fn result_for(f: &ScanFinding, sources: &HashMap<String, String>) -> Value {
             "provenance": f.provenance,
             "category": f.category,
             "severity": f.severity,
-        }
-    });
-
-    // Only attach a location when the finding has a file. GitHub rejects the whole
-    // SARIF if any result carries a location with an empty/missing artifactLocation
-    // ("expected artifact location"); a result with no locations is valid.
-    if let Some(path) = &f.file {
-        let line = f
-            .start
-            .and_then(|start| sources.get(path).map(|c| line_of(c, start)))
-            .unwrap_or(1);
-        result["locations"] = json!([{
+        },
+        "locations": [{
             "physicalLocation": {
-                "artifactLocation": { "uri": relativize(path) },
+                "artifactLocation": { "uri": uri },
                 "region": { "startLine": line }
             }
-        }]);
-    }
-    result
+        }]
+    }))
 }
 
 #[cfg(test)]
@@ -145,18 +152,29 @@ mod tests {
         }
     }
 
-    // GitHub rejects the whole SARIF ("expected artifact location") if a result
-    // carries a location with no artifactLocation URI — so a file-less finding
-    // must omit `locations` entirely rather than emit an empty URI.
+    // A file-less finding borrows the fallback file at line 1 (never dropped when
+    // a fallback exists) — GitHub needs >= 1 location with a non-empty URI.
     #[test]
-    fn file_less_finding_has_no_locations() {
-        let r = result_for(&finding(None), &HashMap::new());
-        assert!(r.get("locations").is_none());
+    fn file_less_finding_uses_fallback_location() {
+        let r = result_for(&finding(None), &HashMap::new(), Some("contracts/A.sol")).unwrap();
+        assert_eq!(
+            r["locations"][0]["physicalLocation"]["artifactLocation"]["uri"],
+            "contracts/A.sol"
+        );
+        assert_eq!(
+            r["locations"][0]["physicalLocation"]["region"]["startLine"],
+            1
+        );
+    }
+
+    #[test]
+    fn file_less_finding_without_fallback_is_skipped() {
+        assert!(result_for(&finding(None), &HashMap::new(), None).is_none());
     }
 
     #[test]
     fn finding_with_file_emits_a_location_uri() {
-        let r = result_for(&finding(Some("contracts/A.sol")), &HashMap::new());
+        let r = result_for(&finding(Some("contracts/A.sol")), &HashMap::new(), None).unwrap();
         assert_eq!(
             r["locations"][0]["physicalLocation"]["artifactLocation"]["uri"],
             "contracts/A.sol"
@@ -164,7 +182,7 @@ mod tests {
     }
 
     #[test]
-    fn to_sarif_drops_file_less_findings_and_keeps_locations() {
+    fn to_sarif_keeps_all_findings_and_locates_them() {
         let result = ScanResult {
             mode: ScanMode::Static,
             findings: vec![
@@ -176,7 +194,11 @@ mod tests {
         };
         let sarif = to_sarif(&result);
         let results = sarif["runs"][0]["results"].as_array().unwrap();
-        assert_eq!(results.len(), 1, "file-less findings must be dropped");
+        assert_eq!(
+            results.len(),
+            3,
+            "nothing dropped when a fallback file exists"
+        );
         for r in results {
             let locs = r["locations"]
                 .as_array()
