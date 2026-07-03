@@ -50,7 +50,7 @@ Test fixtures live in `crates/chainvet-cli/tests/fixtures/` (e.g. `vuln_reentran
 
 ### AI features
 
-`chainvet-ai` is a transport-only Ollama client (raw TCP, no HTTP dep). Both AI features are opt-in env vars and no-ops by default: `CHAINVET_AI_FALLBACK_PARSER` (frontend) and `CHAINVET_AI_REPORT` (orchestrator). Endpoint/model via `CHAINVET_AI_ENDPOINT`/`CHAINVET_AI_MODEL`.
+`chainvet-llm` is a transport-only LLM client (raw TCP, no HTTP dep). It's provider-agnostic: consumers depend on the `LlmProvider` trait, with `providers::ollama` the only implementation wired up today (add a provider by dropping a module under `providers/` that reuses the shared `http` transport). Both AI features are opt-in env vars and no-ops by default: `CHAINVET_LLM_FALLBACK_PARSER` (frontend) and `CHAINVET_LLM_REPORT` (orchestrator). Endpoint/model via `CHAINVET_LLM_ENDPOINT`/`CHAINVET_LLM_MODEL`.
 
 ## Conventions
 

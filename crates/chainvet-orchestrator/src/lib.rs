@@ -82,7 +82,7 @@ pub fn scan(output: &FrontendOutput, mode: ScanMode, budget: &HybridBudget) -> R
         findings,
         hybrid,
     };
-    // Optional AI review of findings (opt-in via CHAINVET_AI_REPORT; no-op otherwise).
+    // Optional AI review of findings (opt-in via CHAINVET_LLM_REPORT; no-op otherwise).
     ai_report::enhance(&mut result);
     Ok(result)
 }
