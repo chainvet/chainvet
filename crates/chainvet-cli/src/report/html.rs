@@ -153,7 +153,7 @@ pub fn render_html(report: &AuditReport) -> String {
     if !findings.is_empty() {
         section(&mut w, "Issues Found", |w| {
             let _ = w.write_str(
-                "<table><thead><tr><th>ID</th><th>Severity</th><th>Title</th><th>Location</th>\
+                "<table class=\"issues\"><thead><tr><th>ID</th><th>Severity</th><th>Title</th><th>Location</th>\
                  </tr></thead><tbody>",
             );
             for (idx, f) in findings.iter().enumerate() {
@@ -286,55 +286,62 @@ html{background:var(--base);-webkit-print-color-adjust:exact;print-color-adjust:
 body{margin:0 auto;background:var(--base);color:var(--text);
 font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
 max-width:900px;padding:40px 48px 56px}
-h1,h2,h3,h4,h5{color:var(--text);line-height:1.25}
-h2{font-size:1.5rem;margin:2.4rem 0 .8rem;padding-bottom:.4rem;border-bottom:1px solid var(--s2)}
-h3{font-size:1.2rem;color:var(--lav);margin:1.8rem 0 .6rem}
-h4{font-size:1.05rem;margin:0 0 .8rem}
-h5{font-size:.82rem;text-transform:uppercase;letter-spacing:.05em;color:var(--lav);margin:1.1rem 0 .3rem}
+h1,h2,h3,h4,h5{color:var(--text);line-height:1.2}
+h2{font-size:1.35rem;margin:1.5rem 0 .5rem;padding-bottom:.25rem;border-bottom:1px solid var(--s2)}
+h3{font-size:1.1rem;color:var(--lav);margin:1.1rem 0 .4rem}
+h4{font-size:1rem;margin:0 0 .5rem}
+h5{font-size:.8rem;text-transform:uppercase;letter-spacing:.05em;color:var(--lav);margin:.7rem 0 .2rem}
 a{color:var(--blue)}
 code{font-family:"SF Mono",ui-monospace,Menlo,Consolas,monospace;font-size:.86em;
 background:var(--crust);padding:.1em .35em;border-radius:4px;color:var(--sub1)}
-pre{background:var(--crust);border:1px solid var(--s0);border-radius:8px;padding:14px 16px;
-overflow-x:auto}
-pre code{background:none;padding:0;color:var(--sub1);font-size:.82rem;line-height:1.5}
-p{margin:.5rem 0}
+pre{background:var(--crust);border:1px solid var(--s0);border-radius:8px;padding:10px 12px;
+margin:.4rem 0;overflow-x:auto}
+pre code{background:none;padding:0;color:var(--sub1);font-size:.78rem;line-height:1.4}
+p{margin:.3rem 0}
 .muted{color:var(--ov0)}
-.cover{text-align:left;padding:3rem 0 2rem;border-bottom:2px solid var(--s0);margin-bottom:1rem}
-.cover .logo{max-width:280px;margin-bottom:1.5rem}
+.cover{text-align:left;padding:1.5rem 0;border-bottom:2px solid var(--s0);margin-bottom:.8rem}
+.cover .logo{max-width:240px;margin-bottom:1rem}
 .cover .logo svg{width:100%;height:auto}
-.cover h1{font-size:2.6rem;margin:0}
-.cover .project{font-size:1.3rem;color:var(--sub1);margin:.3rem 0 0}
-.cover .subtitle{color:var(--sub0);margin:.2rem 0 1.4rem}
+.cover h1{font-size:2.2rem;margin:0}
+.cover .project{font-size:1.2rem;color:var(--sub1);margin:.3rem 0 0}
+.cover .subtitle{color:var(--sub0);margin:.15rem 0 1.1rem}
 .target{background:var(--s0);border:1px solid var(--s2);border-radius:10px;padding:14px 18px;
 display:grid;grid-template-columns:auto 1fr;gap:.4rem 1rem;align-items:center;max-width:640px}
 .tlabel{font-size:.7rem;font-weight:700;letter-spacing:.08em;color:var(--lav)}
-table{width:100%;border-collapse:collapse;margin:.6rem 0;font-size:.92rem}
-th,td{text-align:left;padding:.5rem .7rem;border-bottom:1px solid var(--s0);vertical-align:top;
+table{width:100%;border-collapse:collapse;margin:.4rem 0;font-size:.9rem}
+th,td{text-align:left;padding:.4rem .6rem;border-bottom:1px solid var(--s0);vertical-align:top;
 overflow-wrap:anywhere}
 td code,.meta dd{overflow-wrap:anywhere;word-break:break-word}
 th{color:var(--sub0);font-weight:600}
+td code{font-size:.82em}
 .badge{display:inline-block;padding:.15em .6em;border-radius:999px;font-size:.78rem;font-weight:700;
 color:var(--crust);white-space:nowrap}
-/* Keep the narrow index columns on one line; let Title/Location take the slack. */
-table td:first-child,table td:nth-child(2),table th:first-child,table th:nth-child(2){white-space:nowrap}
-td code{font-size:.8em}
+/* Issues table: fixed layout with a generous Location column so long paths wrap
+   inside the column (never a char early) and the index columns stay on one line. */
+table.issues{table-layout:fixed}
+table.issues th:nth-child(1){width:8%}table.issues th:nth-child(2){width:13%}
+table.issues th:nth-child(3){width:41%}table.issues th:nth-child(4){width:38%}
+table.issues td:first-child,table.issues td:nth-child(2),
+table.issues th:first-child,table.issues th:nth-child(2){white-space:nowrap}
 .badge.high{background:var(--red)}.badge.medium{background:var(--peach)}
 .badge.low{background:var(--yellow)}.badge.informational{background:var(--sky)}
-.cards{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:1rem 0}
-.card{background:var(--s0);border:1px solid var(--s2);border-radius:10px;padding:14px;
-text-align:center;display:flex;flex-direction:column;gap:.2rem}
-.card .n{font-size:1.8rem;font-weight:800}
+.cards{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:.7rem 0}
+.card{background:var(--s0);border:1px solid var(--s2);border-radius:10px;padding:10px;
+text-align:center;display:flex;flex-direction:column;gap:.15rem}
+.card .n{font-size:1.6rem;font-weight:800}
 .card.high .n{color:var(--red)}.card.medium .n{color:var(--peach)}
 .card.low .n{color:var(--yellow)}.card.informational .n{color:var(--sky)}
-.finding{background:var(--mantle);border:1px solid var(--s0);border-left:5px solid var(--s2);
-border-radius:8px;padding:16px 20px;margin:1rem 0;break-inside:avoid}
+.finding{background:var(--mantle);border:1px solid var(--s0);border-left:4px solid var(--s2);
+border-radius:8px;padding:12px 16px;margin:.7rem 0}
 .finding.high{border-left-color:var(--red)}.finding.medium{border-left-color:var(--peach)}
 .finding.low{border-left-color:var(--yellow)}.finding.informational{border-left-color:var(--sky)}
-.meta{display:grid;grid-template-columns:auto 1fr;gap:.15rem .8rem;margin:0 0 .6rem;font-size:.88rem}
+.meta{display:grid;grid-template-columns:auto 1fr;gap:.1rem .8rem;margin:0 0 .4rem;font-size:.86rem}
 .meta dt{color:var(--sub0);font-weight:600}
 .meta dd{margin:0}
-footer{margin-top:3rem;padding-top:1rem;border-top:1px solid var(--s0);color:var(--ov0);font-size:.85rem}
+footer{margin-top:1.5rem;padding-top:.8rem;border-top:1px solid var(--s0);color:var(--ov0);font-size:.82rem}
+/* Let long findings flow across pages (avoids big end-of-page gaps); keep code
+   blocks, cards, and individual rows from splitting. */
 @media print{*{-webkit-print-color-adjust:exact;print-color-adjust:exact}
 html,body{background:var(--base)}
-.finding,table,pre,.card{break-inside:avoid}}
+pre,.card,tr{break-inside:avoid}}
 "#;
