@@ -268,7 +268,18 @@ pub(crate) fn finding_title(finding: &AuditFinding) -> String {
 }
 
 pub(crate) fn location_summary(finding: &AuditFinding) -> String {
-    let file = finding.file.as_deref().unwrap_or("<unknown>");
+    // Reference the file by name — the full path is stated once under Scope, and
+    // repeating an absolute path per finding bloats tables (and overflows in PDF).
+    let file = finding
+        .file
+        .as_deref()
+        .map(|path| {
+            std::path::Path::new(path)
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or(path)
+        })
+        .unwrap_or("<unknown>");
     let mut location = String::from(file);
     if let Some(function) = finding
         .function_name

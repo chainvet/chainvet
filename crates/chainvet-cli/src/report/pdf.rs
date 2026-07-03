@@ -17,6 +17,30 @@ use std::process::{Command, Stdio};
 
 use chainvet_core::util::error::{Error, Result};
 
+/// First PDF engine found on PATH, in order of preference (self-contained
+/// tectonic first, then LaTeX engines, then HTML-based ones).
+fn detect_pdf_engine() -> Option<String> {
+    [
+        "tectonic",
+        "xelatex",
+        "lualatex",
+        "pdflatex",
+        "weasyprint",
+        "wkhtmltopdf",
+        "context",
+    ]
+    .into_iter()
+    .find(|engine| on_path(engine))
+    .map(str::to_string)
+}
+
+/// Whether an executable of this name exists on PATH.
+fn on_path(name: &str) -> bool {
+    std::env::var_os("PATH")
+        .map(|paths| std::env::split_paths(&paths).any(|dir| dir.join(name).is_file()))
+        .unwrap_or(false)
+}
+
 /// Convert a Markdown report to a PDF at `output` by piping it through pandoc.
 pub fn write_pdf_via_pandoc(markdown: &str, output: &Path) -> Result<()> {
     let pandoc = std::env::var("CHAINVET_PANDOC").unwrap_or_else(|_| "pandoc".to_string());
@@ -28,9 +52,15 @@ pub fn write_pdf_via_pandoc(markdown: &str, output: &Path) -> Result<()> {
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    if let Ok(engine) = std::env::var("CHAINVET_PDF_ENGINE")
-        && !engine.trim().is_empty()
-    {
+    // Pandoc defaults to pdflatex; pick whatever engine is actually installed so
+    // `-f pdf` works without the user configuring anything. An explicit
+    // CHAINVET_PDF_ENGINE always wins; if nothing is found we let pandoc default
+    // and surface its error.
+    let engine = std::env::var("CHAINVET_PDF_ENGINE")
+        .ok()
+        .filter(|e| !e.trim().is_empty())
+        .or_else(detect_pdf_engine);
+    if let Some(engine) = engine {
         cmd.arg(format!("--pdf-engine={engine}"));
     }
 

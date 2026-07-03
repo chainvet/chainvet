@@ -277,10 +277,12 @@ const CSS: &str = r#"
 --text:#cdd6f4;--sub1:#bac2de;--sub0:#a6adc8;--ov0:#6c7086;--red:#f38ba8;--peach:#fab387;
 --yellow:#f9e2af;--green:#a6e3a1;--sky:#89dceb;--blue:#89b4fa;--mauve:#cba6f7;--lav:#b4befe}
 *{box-sizing:border-box}
-html{-webkit-print-color-adjust:exact;print-color-adjust:exact}
-body{margin:0;background:var(--base);color:var(--text);
+/* Background on <html> so the *whole* printed page is dark (body is only the
+   900px column); color-adjust:exact so Chromium/Safari print backgrounds. */
+html{background:var(--base);-webkit-print-color-adjust:exact;print-color-adjust:exact}
+body{margin:0 auto;background:var(--base);color:var(--text);
 font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
-max-width:900px;margin:0 auto;padding:0 32px 64px}
+max-width:900px;padding:0 32px 64px}
 h1,h2,h3,h4,h5{color:var(--text);line-height:1.25}
 h2{font-size:1.5rem;margin:2.4rem 0 .8rem;padding-bottom:.4rem;border-bottom:1px solid var(--s2)}
 h3{font-size:1.2rem;color:var(--lav);margin:1.8rem 0 .6rem}
@@ -324,5 +326,7 @@ border-radius:8px;padding:16px 20px;margin:1rem 0;break-inside:avoid}
 .meta dt{color:var(--sub0);font-weight:600}
 .meta dd{margin:0}
 footer{margin-top:3rem;padding-top:1rem;border-top:1px solid var(--s0);color:var(--ov0);font-size:.85rem}
-@media print{body{padding:0 12px}.finding,table,pre{break-inside:avoid}}
+@media print{*{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+html,body{background:var(--base)}body{padding:0 12px}
+.finding,table,pre,.card{break-inside:avoid}}
 "#;
