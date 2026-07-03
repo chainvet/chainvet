@@ -73,6 +73,7 @@ chainvet scan -c confirmed <path.sol>  # findings at/above a confidence tier (fl
 chainvet scan --confidence candidate . # findings of exactly a tier (repeatable)
 chainvet scan -f md -o audit.md <path> # Cyfrin-style audit report (Markdown)
 chainvet scan -f html -o audit.html .  # ...as a self-contained HTML page (print-to-PDF)
+chainvet scan -f pdf -o audit.pdf .    # ...as PDF (via a pandoc passthrough)
 chainvet scan -o report.txt <path.sol> # write the report to a file
 chainvet ir <path.sol> -f text         # inspect the IR (text | json | tuple)
 ```
@@ -80,6 +81,12 @@ chainvet ir <path.sol> -f text         # inspect the IR (text | json | tuple)
 Confidence tiers: `candidate` is a static-only heuristic detection; `confirmed`
 was corroborated by symbolic/fuzz execution. The `--min-*` floors and the exact
 `--severity`/`--confidence` filters are mutually exclusive per axis.
+
+Audit-report formats (`-f md`/`html`/`pdf`) render a Cyfrin-style report — protocol
+summary, disclaimer, risk classification, per-finding impact/PoC/mitigation. `pdf`
+is a `pandoc` passthrough, so it needs `pandoc` plus a PDF engine (`tectonic`,
+`xelatex`, or `weasyprint` via `CHAINVET_PDF_ENGINE`) on PATH; for a branded,
+dependency-free artifact, use `-f html` and "Print to PDF".
 
 The human report is colored and tabular on a terminal (auto-plain when piped or
 under `NO_COLOR`; force off with `--no-color`). Run `chainvet scan --help` for

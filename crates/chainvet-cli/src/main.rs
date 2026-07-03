@@ -145,6 +145,8 @@ pub enum Format {
     Md,
     /// Cyfrin-style audit report as a standalone HTML page.
     Html,
+    /// Audit report as PDF (renders Markdown and converts it via `pandoc`).
+    Pdf,
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
@@ -231,6 +233,16 @@ fn run_scan(args: ScanArgs) -> Result<()> {
                 _ => report::render_markdown(&audit),
             };
             write_report(&args.output, &text)
+        }
+        Format::Pdf => {
+            let audit = report::AuditReport::from_scan(&result, &output.ast, &args.path);
+            let markdown = report::render_markdown(&audit);
+            let out = args.output.as_deref().ok_or_else(|| {
+                chainvet_core::util::error::Error::msg(
+                    "`-f pdf` needs an output path — use `-o report.pdf`",
+                )
+            })?;
+            report::write_pdf_via_pandoc(&markdown, std::path::Path::new(out))
         }
         Format::Pretty | Format::Json => render::render(&result, &args),
     }

@@ -19,7 +19,7 @@ pub fn render(result: &ScanResult, args: &ScanArgs) -> Result<()> {
     match args.format {
         Format::Json => render_json(result),
         // Audit-report formats are handled by `report` before reaching here.
-        Format::Pretty | Format::Md | Format::Html => render_pretty(result, args),
+        Format::Pretty | Format::Md | Format::Html | Format::Pdf => render_pretty(result, args),
     }
 }
 

@@ -112,6 +112,17 @@ fn scan_html_report_is_self_contained() {
 }
 
 #[test]
+fn scan_pdf_requires_output_path() {
+    let out = run(&["scan", "-m", "hybrid", "-f", "pdf", REENTRANCY]);
+    assert!(!out.status.success(), "-f pdf without -o should fail");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("output path") || stderr.contains("-o"),
+        "error should name the missing output path:\n{stderr}",
+    );
+}
+
+#[test]
 fn ir_dump_exits_ok() {
     assert_ok(&run(&["ir", REENTRANCY, "-f", "text"]), "ir dump");
 }

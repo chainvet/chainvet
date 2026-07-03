@@ -10,6 +10,7 @@
 
 mod html;
 mod markdown;
+mod pdf;
 
 use std::collections::HashMap;
 
@@ -18,6 +19,7 @@ use chainvet_orchestrator::{ScanFinding, ScanMode, ScanResult};
 
 pub(crate) use html::render_html;
 pub(crate) use markdown::render_markdown;
+pub(crate) use pdf::write_pdf_via_pandoc;
 
 /// The full audit report, decoupled from the engines — built once, rendered many.
 #[derive(Debug, Clone)]
