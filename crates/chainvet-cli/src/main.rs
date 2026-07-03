@@ -143,6 +143,8 @@ pub enum Format {
     Json,
     /// Cyfrin-style audit report as Markdown.
     Md,
+    /// Cyfrin-style audit report as a standalone HTML page.
+    Html,
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
@@ -222,9 +224,12 @@ fn run_scan(args: ScanArgs) -> Result<()> {
     // Audit-report formats build a document from the result (+ AST for function
     // names) and honor `--output`; pretty/json stay on the standard renderer.
     match args.format {
-        Format::Md => {
+        Format::Md | Format::Html => {
             let audit = report::AuditReport::from_scan(&result, &output.ast, &args.path);
-            let text = report::render_markdown(&audit);
+            let text = match args.format {
+                Format::Html => report::render_html(&audit),
+                _ => report::render_markdown(&audit),
+            };
             write_report(&args.output, &text)
         }
         Format::Pretty | Format::Json => render::render(&result, &args),

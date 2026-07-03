@@ -8,6 +8,7 @@
 //! guidance/remediation content is a deterministic, curated library keyed by
 //! detector kind — no AI required.
 
+mod html;
 mod markdown;
 
 use std::collections::HashMap;
@@ -15,6 +16,7 @@ use std::collections::HashMap;
 use chainvet_core::norm::NormalizedAst;
 use chainvet_orchestrator::{ScanFinding, ScanMode, ScanResult};
 
+pub(crate) use html::render_html;
 pub(crate) use markdown::render_markdown;
 
 /// The full audit report, decoupled from the engines — built once, rendered many.

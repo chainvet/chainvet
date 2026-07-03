@@ -90,6 +90,28 @@ fn scan_markdown_report_has_audit_sections() {
 }
 
 #[test]
+fn scan_html_report_is_self_contained() {
+    let out = run(&["scan", "-m", "hybrid", "-f", "html", REENTRANCY]);
+    assert_ok(&out, "hybrid html report");
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        html.starts_with("<!DOCTYPE html>"),
+        "must be an HTML document"
+    );
+    for needle in ["</html>", "<style>", "<svg", "Recommended Mitigation"] {
+        assert!(html.contains(needle), "html report missing `{needle}`");
+    }
+    // Self-contained: no external fetches (an SVG xmlns is not a fetch, so we
+    // check for actual resource references rather than the bare scheme).
+    for external in ["<link", "src=\"http", "src=\"/", "@import"] {
+        assert!(
+            !html.contains(external),
+            "html report must not reference external resources (`{external}`)",
+        );
+    }
+}
+
+#[test]
 fn ir_dump_exits_ok() {
     assert_ok(&run(&["ir", REENTRANCY, "-f", "text"]), "ir dump");
 }
