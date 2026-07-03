@@ -277,12 +277,15 @@ const CSS: &str = r#"
 --text:#cdd6f4;--sub1:#bac2de;--sub0:#a6adc8;--ov0:#6c7086;--red:#f38ba8;--peach:#fab387;
 --yellow:#f9e2af;--green:#a6e3a1;--sky:#89dceb;--blue:#89b4fa;--mauve:#cba6f7;--lav:#b4befe}
 *{box-sizing:border-box}
-/* Background on <html> so the *whole* printed page is dark (body is only the
-   900px column); color-adjust:exact so Chromium/Safari print backgrounds. */
+/* Full-bleed dark page: zero page margin so the background reaches the paper
+   edge (weasyprint / print-to-PDF), with the reading inset applied on <body>. */
+@page{size:A4;margin:0}
+/* Background on <html> so the *whole* page is dark; color-adjust:exact so
+   browsers print the background instead of dropping it to white. */
 html{background:var(--base);-webkit-print-color-adjust:exact;print-color-adjust:exact}
 body{margin:0 auto;background:var(--base);color:var(--text);
 font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
-max-width:900px;padding:0 32px 64px}
+max-width:900px;padding:40px 48px 56px}
 h1,h2,h3,h4,h5{color:var(--text);line-height:1.25}
 h2{font-size:1.5rem;margin:2.4rem 0 .8rem;padding-bottom:.4rem;border-bottom:1px solid var(--s2)}
 h3{font-size:1.2rem;color:var(--lav);margin:1.8rem 0 .6rem}
@@ -311,7 +314,10 @@ overflow-wrap:anywhere}
 td code,.meta dd{overflow-wrap:anywhere;word-break:break-word}
 th{color:var(--sub0);font-weight:600}
 .badge{display:inline-block;padding:.15em .6em;border-radius:999px;font-size:.78rem;font-weight:700;
-color:var(--crust)}
+color:var(--crust);white-space:nowrap}
+/* Keep the narrow index columns on one line; let Title/Location take the slack. */
+table td:first-child,table td:nth-child(2),table th:first-child,table th:nth-child(2){white-space:nowrap}
+td code{font-size:.8em}
 .badge.high{background:var(--red)}.badge.medium{background:var(--peach)}
 .badge.low{background:var(--yellow)}.badge.informational{background:var(--sky)}
 .cards{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:1rem 0}
@@ -329,6 +335,6 @@ border-radius:8px;padding:16px 20px;margin:1rem 0;break-inside:avoid}
 .meta dd{margin:0}
 footer{margin-top:3rem;padding-top:1rem;border-top:1px solid var(--s0);color:var(--ov0);font-size:.85rem}
 @media print{*{-webkit-print-color-adjust:exact;print-color-adjust:exact}
-html,body{background:var(--base)}body{padding:0 12px}
+html,body{background:var(--base)}
 .finding,table,pre,.card{break-inside:avoid}}
 "#;

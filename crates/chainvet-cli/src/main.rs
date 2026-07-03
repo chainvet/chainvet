@@ -241,7 +241,7 @@ fn run_scan(args: ScanArgs) -> Result<()> {
                     "`-f pdf` needs an output path — use `-o report.pdf`",
                 )
             })?;
-            report::write_pdf_via_pandoc(&audit, std::path::Path::new(out))
+            report::write_pdf(&audit, std::path::Path::new(out))
         }
         Format::Pretty | Format::Json => render::render(&result, &args),
     }

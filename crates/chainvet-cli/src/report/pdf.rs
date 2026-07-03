@@ -1,19 +1,16 @@
-//! PDF output via a branded `pandoc` passthrough.
+//! PDF output by rendering the branded HTML report through an HTML→PDF engine.
 //!
-//! Rendering a real `.pdf` in-process (a bundled PDF engine + embedded fonts) is
-//! rare among analyzers and heavy to maintain; the common pattern — and what
-//! audit firms actually do — is to author Markdown and convert it with a LaTeX
-//! toolchain. So `-f pdf` renders the report body as Markdown and pipes it
-//! through `pandoc` with a shipped ChainVet LaTeX template (branded cover page,
-//! purple headings, breakable inline code). Requires `pandoc` plus a PDF engine.
-//! For a dependency-free artifact, `-f html` + "Print to PDF" also works.
+//! The report's brand look lives in the HTML/CSS (dark Catppuccin theme, severity
+//! badges, cards). To get a PDF that matches it we render that same HTML with a
+//! CSS-accurate engine — `weasyprint` (preferred) or `wkhtmltopdf` — rather than
+//! a LaTeX toolchain, which never sees the CSS. So `-f pdf` == `-f html`, as a
+//! PDF. For a fully dependency-free artifact, `-f html` + a browser's "Print to
+//! PDF" produces the same thing.
 //!
-//! Engine selection: pandoc has no "use whatever is installed" mode — it hard
-//! defaults to `pdflatex`. So we honor `CHAINVET_PDF_ENGINE` if set, otherwise
-//! bootstrap `tectonic` (the self-contained engine we recommend, which pandoc
-//! won't pick on its own), otherwise let pandoc use its default and surface any
-//! error. `CHAINVET_PANDOC` overrides the pandoc binary.
+//! Engine: `CHAINVET_PDF_ENGINE` overrides; otherwise weasyprint then wkhtmltopdf,
+//! whichever is on PATH.
 
+use std::ffi::OsString;
 use std::io::Write;
 use std::path::Path;
 use std::process::{Command, Stdio};
@@ -22,164 +19,96 @@ use chainvet_core::util::error::{Error, Result};
 
 use super::AuditReport;
 
-/// The branded template and cover logo, embedded so the tool is self-contained;
-/// both are written to a temp dir at run time because pandoc needs file paths.
-const TEMPLATE_TEX: &str = include_str!("../../assets/report-template.tex");
-const LOGO_PNG: &[u8] = include_bytes!("../../assets/chainvet-logo.png");
-/// Filter that gives tables content-proportional widths so LaTeX wraps cells.
-const TABLES_LUA: &str = include_str!("../../assets/report-tables.lua");
+/// Render `report` to a branded PDF at `output` via an HTML→PDF engine.
+pub fn write_pdf(report: &AuditReport, output: &Path) -> Result<()> {
+    let html = super::render_html(report);
+    let (engine, args) = resolve_engine(output)?;
 
-/// Render `report` to a PDF at `output` via a branded pandoc conversion.
-pub fn write_pdf_via_pandoc(report: &AuditReport, output: &Path) -> Result<()> {
-    let pandoc = std::env::var("CHAINVET_PANDOC").unwrap_or_else(|_| "pandoc".to_string());
-
-    // Stage the template + logo where pandoc/LaTeX can read them by path.
-    let workdir = TempDir::new()?;
-    let template = workdir.path.join("report-template.tex");
-    let logo = workdir.path.join("chainvet-logo.png");
-    let tables_filter = workdir.path.join("report-tables.lua");
-    std::fs::write(&template, TEMPLATE_TEX)
-        .and_then(|_| std::fs::write(&logo, LOGO_PNG))
-        .and_then(|_| std::fs::write(&tables_filter, TABLES_LUA))
-        .map_err(|err| Error::msg(format!("failed to stage report assets: {err}")))?;
-
-    // The template supplies the branded cover from these variables, inserted raw
-    // into LaTeX — so they must be LaTeX-escaped here.
-    let body = super::render_markdown_body(report);
-
-    let mut cmd = Command::new(&pandoc);
-    cmd.arg("--from=gfm")
-        .arg("--template")
-        .arg(&template)
-        .arg("--lua-filter")
-        .arg(&tables_filter)
-        // Body sections are `##`; shift so they become top-level LaTeX sections.
-        .arg("--shift-heading-level-by=-1")
-        .arg("--variable=title:ChainVet Audit Report")
-        .arg(format!(
-            "--variable=project:{}",
-            latex_escape(&report.project_name)
-        ))
-        .arg(format!(
-            "--variable=target:{}",
-            latex_escape(&report.target)
-        ))
-        .arg(format!(
-            "--variable=mode:{}",
-            latex_escape(&report.analysis_mode)
-        ))
-        .arg(format!("--variable=logo:{}", logo.display()))
-        .arg("--output")
-        .arg(output)
+    let mut child = Command::new(&engine)
+        .args(&args)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    if let Some(engine) = pdf_engine() {
-        cmd.arg(format!("--pdf-engine={engine}"));
-    }
-
-    let mut child = cmd.spawn().map_err(|err| {
-        if err.kind() == std::io::ErrorKind::NotFound {
-            Error::msg(format!(
-                "`{pandoc}` was not found — PDF output is a pandoc passthrough.\n\
-                 Install pandoc plus a PDF engine (e.g. tectonic, xelatex, or weasyprint),\n\
-                 or use `-f html` and \"Print to PDF\" from a browser."
-            ))
-        } else {
-            Error::msg(format!("failed to launch `{pandoc}`: {err}"))
-        }
-    })?;
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|err| Error::msg(format!("failed to launch `{engine}`: {err}")))?;
 
     child
         .stdin
         .take()
-        .ok_or_else(|| Error::msg("failed to open pandoc stdin"))?
-        .write_all(body.as_bytes())
-        .map_err(|err| Error::msg(format!("failed to write to pandoc: {err}")))?;
+        .ok_or_else(|| Error::msg("failed to open the engine's stdin"))?
+        .write_all(html.as_bytes())
+        .map_err(|err| Error::msg(format!("failed to write HTML to `{engine}`: {err}")))?;
 
     let out = child
         .wait_with_output()
-        .map_err(|err| Error::msg(format!("failed to run pandoc: {err}")))?;
+        .map_err(|err| Error::msg(format!("failed to run `{engine}`: {err}")))?;
     if !out.status.success() {
-        let stderr = String::from_utf8_lossy(&out.stderr);
-        let hint = if stderr.contains("pdf-engine") || stderr.to_lowercase().contains("latex") {
-            "\nHint: pandoc needs a PDF engine — install tectonic/xelatex, or set \
-             CHAINVET_PDF_ENGINE=weasyprint."
-        } else {
-            ""
-        };
         return Err(Error::msg(format!(
-            "pandoc failed to produce the PDF:\n{}{hint}",
-            stderr.trim()
+            "`{engine}` failed to produce the PDF:\n{}",
+            String::from_utf8_lossy(&out.stderr).trim()
         )));
     }
     Ok(())
 }
 
-/// The PDF engine to hand pandoc: an explicit `CHAINVET_PDF_ENGINE` wins;
-/// otherwise `tectonic` if installed (pandoc won't reach for it on its own);
-/// otherwise `None` (pandoc uses its own default and reports if it's missing).
-fn pdf_engine() -> Option<String> {
-    if let Ok(engine) = std::env::var("CHAINVET_PDF_ENGINE") {
-        let engine = engine.trim();
-        if !engine.is_empty() {
-            return Some(engine.to_string());
+/// The HTML→PDF engine to use and the argv to read HTML from stdin and write
+/// `output`. Honors `CHAINVET_PDF_ENGINE`, else the first of weasyprint /
+/// wkhtmltopdf found on PATH.
+fn resolve_engine(output: &Path) -> Result<(String, Vec<OsString>)> {
+    let explicit = std::env::var("CHAINVET_PDF_ENGINE")
+        .ok()
+        .map(|e| e.trim().to_string())
+        .filter(|e| !e.is_empty());
+
+    let candidates: Vec<String> = match explicit {
+        Some(engine) => vec![engine],
+        None => vec!["weasyprint".to_string(), "wkhtmltopdf".to_string()],
+    };
+
+    for engine in &candidates {
+        if !on_path(engine) {
+            continue;
         }
+        // Both read HTML from stdin (`-`) and take the output path as the last arg.
+        let args: Vec<OsString> = match engine_kind(engine) {
+            EngineKind::WeasyPrint => vec!["-".into(), output.into()],
+            EngineKind::WkHtmlToPdf => vec!["-q".into(), "-".into(), output.into()],
+        };
+        return Ok((engine.clone(), args));
     }
-    on_path("tectonic").then(|| "tectonic".to_string())
+
+    Err(Error::msg(format!(
+        "no HTML->PDF engine found ({}). PDF output renders the HTML report with\n\
+         weasyprint (recommended) or wkhtmltopdf. Install one, e.g. `weasyprint`,\n\
+         or use `-f html` and \"Print to PDF\" from a browser.",
+        candidates.join(" / ")
+    )))
 }
 
-/// Whether an executable of this name exists on PATH.
+enum EngineKind {
+    WeasyPrint,
+    WkHtmlToPdf,
+}
+
+/// Argument style keyed off the engine's name (wkhtmltopdf-like vs weasyprint-like).
+fn engine_kind(engine: &str) -> EngineKind {
+    let name = Path::new(engine)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or(engine);
+    if name.contains("wkhtml") {
+        EngineKind::WkHtmlToPdf
+    } else {
+        EngineKind::WeasyPrint
+    }
+}
+
+/// Whether an executable of this name exists on PATH (or is an explicit path).
 fn on_path(name: &str) -> bool {
+    if name.contains('/') {
+        return Path::new(name).is_file();
+    }
     std::env::var_os("PATH")
         .map(|paths| std::env::split_paths(&paths).any(|dir| dir.join(name).is_file()))
         .unwrap_or(false)
-}
-
-/// Escape the LaTeX special characters, for values inserted raw into the template.
-fn latex_escape(value: &str) -> String {
-    let mut out = String::with_capacity(value.len());
-    for ch in value.chars() {
-        match ch {
-            '\\' => out.push_str("\\textbackslash{}"),
-            '&' => out.push_str("\\&"),
-            '%' => out.push_str("\\%"),
-            '$' => out.push_str("\\$"),
-            '#' => out.push_str("\\#"),
-            '_' => out.push_str("\\_"),
-            '{' => out.push_str("\\{"),
-            '}' => out.push_str("\\}"),
-            '~' => out.push_str("\\textasciitilde{}"),
-            '^' => out.push_str("\\textasciicircum{}"),
-            _ => out.push(ch),
-        }
-    }
-    out
-}
-
-/// A temporary directory removed on drop.
-struct TempDir {
-    path: std::path::PathBuf,
-}
-
-impl TempDir {
-    fn new() -> Result<Self> {
-        let base = std::env::temp_dir().join(format!(
-            "chainvet-report-{}-{}",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_nanos())
-                .unwrap_or(0)
-        ));
-        std::fs::create_dir_all(&base)
-            .map_err(|err| Error::msg(format!("failed to create temp dir: {err}")))?;
-        Ok(Self { path: base })
-    }
-}
-
-impl Drop for TempDir {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.path);
-    }
 }

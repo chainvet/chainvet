@@ -18,8 +18,8 @@ use chainvet_core::norm::NormalizedAst;
 use chainvet_orchestrator::{ScanFinding, ScanMode, ScanResult};
 
 pub(crate) use html::render_html;
-pub(crate) use markdown::{render_markdown, render_markdown_body};
-pub(crate) use pdf::write_pdf_via_pandoc;
+pub(crate) use markdown::render_markdown;
+pub(crate) use pdf::write_pdf;
 
 /// The full audit report, decoupled from the engines — built once, rendered many.
 #[derive(Debug, Clone)]

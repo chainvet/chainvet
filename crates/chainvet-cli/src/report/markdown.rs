@@ -21,9 +21,8 @@ pub fn render_markdown(report: &AuditReport) -> String {
     out
 }
 
-/// The report body only — no leading title block. The PDF path uses this because
-/// its LaTeX template supplies a branded cover page from metadata instead.
-pub(crate) fn render_markdown_body(report: &AuditReport) -> String {
+/// The report body only — no leading title block.
+fn render_markdown_body(report: &AuditReport) -> String {
     let mut findings = report.findings.clone();
     findings.sort_by(|a, b| {
         severity_sort_rank(&a.severity)
