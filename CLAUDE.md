@@ -17,7 +17,9 @@ cargo fmt                    # Format
 # CLI (binary: chainvet)
 cargo run -p chainvet-cli -- scan <path.sol>              # hybrid (the default mode)
 cargo run -p chainvet-cli -- scan -m static <path.sol>   # -m static|symbolic|fuzzing|hybrid
-cargo run -p chainvet-cli -- scan -f json <path.sol>     # -f pretty|json
+cargo run -p chainvet-cli -- scan -f json <path.sol>     # -f pretty|json|md|html|pdf
+cargo run -p chainvet-cli -- scan -f pdf -o out.pdf <p>  # branded audit report (md|html|pdf)
+cargo run -p chainvet-cli -- scan -s high --severity medium <p>  # filters: -s/-c floors, --severity/--confidence exact
 cargo run -p chainvet-cli -- ir <path.sol> -f text       # dump IR: text|json|tuple
 
 # Other frontends
@@ -40,7 +42,11 @@ Test fixtures live in `crates/chainvet-cli/tests/fixtures/` (e.g. `vuln_reentran
    - `chainvet-fuzzing` — generator/mutator/executor/oracle/scheduler; `runner::run` returns a typed report.
    - `chainvet-hybrid` — the control loop; `analyze()` returns the typed payload, `run()` = analyze + print.
 4. **Orchestrator** (`chainvet-orchestrator`): `scan(output, ScanMode, budget) -> ScanResult` — runs the engine(s), unifies findings via `HybridFindingRow::collect` (merge/dedup/tier), and applies optional AI review (`ai_report`, env-gated). This is the one entry point every frontend calls.
-5. **Frontends** (thin, depend only on the orchestrator): `chainvet-cli` (render text/JSON), `chainvet-ci` (SARIF + exit codes), `chainvet-server` (axum REST), `chainvet-lsp` (tower-lsp diagnostics).
+5. **Frontends** (thin, depend only on the orchestrator): `chainvet-cli` (render text/JSON + audit reports), `chainvet-ci` (SARIF + exit codes), `chainvet-server` (axum REST), `chainvet-lsp` (tower-lsp diagnostics).
+
+### Audit reports (`chainvet-cli/src/report/`)
+
+`-f md|html|pdf` renders a Cyfrin-style audit report (cover, disclaimer, risk classification, per-finding impact/PoC/mitigation) from one `AuditReport` model built off `ScanResult`. `report/mod.rs` holds the model + a **deterministic, AI-independent guidance library** (per-detector abuse/PoC/remediation, harvested from the old `feature/ai-assisted-reporting` branch). `markdown.rs`/`html.rs` are native renderers; **`html` and `pdf` share one branded look** (dark Catppuccin theme, logo, severity colors) — `pdf.rs` just pipes the HTML through an HTML→PDF engine (**weasyprint** preferred, else wkhtmltopdf; override `CHAINVET_PDF_ENGINE`). No LaTeX/pandoc. `-f pdf`/`html` honor `--output`; `pdf` requires it.
 
 ### AI features
 
@@ -58,3 +64,4 @@ Test fixtures live in `crates/chainvet-cli/tests/fixtures/` (e.g. `vuln_reentran
 - **tree-sitter** / **tree-sitter-solidity** — fallback parser
 - **axum** / **tower-http** — server frontend; **tower-lsp** — LSP frontend
 - **serde** / **serde_json** — serialization
+- **weasyprint** (or wkhtmltopdf) — *external runtime tool*, not a crate: required only for `chainvet scan -f pdf` (renders the branded HTML). `-f md`/`html` need nothing extra.
