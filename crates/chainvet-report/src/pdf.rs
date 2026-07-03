@@ -19,10 +19,11 @@ use chainvet_core::util::error::{Error, Result};
 
 use super::AuditReport;
 
-/// Render `report` to a branded PDF at `output` via an HTML→PDF engine.
-pub fn write_pdf(report: &AuditReport, output: &Path) -> Result<()> {
+/// Render `report` to branded PDF bytes via an HTML→PDF engine (in memory, so
+/// callers such as the server can stream the PDF without a temp file).
+pub fn render_pdf_bytes(report: &AuditReport) -> Result<Vec<u8>> {
     let html = super::render_html(report);
-    let (engine, args) = resolve_engine(output)?;
+    let (engine, args) = resolve_engine()?;
 
     let mut child = Command::new(&engine)
         .args(&args)
@@ -48,13 +49,20 @@ pub fn write_pdf(report: &AuditReport, output: &Path) -> Result<()> {
             String::from_utf8_lossy(&out.stderr).trim()
         )));
     }
-    Ok(())
+    Ok(out.stdout)
 }
 
-/// The HTML→PDF engine to use and the argv to read HTML from stdin and write
-/// `output`. Honors `CHAINVET_PDF_ENGINE`, else the first of weasyprint /
-/// wkhtmltopdf found on PATH.
-fn resolve_engine(output: &Path) -> Result<(String, Vec<OsString>)> {
+/// Render `report` to a branded PDF at `output` via an HTML→PDF engine.
+pub fn write_pdf(report: &AuditReport, output: &Path) -> Result<()> {
+    let bytes = render_pdf_bytes(report)?;
+    std::fs::write(output, bytes)
+        .map_err(|err| Error::msg(format!("failed to write {}: {err}", output.display())))
+}
+
+/// The HTML→PDF engine to use and the argv to read HTML from stdin (`-`) and
+/// write the PDF to stdout (`-`). Honors `CHAINVET_PDF_ENGINE`, else the first of
+/// weasyprint / wkhtmltopdf found on PATH.
+fn resolve_engine() -> Result<(String, Vec<OsString>)> {
     let explicit = std::env::var("CHAINVET_PDF_ENGINE")
         .ok()
         .map(|e| e.trim().to_string())
@@ -69,10 +77,10 @@ fn resolve_engine(output: &Path) -> Result<(String, Vec<OsString>)> {
         if !on_path(engine) {
             continue;
         }
-        // Both read HTML from stdin (`-`) and take the output path as the last arg.
+        // Both read HTML from stdin (`-`) and write the PDF to stdout (`-`).
         let args: Vec<OsString> = match engine_kind(engine) {
-            EngineKind::WeasyPrint => vec!["-".into(), output.into()],
-            EngineKind::WkHtmlToPdf => vec!["-q".into(), "-".into(), output.into()],
+            EngineKind::WeasyPrint => vec!["-".into(), "-".into()],
+            EngineKind::WkHtmlToPdf => vec!["-q".into(), "-".into(), "-".into()],
         };
         return Ok((engine.clone(), args));
     }
@@ -80,7 +88,7 @@ fn resolve_engine(output: &Path) -> Result<(String, Vec<OsString>)> {
     Err(Error::msg(format!(
         "no HTML->PDF engine found ({}). PDF output renders the HTML report with\n\
          weasyprint (recommended) or wkhtmltopdf. Install one, e.g. `weasyprint`,\n\
-         or use `-f html` and \"Print to PDF\" from a browser.",
+         or use the HTML report and \"Print to PDF\" from a browser.",
         candidates.join(" / ")
     )))
 }

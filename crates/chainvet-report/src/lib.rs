@@ -1,4 +1,4 @@
-//! Audit-report rendering for the CLI (Markdown / HTML / PDF).
+//! Audit-report rendering shared by the CLI and the server (Markdown / HTML / PDF).
 //!
 //! A single [`AuditReport`] model is built from the orchestrator's typed
 //! [`ScanResult`] and rendered to each format off the same data. The structure
@@ -17,9 +17,9 @@ use std::collections::HashMap;
 use chainvet_core::norm::NormalizedAst;
 use chainvet_orchestrator::{ScanFinding, ScanMode, ScanResult};
 
-pub(crate) use html::render_html;
-pub(crate) use markdown::render_markdown;
-pub(crate) use pdf::write_pdf;
+pub use html::render_html;
+pub use markdown::render_markdown;
+pub use pdf::{render_pdf_bytes, write_pdf};
 
 /// The full audit report, decoupled from the engines — built once, rendered many.
 #[derive(Debug, Clone)]
@@ -65,64 +65,109 @@ pub struct AuditFinding {
     pub analysis_layer: String,
 }
 
-impl AuditReport {
-    /// Build the report from a completed scan. The AST is used only to resolve
-    /// `function_id`s to real names so proofs-of-concept name the right function.
-    pub fn from_scan(result: &ScanResult, ast: &NormalizedAst, target: &str) -> Self {
-        let names: HashMap<u32, String> = ast
-            .functions
-            .iter()
-            .filter_map(|f| f.name.clone().map(|name| (f.id, name)))
-            .collect();
+/// Running aggregate of hybrid telemetry across one or more scans, so a report
+/// covering several files (the server analyzes a project file-by-file) still
+/// surfaces one coherent metrics block.
+#[derive(Default)]
+struct HybridAgg {
+    static_selected: usize,
+    static_total: usize,
+    se_findings: usize,
+    corpus: usize,
+    coverage_sum: f64,
+    coverage_n: usize,
+}
 
-        // Read each referenced source once so byte spans resolve to line numbers.
-        let mut sources: HashMap<String, String> = HashMap::new();
-        for row in &result.findings {
-            if let Some(file) = &row.file {
-                sources
-                    .entry(file.clone())
-                    .or_insert_with(|| std::fs::read_to_string(file).unwrap_or_default());
+impl AuditReport {
+    /// Build the report from a single completed scan. The AST is used only to
+    /// resolve `function_id`s to real names so proofs-of-concept name the right
+    /// function.
+    pub fn from_scan(result: &ScanResult, ast: &NormalizedAst, target: &str) -> Self {
+        Self::from_scans([(result, ast)], target)
+    }
+
+    /// Build one report from several `(scan, ast)` pairs — used when a target is
+    /// a project analyzed file-by-file. Findings are accumulated across all
+    /// pairs (each pair resolves its own function names) and hybrid telemetry is
+    /// aggregated. For a single pair this is identical to [`Self::from_scan`].
+    pub fn from_scans<'a>(
+        scans: impl IntoIterator<Item = (&'a ScanResult, &'a NormalizedAst)>,
+        target: &str,
+    ) -> Self {
+        let mut findings = Vec::new();
+        let mut raw_findings = 0usize;
+        let mut mode: Option<ScanMode> = None;
+        let mut agg: Option<HybridAgg> = None;
+
+        for (result, ast) in scans {
+            mode.get_or_insert(result.mode);
+            raw_findings += result.findings.len();
+            append_findings(result, ast, &mut findings);
+            if let Some(hybrid) = &result.hybrid {
+                let a = agg.get_or_insert_with(HybridAgg::default);
+                a.static_selected += hybrid.summary.static_targets_selected;
+                a.static_total += hybrid.summary.static_targets_total;
+                a.se_findings += hybrid.summary.se_findings_total;
+                a.corpus += hybrid.summary.fuzz_corpus_size;
+                a.coverage_sum += hybrid.fuzz_coverage_pct;
+                a.coverage_n += 1;
             }
         }
 
-        let findings = result
-            .findings
-            .iter()
-            .map(|row| AuditFinding::from_row(row, &names, &sources))
-            .collect::<Vec<_>>();
-
-        let mut metrics = Vec::new();
-        if let Some(hybrid) = &result.hybrid {
-            metrics.push(AuditMetric::new(
-                "Static targets",
-                format!(
-                    "{}/{}",
-                    hybrid.summary.static_targets_selected, hybrid.summary.static_targets_total
-                ),
-            ));
-            metrics.push(AuditMetric::new(
-                "Symbolic findings",
-                hybrid.summary.se_findings_total.to_string(),
-            ));
-            metrics.push(AuditMetric::new(
-                "Fuzz coverage",
-                format!("{:.1}%", hybrid.fuzz_coverage_pct),
-            ));
-            metrics.push(AuditMetric::new(
-                "Fuzz corpus",
-                hybrid.summary.fuzz_corpus_size.to_string(),
-            ));
-        }
+        let metrics = agg
+            .map(|a| {
+                let coverage = if a.coverage_n == 0 {
+                    0.0
+                } else {
+                    a.coverage_sum / a.coverage_n as f64
+                };
+                vec![
+                    AuditMetric::new(
+                        "Static targets",
+                        format!("{}/{}", a.static_selected, a.static_total),
+                    ),
+                    AuditMetric::new("Symbolic findings", a.se_findings.to_string()),
+                    AuditMetric::new("Fuzz coverage", format!("{coverage:.1}%")),
+                    AuditMetric::new("Fuzz corpus", a.corpus.to_string()),
+                ]
+            })
+            .unwrap_or_default();
 
         Self {
             project_name: project_name_from_path(target),
             target: target.to_string(),
-            analysis_mode: mode_label(result.mode).to_string(),
-            raw_findings: result.findings.len(),
+            analysis_mode: mode.map(mode_label).unwrap_or("hybrid").to_string(),
+            raw_findings,
             metrics,
             findings,
         }
     }
+}
+
+/// Resolve one scan's findings into [`AuditFinding`]s and append them to `out`.
+fn append_findings(result: &ScanResult, ast: &NormalizedAst, out: &mut Vec<AuditFinding>) {
+    let names: HashMap<u32, String> = ast
+        .functions
+        .iter()
+        .filter_map(|f| f.name.clone().map(|name| (f.id, name)))
+        .collect();
+
+    // Read each referenced source once so byte spans resolve to line numbers.
+    let mut sources: HashMap<String, String> = HashMap::new();
+    for row in &result.findings {
+        if let Some(file) = &row.file {
+            sources
+                .entry(file.clone())
+                .or_insert_with(|| std::fs::read_to_string(file).unwrap_or_default());
+        }
+    }
+
+    out.extend(
+        result
+            .findings
+            .iter()
+            .map(|row| AuditFinding::from_row(row, &names, &sources)),
+    );
 }
 
 impl AuditFinding {

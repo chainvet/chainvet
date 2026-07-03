@@ -10,7 +10,7 @@ use super::{
 };
 
 /// The ChainVet wordmark, inlined so the report needs no external assets.
-const LOGO_SVG: &str = include_str!("../../assets/chainvet-logo.svg");
+const LOGO_SVG: &str = include_str!("../assets/chainvet-logo.svg");
 
 /// Render the report as a standalone HTML document.
 pub fn render_html(report: &AuditReport) -> String {
