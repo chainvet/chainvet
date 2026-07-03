@@ -1,4 +1,5 @@
 mod render;
+mod report;
 
 use chainvet_core::util::error::Result;
 use chainvet_orchestrator::{HybridBudget, ScanMode, scan};
@@ -140,6 +141,8 @@ pub enum Mode {
 pub enum Format {
     Pretty,
     Json,
+    /// Cyfrin-style audit report as Markdown.
+    Md,
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
@@ -215,7 +218,29 @@ fn run_scan(args: ScanArgs) -> Result<()> {
 
     let output = chainvet_frontend::frontend::load_project(&args.path)?;
     let result = scan(&output, scan_mode, &budget)?;
-    render::render(&result, &args)
+
+    // Audit-report formats build a document from the result (+ AST for function
+    // names) and honor `--output`; pretty/json stay on the standard renderer.
+    match args.format {
+        Format::Md => {
+            let audit = report::AuditReport::from_scan(&result, &output.ast, &args.path);
+            let text = report::render_markdown(&audit);
+            write_report(&args.output, &text)
+        }
+        Format::Pretty | Format::Json => render::render(&result, &args),
+    }
+}
+
+/// Write a rendered report to `--output` if set, else stdout.
+fn write_report(output: &Option<String>, text: &str) -> Result<()> {
+    match output {
+        Some(file) => std::fs::write(file, text)
+            .map_err(|e| chainvet_core::util::error::Error::msg(format!("write {file}: {e}"))),
+        None => {
+            print!("{text}");
+            Ok(())
+        }
+    }
 }
 
 fn run_ir(args: IrArgs) -> Result<()> {

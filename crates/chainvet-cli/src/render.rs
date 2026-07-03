@@ -18,7 +18,8 @@ use crate::{Confidence, Format, ScanArgs, Severity};
 pub fn render(result: &ScanResult, args: &ScanArgs) -> Result<()> {
     match args.format {
         Format::Json => render_json(result),
-        Format::Pretty => render_pretty(result, args),
+        // Audit-report formats are handled by `report` before reaching here.
+        Format::Pretty | Format::Md => render_pretty(result, args),
     }
 }
 

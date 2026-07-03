@@ -72,6 +72,24 @@ fn scan_json_is_valid_and_has_findings() {
 }
 
 #[test]
+fn scan_markdown_report_has_audit_sections() {
+    let out = run(&["scan", "-m", "hybrid", "-f", "md", REENTRANCY]);
+    assert_ok(&out, "hybrid md report");
+    let md = String::from_utf8_lossy(&out.stdout);
+    for section in [
+        "# ChainVet Audit Report",
+        "## Disclaimer",
+        "## Findings",
+        "**Recommended Mitigation**",
+    ] {
+        assert!(
+            md.contains(section),
+            "markdown report missing `{section}`:\n{md}",
+        );
+    }
+}
+
+#[test]
 fn ir_dump_exits_ok() {
     assert_ok(&run(&["ir", REENTRANCY, "-f", "text"]), "ir dump");
 }
