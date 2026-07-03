@@ -1,0 +1,78 @@
+% ChainVet branded pandoc LaTeX template.
+%
+% Based on pandoc's default `latex` template: it keeps pandoc's own partials
+% (common.latex etc.) so the helper macros the body relies on (tables,
+% tightlist, passthrough, …) always match the pandoc that runs it — the
+% template never desyncs. On top of that it adds ChainVet branding (logo cover
+% page, purple section headings, footer) and, crucially, makes inline code
+% breakable (seqsplit) so long tokens like file paths wrap in table cells
+% instead of overflowing — the real fix for the location-column overflow.
+%
+% NOTE: pandoc expands its dollar-delimited syntax even inside % comments, so
+% this file must not use a bare dollar sign except in real template directives.
+% Variables passed by the CLI: title, project, target, mode, logo.
+\documentclass[$if(fontsize)$$fontsize$$else$11pt$endif$,a4paper]{article}
+\usepackage{xcolor}
+\usepackage[margin=2.2cm]{geometry}
+\usepackage{amsmath,amssymb}
+\setcounter{secnumdepth}{-\maxdimen} % no section numbering
+$fonts.latex()$
+$font-settings.latex()$
+$common.latex()$
+
+% --- ChainVet branding ---------------------------------------------------
+\definecolor{cvpurple}{HTML}{7C3AED}
+\definecolor{cvink}{HTML}{1E1E2E}
+\usepackage{graphicx}
+\usepackage{seqsplit}
+% Make inline code breakable anywhere so long paths wrap in narrow table cells.
+% \leavevmode enters horizontal mode first (\seqsplit errors in vertical mode,
+% e.g. at the start of a table cell).
+\renewcommand{\texttt}[1]{{\ttfamily\leavevmode\seqsplit{#1}}}
+\usepackage{titlesec}
+\titleformat{\section}{\Large\bfseries\color{cvpurple}}{}{0em}{}[{\color{cvpurple!30}\titlerule}]
+\titleformat{\subsection}{\large\bfseries\color{cvink}}{}{0em}{}
+\usepackage{fancyhdr}
+\pagestyle{fancy}
+\fancyhf{}
+\fancyfoot[L]{\small\color{cvpurple}\textbf{ChainVet}}
+\fancyfoot[R]{\small\thepage}
+\renewcommand{\headrulewidth}{0pt}
+\renewcommand{\footrulewidth}{0.4pt}
+\setcounter{tocdepth}{$if(toc-depth)$$toc-depth$$else$1$endif$}
+
+$for(header-includes)$
+$header-includes$
+$endfor$
+$after-header-includes.latex()$
+$hypersetup.latex()$
+
+\begin{document}
+
+% --- Branded cover page --------------------------------------------------
+\begin{titlepage}
+\centering
+\vspace*{2.5cm}
+$if(logo)$\includegraphics[width=6cm]{$logo$}\par\vspace{1.6cm}$endif$
+{\Huge\bfseries\color{cvink} $title$\par}
+\vspace{0.6cm}
+{\Large\color{cvpurple} $project$\par}
+\vspace{0.25cm}
+{\large Smart Contract Security Analysis\par}
+\vfill
+\begin{flushleft}
+{\small\bfseries\color{cvpurple}TARGET}\\[3pt]
+{\ttfamily\small\leavevmode\seqsplit{$target$}}\\[12pt]
+{\small\bfseries\color{cvpurple}ANALYSIS MODE}\\[3pt]
+$mode$
+\end{flushleft}
+\vfill
+{\small\color{gray}Prepared by ChainVet Analyzer}
+\end{titlepage}
+
+\tableofcontents
+\newpage
+
+$body$
+
+\end{document}

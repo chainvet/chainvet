@@ -8,8 +8,22 @@ use super::{
     location_summary, severity_bucket, severity_counts, severity_label, severity_sort_rank,
 };
 
-/// Render the report as GitHub-flavored Markdown.
+/// Render the report as GitHub-flavored Markdown (title block + body).
 pub fn render_markdown(report: &AuditReport) -> String {
+    let mut out = String::new();
+    let _ = writeln!(out, "# ChainVet Audit Report");
+    let _ = writeln!(out);
+    let _ = writeln!(out, "**Project:** {}  ", report.project_name);
+    let _ = writeln!(out, "**Target:** `{}`  ", report.target);
+    let _ = writeln!(out, "**Analysis mode:** {}", report.analysis_mode);
+    let _ = writeln!(out);
+    out.push_str(&render_markdown_body(report));
+    out
+}
+
+/// The report body only — no leading title block. The PDF path uses this because
+/// its LaTeX template supplies a branded cover page from metadata instead.
+pub(crate) fn render_markdown_body(report: &AuditReport) -> String {
     let mut findings = report.findings.clone();
     findings.sort_by(|a, b| {
         severity_sort_rank(&a.severity)
@@ -26,13 +40,6 @@ pub fn render_markdown(report: &AuditReport) -> String {
 
     let mut out = String::new();
     let w = &mut out;
-
-    let _ = writeln!(w, "# ChainVet Audit Report");
-    let _ = writeln!(w);
-    let _ = writeln!(w, "**Project:** {}  ", report.project_name);
-    let _ = writeln!(w, "**Target:** `{}`  ", report.target);
-    let _ = writeln!(w, "**Analysis mode:** {}", report.analysis_mode);
-    let _ = writeln!(w);
 
     let _ = writeln!(w, "## Protocol Summary");
     let _ = writeln!(w);
@@ -129,9 +136,10 @@ pub fn render_markdown(report: &AuditReport) -> String {
         let _ = writeln!(w, "| ID | Severity | Title | Location |");
         let _ = writeln!(w, "| --- | --- | --- | --- |");
         for (idx, finding) in findings.iter().enumerate() {
+            // Location as a code span so the PDF (\texttt+seqsplit) breaks long paths.
             let _ = writeln!(
                 w,
-                "| {} | {} | {} | {} |",
+                "| {} | {} | {} | `{}` |",
                 finding_id(idx + 1, &finding.severity),
                 severity_label(&finding.severity),
                 md_cell(&finding_title(finding)),

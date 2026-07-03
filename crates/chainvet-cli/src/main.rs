@@ -236,13 +236,12 @@ fn run_scan(args: ScanArgs) -> Result<()> {
         }
         Format::Pdf => {
             let audit = report::AuditReport::from_scan(&result, &output.ast, &args.path);
-            let markdown = report::render_markdown(&audit);
             let out = args.output.as_deref().ok_or_else(|| {
                 chainvet_core::util::error::Error::msg(
                     "`-f pdf` needs an output path — use `-o report.pdf`",
                 )
             })?;
-            report::write_pdf_via_pandoc(&markdown, std::path::Path::new(out))
+            report::write_pdf_via_pandoc(&audit, std::path::Path::new(out))
         }
         Format::Pretty | Format::Json => render::render(&result, &args),
     }

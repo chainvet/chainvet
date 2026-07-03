@@ -306,7 +306,9 @@ p{margin:.5rem 0}
 display:grid;grid-template-columns:auto 1fr;gap:.4rem 1rem;align-items:center;max-width:640px}
 .tlabel{font-size:.7rem;font-weight:700;letter-spacing:.08em;color:var(--lav)}
 table{width:100%;border-collapse:collapse;margin:.6rem 0;font-size:.92rem}
-th,td{text-align:left;padding:.5rem .7rem;border-bottom:1px solid var(--s0);vertical-align:top}
+th,td{text-align:left;padding:.5rem .7rem;border-bottom:1px solid var(--s0);vertical-align:top;
+overflow-wrap:anywhere}
+td code,.meta dd{overflow-wrap:anywhere;word-break:break-word}
 th{color:var(--sub0);font-weight:600}
 .badge{display:inline-block;padding:.15em .6em;border-radius:999px;font-size:.78rem;font-weight:700;
 color:var(--crust)}

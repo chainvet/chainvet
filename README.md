@@ -83,10 +83,11 @@ was corroborated by symbolic/fuzz execution. The `--min-*` floors and the exact
 `--severity`/`--confidence` filters are mutually exclusive per axis.
 
 Audit-report formats (`-f md`/`html`/`pdf`) render a Cyfrin-style report — protocol
-summary, disclaimer, risk classification, per-finding impact/PoC/mitigation. `pdf`
-is a `pandoc` passthrough, so it needs `pandoc` plus a PDF engine (`tectonic`,
-`xelatex`, or `weasyprint` via `CHAINVET_PDF_ENGINE`) on PATH; for a branded,
-dependency-free artifact, use `-f html` and "Print to PDF".
+summary, disclaimer, risk classification, per-finding impact/PoC/mitigation. `html`
+and `pdf` are branded (logo cover, ChainVet palette). `pdf` is a `pandoc` passthrough
+with a shipped LaTeX template, so it needs `pandoc` plus a PDF engine on PATH —
+`tectonic` is auto-used if installed, else pandoc's default (override with
+`CHAINVET_PDF_ENGINE`). For a dependency-free artifact, use `-f html` + "Print to PDF".
 
 The human report is colored and tabular on a terminal (auto-plain when piped or
 under `NO_COLOR`; force off with `--no-color`). Run `chainvet scan --help` for
