@@ -1,5 +1,5 @@
 [package]
-name = "chainvet-ai"
+name = "chainvet-llm"
 version.workspace = true
 edition = "2024"
 

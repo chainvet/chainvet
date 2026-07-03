@@ -1,95 +1,18 @@
-//! Minimal Ollama client over a raw `TcpStream` (no HTTP-client dependency).
+//! Minimal HTTP/1.1 over a raw `TcpStream` — a shared transport for LLM
+//! providers that speak plain HTTP (e.g. a local Ollama server) without pulling
+//! in an HTTP-client dependency. De-frames chunked responses on byte boundaries
+//! so multibyte UTF-8 payloads survive a split.
 
-use serde_json::{Value, json};
-use std::env;
 use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::time::Duration;
 
-pub const DEFAULT_ENDPOINT: &str = "http://127.0.0.1:11434";
-pub const DEFAULT_MODEL: &str = "qwen2.5-coder:7b";
-
-/// Connection + decoding parameters for a one-shot generate call.
-#[derive(Debug, Clone)]
-pub struct OllamaConfig {
-    pub endpoint: String,
-    pub model: String,
-    pub timeout: Duration,
-    pub num_predict: u32,
-}
-
-impl OllamaConfig {
-    /// Build a config from the shared `CHAINVET_AI_*` environment variables,
-    /// falling back to the supplied defaults for timeout and prediction length.
-    pub fn from_env(default_timeout_ms: u64, default_num_predict: u32) -> Self {
-        let endpoint =
-            env::var("CHAINVET_AI_ENDPOINT").unwrap_or_else(|_| DEFAULT_ENDPOINT.to_string());
-        let model = env::var("CHAINVET_AI_MODEL").unwrap_or_else(|_| DEFAULT_MODEL.to_string());
-        let timeout_ms = env::var("CHAINVET_AI_TIMEOUT_MS")
-            .ok()
-            .and_then(|v| v.parse::<u64>().ok())
-            .unwrap_or(default_timeout_ms);
-        let num_predict = env::var("CHAINVET_AI_NUM_PREDICT")
-            .ok()
-            .and_then(|v| v.parse::<u32>().ok())
-            .unwrap_or(default_num_predict);
-        Self {
-            endpoint,
-            model,
-            timeout: Duration::from_millis(timeout_ms),
-            num_predict,
-        }
-    }
-}
-
-/// One-shot JSON-mode generation. Returns the model's `response` text, or an
-/// error string the caller can log and treat as "AI unavailable".
-pub fn generate(config: &OllamaConfig, prompt: &str) -> Result<String, String> {
-    let body = json!({
-        "model": config.model,
-        "prompt": prompt,
-        "stream": false,
-        "format": "json",
-        "options": {
-            "temperature": 0.0,
-            "num_ctx": 16384,
-            "num_predict": config.num_predict
-        }
-    })
-    .to_string();
-
-    let response = http_post_json(&config.endpoint, "/api/generate", &body, config.timeout)?;
-    let parsed = serde_json::from_str::<Value>(&response)
-        .map_err(|err| format!("failed to parse Ollama response: {err}"))?;
-    parsed
-        .get("response")
-        .and_then(Value::as_str)
-        .map(str::to_string)
-        .ok_or_else(|| "Ollama response did not contain a response field".to_string())
-}
-
-/// Extract a JSON object from a possibly-noisy LLM response (models sometimes
-/// wrap JSON in prose despite `format: json`).
-pub fn parse_json_object(raw: &str) -> Result<Value, String> {
-    if let Ok(value) = serde_json::from_str::<Value>(raw) {
-        return Ok(value);
-    }
-    let start = raw
-        .find('{')
-        .ok_or_else(|| "AI response had no JSON object".to_string())?;
-    let end = raw
-        .rfind('}')
-        .ok_or_else(|| "AI response had no JSON object end".to_string())?;
-    serde_json::from_str(&raw[start..=end])
-        .map_err(|err| format!("failed to parse AI JSON response: {err}"))
-}
-
-/// Whether AI debug logging is on (`CHAINVET_AI_DEBUG=1`).
-pub fn debug_enabled() -> bool {
-    env::var("CHAINVET_AI_DEBUG").ok().as_deref() == Some("1")
-}
-
-fn http_post_json(
+/// POST a JSON `body` to `endpoint` + `path` and return the (de-chunked)
+/// response body as a String.
+///
+/// `endpoint` is `http://host:port` with an optional base path (the scheme is
+/// stripped; `https` is not supported — providers here talk to local servers).
+pub fn post_json(
     endpoint: &str,
     path: &str,
     body: &str,
@@ -109,13 +32,13 @@ fn http_post_json(
     };
 
     let mut stream = TcpStream::connect(host_port)
-        .map_err(|err| format!("failed to connect to Ollama at {endpoint}: {err}"))?;
+        .map_err(|err| format!("failed to connect to {endpoint}: {err}"))?;
     stream
         .set_read_timeout(Some(timeout))
-        .map_err(|err| format!("failed to set Ollama read timeout: {err}"))?;
+        .map_err(|err| format!("failed to set read timeout: {err}"))?;
     stream
         .set_write_timeout(Some(timeout))
-        .map_err(|err| format!("failed to set Ollama write timeout: {err}"))?;
+        .map_err(|err| format!("failed to set write timeout: {err}"))?;
 
     let request = format!(
         "POST {request_path} HTTP/1.1\r\nHost: {host_port}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
@@ -123,27 +46,27 @@ fn http_post_json(
     );
     stream
         .write_all(request.as_bytes())
-        .map_err(|err| format!("failed to write Ollama request: {err}"))?;
+        .map_err(|err| format!("failed to write request: {err}"))?;
 
     // Read raw bytes: a chunked body must be de-framed on byte boundaries (the
     // JSON payload can contain multibyte UTF-8, so we can't slice a String).
     let mut response = Vec::new();
     stream
         .read_to_end(&mut response)
-        .map_err(|err| format!("failed to read Ollama response: {err}"))?;
+        .map_err(|err| format!("failed to read response: {err}"))?;
     let Some(sep) = find_subslice(&response, b"\r\n\r\n") else {
-        return Err("invalid HTTP response from Ollama".to_string());
+        return Err(format!("invalid HTTP response from {endpoint}"));
     };
     let headers = String::from_utf8_lossy(&response[..sep]);
     let body = &response[sep + 4..];
     if !headers.starts_with("HTTP/1.1 200") && !headers.starts_with("HTTP/1.0 200") {
         return Err(format!(
-            "Ollama returned non-200 response: {}",
+            "server returned non-200 response: {}",
             headers.lines().next().unwrap_or("unknown status")
         ));
     }
-    // Ollama switches to `Transfer-Encoding: chunked` once the response outgrows
-    // its ~4 KB buffer (which real review prompts do). De-chunk before decoding.
+    // Servers switch to `Transfer-Encoding: chunked` once the response outgrows
+    // their write buffer (which real review prompts do). De-chunk before decoding.
     let is_chunked = headers.lines().any(|line| {
         line.to_ascii_lowercase().starts_with("transfer-encoding:")
             && line.to_ascii_lowercase().contains("chunked")
@@ -191,6 +114,7 @@ fn dechunk(mut data: &[u8]) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::Value;
 
     #[test]
     fn dechunk_reassembles_multiple_chunks() {

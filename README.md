@@ -128,9 +128,9 @@ them off (the default), Chainvet runs fully offline and deterministically.
 
 | Env var | Effect |
 |---|---|
-| `CHAINVET_AI_FALLBACK_PARSER=1` | AI-assisted parsing when solc and tree-sitter both fail |
-| `CHAINVET_AI_REPORT=1` | LLM review of findings: drop false positives, annotate the rest |
-| `CHAINVET_AI_ENDPOINT`, `CHAINVET_AI_MODEL` | Ollama endpoint/model (default `http://127.0.0.1:11434`, `qwen2.5-coder:7b`) |
+| `CHAINVET_LLM_FALLBACK_PARSER=1` | AI-assisted parsing when solc and tree-sitter both fail |
+| `CHAINVET_LLM_REPORT=1` | LLM review of findings: drop false positives, annotate the rest |
+| `CHAINVET_LLM_ENDPOINT`, `CHAINVET_LLM_MODEL` | Ollama endpoint/model (default `http://127.0.0.1:11434`, `qwen2.5-coder:7b`) |
 
 ## Workspace
 
@@ -141,7 +141,7 @@ orchestration crate exposes a typed `scan()` facade; thin frontends render it.
 crates/
 chainvet-core          shared types: normalized AST, IR, CFG, SSA, findings
 chainvet-frontend      load Solidity: solc → tree-sitter → optional AI fallback
-chainvet-ai            local-LLM (Ollama) transport, shared by frontend + reports
+chainvet-llm           LLM transport (Ollama today), shared by frontend + reports
     chainvet-sa            static analysis: call graph, taint, detectors
 chainvet-se            symbolic execution (Z3)
     chainvet-fuzzing       coverage-guided greybox fuzzer

@@ -1,6 +1,6 @@
 //! Optional AI review of findings (harvested from the AI-reporting feature).
 //!
-//! When `CHAINVET_AI_REPORT` is set, each finding is validated against its source
+//! When `CHAINVET_LLM_REPORT` is set, each finding is validated against its source
 //! by a local LLM: findings the model judges `false_positive` are dropped, and
 //! survivors gain a one-line AI rationale (and a corrected severity, if given).
 //! Fully opt-in — disabled or with Ollama unreachable this is a no-op, so default
@@ -9,7 +9,8 @@
 use std::env;
 use std::fs;
 
-use chainvet_ai::ollama::{self, OllamaConfig};
+use chainvet_llm::ollama::{self, OllamaConfig};
+use chainvet_llm::{debug_enabled, parse_json_object};
 use chainvet_hybrid::hybrid::HybridFindingRow as ScanFinding;
 
 use crate::ScanResult;
@@ -37,7 +38,7 @@ pub fn enhance(result: &mut ScanResult) {
 
 fn enabled() -> bool {
     matches!(
-        env::var("CHAINVET_AI_REPORT")
+        env::var("CHAINVET_LLM_REPORT")
             .unwrap_or_default()
             .trim()
             .to_ascii_lowercase()
@@ -54,13 +55,13 @@ fn review_one(config: &OllamaConfig, mut finding: ScanFinding) -> Option<ScanFin
     let raw = match ollama::generate(config, &prompt) {
         Ok(raw) => raw,
         Err(err) => {
-            if ollama::debug_enabled() {
+            if debug_enabled() {
                 eprintln!("[ai-report] review skipped: {err}");
             }
             return Some(finding);
         }
     };
-    let value = match ollama::parse_json_object(&raw) {
+    let value = match parse_json_object(&raw) {
         Ok(value) => value,
         Err(_) => return Some(finding),
     };
