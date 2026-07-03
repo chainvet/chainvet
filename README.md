@@ -73,7 +73,7 @@ chainvet scan -c confirmed <path.sol>  # findings at/above a confidence tier (fl
 chainvet scan --confidence candidate . # findings of exactly a tier (repeatable)
 chainvet scan -f md -o audit.md <path> # Cyfrin-style audit report (Markdown)
 chainvet scan -f html -o audit.html .  # ...as a self-contained HTML page (print-to-PDF)
-chainvet scan -f pdf -o audit.pdf .    # ...as PDF (via a pandoc passthrough)
+chainvet scan -f pdf -o audit.pdf .    # ...as PDF (via weasyprint/wkhtmltopdf)
 chainvet scan -o report.txt <path.sol> # write the report to a file
 chainvet ir <path.sol> -f text         # inspect the IR (text | json | tuple)
 ```
@@ -147,6 +147,7 @@ chainvet-se            symbolic execution (Z3)
     chainvet-fuzzing       coverage-guided greybox fuzzer
     chainvet-hybrid        the hybrid control loop
 chainvet-orchestrator  scan(config) -> ScanResult (merge/dedup/tier + AI review)
+chainvet-report        Cyfrin-style audit report (md/html/pdf), shared by cli + server
     chainvet-cli           binary: chainvet
     chainvet-ci            binary: chainvet-ci  (SARIF + fail-on-severity)
     chainvet-server        binary: chainvet-server (REST API)

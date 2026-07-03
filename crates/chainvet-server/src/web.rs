@@ -10,12 +10,16 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
+use axum::body::Body;
 use axum::extract::{Query, State};
-use axum::http::StatusCode;
+use axum::http::{HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
-use chainvet_orchestrator::{HybridBudget, ScanMode, ScanResult, scan_path};
+use chainvet_core::norm::NormalizedAst;
+use chainvet_frontend::frontend;
+use chainvet_orchestrator::{HybridBudget, ScanFinding, ScanMode, ScanResult, scan};
+use chainvet_report::{AuditReport, render_html, render_markdown, render_pdf_bytes};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
@@ -74,6 +78,41 @@ struct FileQuery {
 struct AnalyzeRequest {
     path: String,
     mode: String,
+    // Display filters (mirror the CLI's `-s/--severity` and `-c/--confidence`).
+    // Omitted/empty means "no filter", so the default request is unchanged.
+    #[serde(default)]
+    min_severity: Option<String>,
+    #[serde(default)]
+    severity: Vec<String>,
+    #[serde(default)]
+    min_confidence: Option<String>,
+    #[serde(default)]
+    confidence: Vec<String>,
+    // Hybrid budget overrides (mirror the CLI's "Hybrid tuning" flags). Each
+    // `None` keeps the `HybridBudget::default()` value.
+    #[serde(default)]
+    epochs: Option<u32>,
+    #[serde(default)]
+    fuzz_time_ms: Option<u64>,
+    #[serde(default)]
+    hard_cap_ms: Option<u64>,
+    #[serde(default)]
+    fuzz_iters: Option<usize>,
+    #[serde(default)]
+    epoch_time_ms: Option<u64>,
+    #[serde(default)]
+    se_timeout_ms: Option<u64>,
+    #[serde(default)]
+    se_depth: Option<u32>,
+    #[serde(default)]
+    se_assists: Option<u32>,
+    #[serde(default)]
+    seed: Option<u64>,
+}
+
+#[derive(Deserialize)]
+struct ReportQuery {
+    format: String,
 }
 
 #[derive(Serialize)]
@@ -195,6 +234,18 @@ impl WebMode {
 pub struct AppState {
     root_dir: PathBuf,
     active_job: Mutex<Option<Arc<Job>>>,
+    /// The most recent completed analysis, retained so `/api/report` can render
+    /// an audit report without re-scanning. One entry per analyzed `.sol` file.
+    last_scan: Mutex<Option<LastScan>>,
+}
+
+/// A finished analysis retained for report generation.
+struct LastScan {
+    /// Display label for the report's target/scope (root-relative).
+    target: String,
+    /// `(scan, ast)` per analyzed file — [`AuditReport::from_scans`] accumulates
+    /// findings across them and resolves each file's function names.
+    scans: Vec<(ScanResult, NormalizedAst)>,
 }
 
 struct Progress {
@@ -269,6 +320,13 @@ impl AppState {
         Self {
             root_dir,
             active_job: Mutex::new(None),
+            last_scan: Mutex::new(None),
+        }
+    }
+
+    fn store_last_scan(&self, scan: LastScan) {
+        if let Ok(mut guard) = self.last_scan.lock() {
+            *guard = Some(scan);
         }
     }
 
@@ -316,6 +374,7 @@ pub fn routes(state: Arc<AppState>) -> Router {
         .route("/api/analyze", post(api_analyze))
         .route("/api/analyze/status", get(api_analysis_status))
         .route("/api/analyze/cancel", post(api_cancel))
+        .route("/api/report", get(api_report))
         .with_state(state)
 }
 
@@ -473,7 +532,176 @@ async fn api_cancel(State(state): State<Arc<AppState>>) -> ApiResult<Json<Cancel
     }))
 }
 
+/// Render a branded audit report (Markdown / HTML / PDF) from the most recent
+/// completed analysis. Returns 409 when nothing has been analyzed yet.
+async fn api_report(
+    State(state): State<Arc<AppState>>,
+    Query(query): Query<ReportQuery>,
+) -> ApiResult<Response> {
+    let format = query.format.trim().to_ascii_lowercase();
+
+    // Build the report model while holding the lock (cheap), then release it —
+    // PDF rendering shells out to an engine and must not block on the mutex.
+    let report = {
+        let guard = state
+            .last_scan
+            .lock()
+            .map_err(|_| ApiError::internal("report state lock poisoned"))?;
+        let last = guard.as_ref().ok_or_else(|| {
+            ApiError::conflict("no completed analysis to report on yet — run a scan first")
+        })?;
+        AuditReport::from_scans(last.scans.iter().map(|(r, a)| (r, a)), &last.target)
+    };
+
+    let (content_type, filename, body): (&'static str, &'static str, Vec<u8>) =
+        match format.as_str() {
+            "md" | "markdown" => (
+                "text/markdown; charset=utf-8",
+                "chainvet-report.md",
+                render_markdown(&report).into_bytes(),
+            ),
+            "html" => (
+                "text/html; charset=utf-8",
+                "chainvet-report.html",
+                render_html(&report).into_bytes(),
+            ),
+            "pdf" => {
+                // The HTML→PDF engine is a blocking subprocess — keep it off the
+                // async worker threads.
+                let bytes = tokio::task::spawn_blocking(move || render_pdf_bytes(&report))
+                    .await
+                    .map_err(|e| ApiError::internal(format!("report task join failure: {e}")))?
+                    .map_err(|e| ApiError::internal(e.to_string()))?;
+                ("application/pdf", "chainvet-report.pdf", bytes)
+            }
+            other => {
+                return Err(ApiError::bad_request(format!(
+                    "unknown report format `{other}` (expected md, html, or pdf)"
+                )));
+            }
+        };
+
+    let mut response = Response::new(Body::from(body));
+    response
+        .headers_mut()
+        .insert(header::CONTENT_TYPE, HeaderValue::from_static(content_type));
+    if let Ok(value) = HeaderValue::from_str(&format!("attachment; filename=\"{filename}\"")) {
+        response
+            .headers_mut()
+            .insert(header::CONTENT_DISPOSITION, value);
+    }
+    Ok(response)
+}
+
 // ---------- analysis (library-driven) ----------
+
+/// Severity/confidence display filters, mirroring the CLI's `-s/--severity` and
+/// `-c/--confidence`. An exact set (when non-empty) takes precedence over the
+/// floor for that axis; empty + no floor keeps everything.
+struct Filters {
+    min_severity: u8,
+    exact_severity: Vec<u8>,
+    min_confidence: u8,
+    exact_confidence: Vec<u8>,
+}
+
+impl Filters {
+    fn from_request(request: &AnalyzeRequest) -> Self {
+        Self {
+            min_severity: request
+                .min_severity
+                .as_deref()
+                .map(sev_filter_rank)
+                .unwrap_or(0),
+            exact_severity: request
+                .severity
+                .iter()
+                .map(|s| sev_filter_rank(s))
+                .collect(),
+            min_confidence: request
+                .min_confidence
+                .as_deref()
+                .map(tier_filter_rank)
+                .unwrap_or(0),
+            exact_confidence: request
+                .confidence
+                .iter()
+                .map(|c| tier_filter_rank(c))
+                .collect(),
+        }
+    }
+
+    fn keep(&self, finding: &ScanFinding) -> bool {
+        let sev = finding
+            .severity
+            .as_deref()
+            .map(sev_filter_rank)
+            .unwrap_or(1);
+        let severity_ok = if self.exact_severity.is_empty() {
+            sev >= self.min_severity
+        } else {
+            self.exact_severity.contains(&sev)
+        };
+        let tier = tier_filter_rank(&finding.tier);
+        let confidence_ok = if self.exact_confidence.is_empty() {
+            tier >= self.min_confidence
+        } else {
+            self.exact_confidence.contains(&tier)
+        };
+        severity_ok && confidence_ok
+    }
+}
+
+/// Severity floor rank (high=3, medium=2, low/unknown=1) — matches the CLI.
+fn sev_filter_rank(severity: &str) -> u8 {
+    match severity.trim().to_ascii_lowercase().as_str() {
+        "high" | "critical" => 3,
+        "medium" | "moderate" => 2,
+        _ => 1,
+    }
+}
+
+/// Confidence-tier rank (confirmed=2, candidate/unknown=1) — matches the CLI.
+fn tier_filter_rank(tier: &str) -> u8 {
+    match tier.trim().to_ascii_lowercase().as_str() {
+        "confirmed" => 2,
+        _ => 1,
+    }
+}
+
+/// Build the hybrid budget from `HybridBudget::default()` plus request overrides.
+/// Mirrors the CLI's `run_scan` mapping so the two frontends behave identically.
+fn build_budget(request: &AnalyzeRequest) -> HybridBudget {
+    let mut budget = HybridBudget::default();
+    if let Some(v) = request.epochs {
+        budget.max_epochs = v;
+    }
+    if let Some(v) = request.fuzz_time_ms {
+        budget.total_runtime_ms = v;
+    }
+    if let Some(v) = request.hard_cap_ms {
+        budget.hard_cap_ms = v;
+    }
+    if let Some(v) = request.fuzz_iters {
+        budget.fuzz_iters_per_epoch = v;
+    }
+    if let Some(v) = request.epoch_time_ms {
+        budget.fuzz_epoch_ms = v;
+    }
+    if let Some(v) = request.se_timeout_ms {
+        budget.se_timeout_ms = v;
+    }
+    if let Some(v) = request.se_depth {
+        budget.se_max_depth = v;
+    }
+    if let Some(v) = request.se_assists {
+        budget.max_se_assists = v;
+    }
+    if let Some(v) = request.seed {
+        budget.fuzz_seed = v;
+    }
+    budget
+}
 
 fn analyze(state: &AppState, request: AnalyzeRequest) -> ApiResult<AnalyzeResponse> {
     let mode = WebMode::parse(request.mode.trim())
@@ -482,8 +710,15 @@ fn analyze(state: &AppState, request: AnalyzeRequest) -> ApiResult<AnalyzeRespon
     let targets = collect_targets(&target)?;
     let job = state.begin_job(mode, &target, targets.len())?;
 
-    let result = (|| {
+    let filters = Filters::from_request(&request);
+    let budget = build_budget(&request);
+    let target_display = relative_display(&state.root_dir, &target);
+
+    // Build the response and, alongside it, retain each file's (scan, ast) so a
+    // follow-up `/api/report` can render an audit report without re-scanning.
+    let outcome = (|| {
         let mut findings = Vec::new();
+        let mut scans: Vec<(ScanResult, NormalizedAst)> = Vec::new();
         for file in &targets {
             if job.was_cancelled() {
                 return Err(ApiError::cancelled(format!(
@@ -492,13 +727,15 @@ fn analyze(state: &AppState, request: AnalyzeRequest) -> ApiResult<AnalyzeRespon
                 )));
             }
             job.start_target(relative_display(&state.root_dir, file));
-            let scan = scan_path(
-                &file.to_string_lossy(),
-                mode.scan_mode(),
-                &HybridBudget::default(),
-            )
-            .map_err(|e| ApiError::internal(format!("analysis failed: {e}")))?;
-            findings.extend(web_findings(&scan));
+            let output = frontend::load_project(&file.to_string_lossy())
+                .map_err(|e| ApiError::internal(format!("analysis failed: {e}")))?;
+            let mut scan_result = scan(&output, mode.scan_mode(), &budget)
+                .map_err(|e| ApiError::internal(format!("analysis failed: {e}")))?;
+            // Filters are a display concern applied identically to the findings
+            // list and the audit report; the CLI applies them the same way.
+            scan_result.findings.retain(|f| filters.keep(f));
+            findings.extend(web_findings(&scan_result));
+            scans.push((scan_result, output.ast));
             job.finish_target();
         }
         findings.sort_by(|a, b| {
@@ -510,19 +747,25 @@ fn analyze(state: &AppState, request: AnalyzeRequest) -> ApiResult<AnalyzeRespon
         let summary_cards = build_summary_cards(mode, &findings);
         let raw_report = serde_json::to_value(&findings).unwrap_or(Value::Null);
         let raw_json = raw_report.to_string();
-        Ok(AnalyzeResponse {
+        let response = AnalyzeResponse {
             root_dir: state.root_dir.display().to_string(),
-            target_path: relative_display(&state.root_dir, &target),
+            target_path: target_display.clone(),
             mode: mode.as_str().to_string(),
             summary_cards,
             findings,
             raw_json,
             raw_report,
-        })
+        };
+        Ok((response, scans))
     })();
 
     state.clear_job(&job);
-    result
+    let (response, scans) = outcome?;
+    state.store_last_scan(LastScan {
+        target: target_display,
+        scans,
+    });
+    Ok(response)
 }
 
 fn web_findings(scan: &ScanResult) -> Vec<WebFinding> {

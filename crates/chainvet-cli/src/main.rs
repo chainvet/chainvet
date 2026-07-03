@@ -1,8 +1,8 @@
 mod render;
-mod report;
 
 use chainvet_core::util::error::Result;
 use chainvet_orchestrator::{HybridBudget, ScanMode, scan};
+use chainvet_report as report;
 use clap::{Parser, Subcommand, ValueEnum};
 
 /// Hybrid Solidity smart-contract security analyzer.
@@ -145,7 +145,7 @@ pub enum Format {
     Md,
     /// Cyfrin-style audit report as a standalone HTML page.
     Html,
-    /// Audit report as PDF (renders Markdown and converts it via `pandoc`).
+    /// Audit report as PDF (renders the branded HTML via weasyprint/wkhtmltopdf).
     Pdf,
 }
 
