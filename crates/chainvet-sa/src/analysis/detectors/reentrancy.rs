@@ -13,7 +13,7 @@
 
 use chainvet_core::norm::{CallOption, CallTarget, ExprKind, NormalizedAst, StmtKind, Visibility};
 
-use super::{Finding, FindingKind, Severity};
+use super::{Confidence, Finding, FindingKind, Severity};
 
 // ═══════════════════════════════════════════════════════════════════════════════
 //  Constants
@@ -786,8 +786,17 @@ fn detect_reentrancy_negative_events(ast: &NormalizedAst) -> Vec<Finding> {
             // an external call with the call also being near an emit.
             if found_state_update && found_emit {
                 let func_name = func.name.as_deref().unwrap_or("<anonymous>");
+                // A gas-forwarding `.call` makes the re-entrant callback (and thus
+                // the corrupted event data) reachable; a `.transfer`/`.send`
+                // stipend does not, so we are far less sure it is exploitable.
+                let confidence = if ext_calls.iter().any(|c| !c.is_transfer_or_send) {
+                    Confidence::Medium
+                } else {
+                    Confidence::Low
+                };
                 findings.push(Finding {
                     kind: FindingKind::ReentrancyNegativeEvents,
+                    confidence_override: Some(confidence),
                     severity: Severity::High,
                     message: format!(
                         "RE-01: reentrancy in `{func_name}`: state variable updated \
@@ -875,14 +884,20 @@ fn detect_reentrancy_same_effect(ast: &NormalizedAst) -> Vec<Finding> {
                 // *today* — but it is a fragile anti-pattern (breaks the moment the
                 // call becomes `.call` or gas costs shift), so flag it at Medium.
                 let callback = ext_calls.iter().find(|c| !c.is_transfer_or_send);
-                let (severity, span, detail) = match callback {
+                let (severity, confidence, span, detail) = match callback {
+                    // A `.call`-style call forwards all gas → directly exploitable,
+                    // so we are confident this is a true positive.
                     Some(c) => (
                         Severity::High,
+                        Confidence::High,
                         c.span,
                         "a re-entrant callback will see stale values and repeat the same effect",
                     ),
+                    // Only the 2300-gas stipend is forwarded: a fragile anti-pattern
+                    // but rarely exploitable today, so keep confidence low.
                     None => (
                         Severity::Medium,
+                        Confidence::Low,
                         ext_calls[0].span,
                         "the .transfer/.send 2300-gas stipend limits exploitability today, but \
                          this checks-effects-interactions violation is fragile — update state \
@@ -891,6 +906,7 @@ fn detect_reentrancy_same_effect(ast: &NormalizedAst) -> Vec<Finding> {
                 };
                 findings.push(Finding {
                     kind: FindingKind::ReentrancySameEffect,
+                    confidence_override: Some(confidence),
                     severity,
                     message: format!(
                         "RE-03: reentrancy in `{func_name}`: variable(s) `{var_list}` \
@@ -951,8 +967,12 @@ fn detect_reentrancy_eth_transfer(ast: &NormalizedAst) -> Vec<Finding> {
                 let updates = find_state_updates_in_stmt(ast, later_sid);
                 if !updates.is_empty() {
                     let func_name = func.name.as_deref().unwrap_or("<anonymous>");
+                    // `eth_calls` is already filtered to gas-forwarding `.call{value:}`
+                    // sinks (`sends_eth && !is_transfer_or_send`), i.e. the classic
+                    // DAO drain pattern — directly exploitable, so raise to High.
                     findings.push(Finding {
                         kind: FindingKind::ReentrancyEthTransfer,
+                        confidence_override: Some(Confidence::High),
                         severity: Severity::High,
                         message: format!(
                             "RE-04: reentrancy in `{func_name}`: state variable updated \
@@ -975,6 +995,7 @@ fn detect_reentrancy_eth_transfer(ast: &NormalizedAst) -> Vec<Finding> {
             let func_name = func.name.as_deref().unwrap_or("<anonymous>");
             findings.push(Finding {
                 kind: FindingKind::ReentrancyEthTransfer,
+                confidence_override: None,
                 severity: Severity::High,
                 message: format!(
                     "RE-04: reentrancy in `{func_name}`: state variable is read before an ETH-sending external call and written after it inside nested control flow; update state before the call"
@@ -1050,6 +1071,7 @@ fn detect_reentrancy_no_eth_transfer(ast: &NormalizedAst) -> Vec<Finding> {
                     };
                     findings.push(Finding {
                         kind: FindingKind::ReentrancyNoEthTransfer,
+                        confidence_override: None,
                         severity: Severity::Medium,
                         message: format!(
                             "RE-05: reentrancy in `{func_name}`: state variable updated \
@@ -1072,6 +1094,7 @@ fn detect_reentrancy_no_eth_transfer(ast: &NormalizedAst) -> Vec<Finding> {
             let func_name = func.name.as_deref().unwrap_or("<anonymous>");
             findings.push(Finding {
                 kind: FindingKind::ReentrancyNoEthTransfer,
+                confidence_override: None,
                 severity: Severity::Medium,
                 message: format!(
                     "RE-05: reentrancy in `{func_name}`: callback-visible state is written before a low-level external call; a callee can re-enter using the newly exposed state"

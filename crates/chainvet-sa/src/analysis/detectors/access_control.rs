@@ -579,6 +579,7 @@ fn detect_arbitrary_transfer_from(ast: &NormalizedAst) -> Vec<Finding> {
             {
                 findings.push(Finding {
                     kind: FindingKind::ArbitraryTransferFrom,
+                    confidence_override: None,
                     severity: Severity::High,
                     message: "transferFrom() called with arbitrary `from` \
                                             without msg.sender check or access control modifier"
@@ -612,6 +613,7 @@ fn detect_arbitrary_calldata(ast: &NormalizedAst) -> Vec<Finding> {
             {
                 findings.push(Finding {
                     kind: FindingKind::ArbitraryCalldata,
+                    confidence_override: None,
                     severity: Severity::High,
                     message: "low-level call to address from function parameter \
                                         with unchecked calldata"
@@ -642,6 +644,7 @@ fn detect_caller_not_checked(ast: &NormalizedAst) -> Vec<Finding> {
                 {
                     findings.push(Finding {
                         kind: FindingKind::CallerNotChecked,
+                        confidence_override: None,
                         severity: Severity::Medium,
                         message: "extcodesize check on caller can be bypassed when \
                                     called from a constructor"
@@ -678,6 +681,7 @@ fn detect_contract_destructable(ast: &NormalizedAst, call_graph: &CallGraph) -> 
         {
             findings.push(Finding {
                 kind: FindingKind::ContractDestructable,
+                confidence_override: None,
                 severity: Severity::Medium,
                 message: format!(
                     "contract can be destroyed via {name} — even with access control \
@@ -714,6 +718,7 @@ fn detect_dangerous_state_var_init(ast: &NormalizedAst) -> Vec<Finding> {
             {
                 findings.push(Finding {
                     kind: FindingKind::DangerousStateVarInit,
+                    confidence_override: None,
                     severity: Severity::Medium,
                     message: format!(
                         "state variable '{}' initialized with runtime-dependent value",
@@ -832,6 +837,7 @@ fn walk_expr_for_tx_origin(
     if is_tx_origin(ast, expr) {
         findings.push(Finding {
             kind: FindingKind::TxOrigin,
+            confidence_override: None,
             severity: Severity::Medium,
             message: "use of tx.origin for authorization".into(),
             span: expr.span,
@@ -923,6 +929,7 @@ fn detect_default_visibility(ast: &NormalizedAst) -> Vec<Finding> {
         if func.visibility == Visibility::Unknown {
             findings.push(Finding {
                 kind: FindingKind::DefaultVisibility,
+                confidence_override: None,
                 severity: Severity::Medium,
                 message: format!(
                     "function '{}' has no explicit visibility — defaults to public",
@@ -971,6 +978,7 @@ fn detect_uninit_permission_check(ast: &NormalizedAst) -> Vec<Finding> {
 
         findings.push(Finding {
             kind: FindingKind::UninitializedPermissionCheck,
+            confidence_override: None,
             severity: Severity::High,
             message: format!(
                 "{} '{}' lacks access control modifier or msg.sender guard",
@@ -1009,6 +1017,7 @@ fn detect_permit_arbitrary_transfer_from(ast: &NormalizedAst) -> Vec<Finding> {
             {
                 findings.push(Finding {
                     kind: FindingKind::PermitArbitraryTransferFrom,
+                    confidence_override: None,
                     severity: Severity::High,
                     message: "permit() used with transferFrom() where `from` \
                                             is not msg.sender — if token lacks permit support, \
@@ -1039,6 +1048,7 @@ fn detect_missing_sender_check_transfer_from(ast: &NormalizedAst) -> Vec<Finding
             {
                 findings.push(Finding {
                     kind: FindingKind::MissingSenderCheckTransferFrom,
+                    confidence_override: None,
                     severity: Severity::High,
                     message: "transferFrom() called without msg.sender as `from` \
                                             parameter — may allow unauthorized token transfer"
@@ -1066,6 +1076,7 @@ fn detect_missing_input_validation(ast: &NormalizedAst) -> Vec<Finding> {
             if is_address_param_name(param) && !has_validation_for_param(ast, func, param) {
                 findings.push(Finding {
                     kind: FindingKind::MissingInputValidation,
+                    confidence_override: None,
                     severity: Severity::Medium,
                     message: format!(
                         "parameter '{}' in function '{}' may lack zero-address validation",
@@ -1108,6 +1119,7 @@ fn detect_arbitrary_ether_send(ast: &NormalizedAst) -> Vec<Finding> {
                 if is_ether_send && receiver.iter().any(|r| params.contains(r.as_str())) {
                     findings.push(Finding {
                         kind: FindingKind::ArbitraryEtherSend,
+                        confidence_override: None,
                         severity: Severity::High,
                         message: "ether sent to address derived from function parameter \
                                     — destination should be validated"
@@ -1143,6 +1155,7 @@ fn detect_unprotected_selfdestruct(ast: &NormalizedAst, call_graph: &CallGraph) 
         {
             findings.push(Finding {
                 kind: FindingKind::UnprotectedSelfdestruct,
+                confidence_override: None,
                 severity: Severity::High,
                 message: format!(
                     "unprotected {name} — no access control modifier on containing function"
@@ -1203,6 +1216,7 @@ fn detect_unprotected_ether_withdrawal(ast: &NormalizedAst) -> Vec<Finding> {
         if sends_ether {
             findings.push(Finding {
                 kind: FindingKind::UnprotectedEtherWithdrawal,
+                confidence_override: None,
                 severity: Severity::High,
                 message: format!(
                     "function '{}' can send ether without access control",
@@ -1231,6 +1245,7 @@ fn detect_unsafe_delegatecall(call_graph: &CallGraph) -> Vec<Finding> {
         if name == "delegatecall" || name == "callcode" {
             findings.push(Finding {
                 kind: FindingKind::UnsafeDelegatecall,
+                confidence_override: None,
                 severity: Severity::High,
                 message: format!("unsafe low-level {name} — executes code in caller's context"),
                 span: site.span,
@@ -1255,6 +1270,7 @@ fn detect_unused_return_value(ast: &NormalizedAst) -> Vec<Finding> {
         {
             findings.push(Finding {
                 kind: FindingKind::UnusedReturnValue,
+                confidence_override: None,
                 severity: Severity::Medium,
                 message: format!("return value of low-level {method} is not checked"),
                 span: func.span,
@@ -1285,6 +1301,7 @@ fn walk_for_unchecked(
             if let Some(name) = low_level_call_name(ast, *expr_id) {
                 findings.push(Finding {
                     kind: FindingKind::UnusedReturnValue,
+                    confidence_override: None,
                     severity: Severity::Medium,
                     message: format!("return value of low-level {name} is not checked"),
                     span: stmt.span,
@@ -1435,6 +1452,7 @@ fn detect_public_mint_burn(ast: &NormalizedAst) -> Vec<Finding> {
 
         findings.push(Finding {
             kind: FindingKind::PublicMintBurn,
+            confidence_override: None,
             severity: Severity::High,
             message: format!(
                 "public function '{}' allows anyone to mint / burn tokens",
@@ -1462,6 +1480,7 @@ fn detect_arbitrary_storage_write(ast: &NormalizedAst) -> Vec<Finding> {
                 if lower.contains("sstore") {
                     findings.push(Finding {
                         kind: FindingKind::ArbitraryStorageWrite,
+                        confidence_override: None,
                         severity: Severity::High,
                         message: "inline assembly uses sstore — may write to \
                                     arbitrary storage location"

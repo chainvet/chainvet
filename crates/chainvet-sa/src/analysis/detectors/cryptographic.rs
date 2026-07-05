@@ -847,6 +847,7 @@ fn detect_lack_of_signature_verification(ast: &NormalizedAst) -> Vec<Finding> {
                 let func_name = func.name.as_deref().unwrap_or("<anonymous>");
                 findings.push(Finding {
                     kind: FindingKind::LackOfSignatureVerification,
+                    confidence_override: None,
                     severity: Severity::High,
                     message: format!(
                         "CR-01: function `{func_name}` calls `ecrecover` but does not \
@@ -875,6 +876,7 @@ fn detect_lack_of_signature_verification(ast: &NormalizedAst) -> Vec<Finding> {
                 let func_name = func.name.as_deref().unwrap_or("<anonymous>");
                 findings.push(Finding {
                     kind: FindingKind::LackOfSignatureVerification,
+                    confidence_override: None,
                     severity: Severity::High,
                     message: format!(
                         "CR-01: function `{func_name}` has signature-related parameters \
@@ -951,6 +953,7 @@ fn detect_signature_malleability(ast: &NormalizedAst) -> Vec<Finding> {
         let func_name = func.name.as_deref().unwrap_or("<anonymous>");
         findings.push(Finding {
             kind: FindingKind::SignatureMalleability,
+            confidence_override: None,
             severity: Severity::Medium,
             message: format!(
                 "CR-02: function `{func_name}` calls `ecrecover` directly without \

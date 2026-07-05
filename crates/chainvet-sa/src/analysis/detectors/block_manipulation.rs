@@ -701,6 +701,7 @@ fn detect_dangerous_timestamp(ast: &NormalizedAst) -> Vec<Finding> {
                     if cond_ts(*cond) {
                         findings.push(Finding {
                             kind: FindingKind::DangerousBlockTimestamp,
+                            confidence_override: None,
                             severity: Severity::Low,
                             message: "dangerous use of `block.timestamp` / `now` in if-condition; \
                                 miners can manipulate this value within ~15 seconds"
@@ -715,6 +716,7 @@ fn detect_dangerous_timestamp(ast: &NormalizedAst) -> Vec<Finding> {
                     if cond_ts(*cond) {
                         findings.push(Finding {
                             kind: FindingKind::DangerousBlockTimestamp,
+                            confidence_override: None,
                             severity: Severity::Low,
                             message:
                                 "dangerous use of `block.timestamp` / `now` in while-condition; \
@@ -731,6 +733,7 @@ fn detect_dangerous_timestamp(ast: &NormalizedAst) -> Vec<Finding> {
                 } if cond_ts(*cond) => {
                     findings.push(Finding {
                         kind: FindingKind::DangerousBlockTimestamp,
+                        confidence_override: None,
                         severity: Severity::Low,
                         message: "dangerous use of `block.timestamp` / `now` in for-condition; \
                                 miners can manipulate this value within ~15 seconds"
@@ -751,6 +754,7 @@ fn detect_dangerous_timestamp(ast: &NormalizedAst) -> Vec<Finding> {
             {
                 findings.push(Finding {
                     kind: FindingKind::DangerousBlockTimestamp,
+                    confidence_override: None,
                     severity: Severity::Low,
                     message: "`block.timestamp` / `now` used in returned decision logic; \
                         callers may rely on this miner-manipulable value"
@@ -768,6 +772,7 @@ fn detect_dangerous_timestamp(ast: &NormalizedAst) -> Vec<Finding> {
                     if contains_timestamp(ast, arg) {
                         findings.push(Finding {
                             kind: FindingKind::DangerousBlockTimestamp,
+                            confidence_override: None,
                             severity: Severity::Low,
                             message: "`block.timestamp` / `now` passed as function argument; \
                                 the called function may make decisions based on this \
@@ -962,6 +967,7 @@ fn detect_transaction_order_dependency(ast: &NormalizedAst) -> Vec<Finding> {
 
         findings.push(Finding {
             kind: FindingKind::TransactionOrderDependency,
+            confidence_override: None,
             severity: Severity::Medium,
             message,
             span: func.span,
@@ -1025,6 +1031,7 @@ fn detect_weak_prng(ast: &NormalizedAst) -> Vec<Finding> {
                         };
                         findings.push(Finding {
                             kind: FindingKind::WeakPrng,
+                            confidence_override: None,
                             severity: Severity::High,
                             message: format!(
                                 "weak PRNG: `{label}` used in arithmetic expression; \
@@ -1049,6 +1056,7 @@ fn detect_weak_prng(ast: &NormalizedAst) -> Vec<Finding> {
                                     let label = block_value_label(ast, arg);
                                     findings.push(Finding {
                                         kind: FindingKind::WeakPrng,
+                                        confidence_override: None,
                                         severity: Severity::High,
                                         message: format!(
                                             "weak PRNG: `{label}` passed to `{name}()` \

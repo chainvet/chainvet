@@ -99,6 +99,7 @@ fn detect_unchecked_send(ast: &NormalizedAst) -> Vec<Finding> {
                 let func_name = func.name.as_deref().unwrap_or("<anonymous>");
                 findings.push(Finding {
                     kind: FindingKind::UncheckedSend,
+                    confidence_override: None,
                     severity: Severity::Medium,
                     message: format!(
                         "DS-07: unchecked low-level call in `{func_name}` — the boolean \
@@ -739,6 +740,7 @@ fn detect_hardcoded_gas_transfer(ast: &NormalizedAst) -> Vec<Finding> {
                 let method_name = detected_method_name(ast, expr);
                 findings.push(Finding {
                     kind: FindingKind::HardcodedGasTransfer,
+                    confidence_override: None,
                     severity: Severity::Low,
                     message: format!(
                         "DS-01: `{method_name}()` forwards a fixed 2300 gas stipend; \
@@ -908,6 +910,7 @@ fn detect_locked_ether(ast: &NormalizedAst) -> Vec<Finding> {
         if !can_send_ether {
             findings.push(Finding {
                 kind: FindingKind::LockedEther,
+                confidence_override: None,
                 severity: Severity::High,
                 message: format!(
                     "DS-02: contract `{}` has `payable` function(s) but no withdrawal \
@@ -962,6 +965,7 @@ fn detect_dos_block_gas_limit(ast: &NormalizedAst) -> Vec<Finding> {
                         let func_name = func.name.as_deref().unwrap_or("<anonymous>");
                         findings.push(Finding {
                             kind: FindingKind::DosBlockGasLimit,
+                            confidence_override: None,
                             severity: Severity::Medium,
                             message: format!(
                                 "DS-03: `for` loop in `{func_name}` iterates over a \
@@ -979,6 +983,7 @@ fn detect_dos_block_gas_limit(ast: &NormalizedAst) -> Vec<Finding> {
                         let func_name = func.name.as_deref().unwrap_or("<anonymous>");
                         findings.push(Finding {
                             kind: FindingKind::DosBlockGasLimit,
+                            confidence_override: None,
                             severity: Severity::Medium,
                             message: format!(
                                 "DS-03: loop in `{func_name}` uses `.push()` inside the \
@@ -999,6 +1004,7 @@ fn detect_dos_block_gas_limit(ast: &NormalizedAst) -> Vec<Finding> {
                         let func_name = func.name.as_deref().unwrap_or("<anonymous>");
                         findings.push(Finding {
                             kind: FindingKind::DosBlockGasLimit,
+                            confidence_override: None,
                             severity: Severity::Medium,
                             message: format!(
                                 "DS-03: `while` loop in `{func_name}` iterates over a \
@@ -1014,6 +1020,7 @@ fn detect_dos_block_gas_limit(ast: &NormalizedAst) -> Vec<Finding> {
                         let func_name = func.name.as_deref().unwrap_or("<anonymous>");
                         findings.push(Finding {
                             kind: FindingKind::DosBlockGasLimit,
+                            confidence_override: None,
                             severity: Severity::Medium,
                             message: format!(
                                 "DS-03: loop in `{func_name}` uses `.push()` inside the \
@@ -1038,6 +1045,7 @@ fn detect_dos_block_gas_limit(ast: &NormalizedAst) -> Vec<Finding> {
             if source_contains_loop(source_lower) && dynamic_bound {
                 findings.push(Finding {
                         kind: FindingKind::DosBlockGasLimit,
+                        confidence_override: None,
                         severity: Severity::Medium,
                         message: format!(
                             "DS-03: loop in `{}` depends on dynamic bounds (`.length`/gas), which can make the function exceed the block gas limit",
@@ -1088,6 +1096,7 @@ fn detect_dos_with_failed_call(ast: &NormalizedAst) -> Vec<Finding> {
                         let func_name = func.name.as_deref().unwrap_or("<anonymous>");
                         findings.push(Finding {
                             kind: FindingKind::DosWithFailedCall,
+                            confidence_override: None,
                             severity: Severity::High,
                             message: format!(
                                 "DS-04: external call inside `for` loop in `{func_name}`; \
@@ -1108,6 +1117,7 @@ fn detect_dos_with_failed_call(ast: &NormalizedAst) -> Vec<Finding> {
                         let func_name = func.name.as_deref().unwrap_or("<anonymous>");
                         findings.push(Finding {
                             kind: FindingKind::DosWithFailedCall,
+                            confidence_override: None,
                             severity: Severity::High,
                             message: format!(
                                 "DS-04: external call inside `while` loop in `{func_name}`; \
@@ -1126,6 +1136,7 @@ fn detect_dos_with_failed_call(ast: &NormalizedAst) -> Vec<Finding> {
                     let func_name = func.name.as_deref().unwrap_or("<anonymous>");
                     findings.push(Finding {
                         kind: FindingKind::DosWithFailedCall,
+                        confidence_override: None,
                         severity: Severity::High,
                         message: format!(
                             "DS-04: external call inside `do-while` loop in `{func_name}`; \
@@ -1147,6 +1158,7 @@ fn detect_dos_with_failed_call(ast: &NormalizedAst) -> Vec<Finding> {
         {
             findings.push(Finding {
                         kind: FindingKind::DosWithFailedCall,
+                        confidence_override: None,
                         severity: Severity::High,
                         message: format!(
                             "DS-04: loop in `{}` performs external payouts; a single reverting recipient can block progress",
@@ -1162,6 +1174,7 @@ fn detect_dos_with_failed_call(ast: &NormalizedAst) -> Vec<Finding> {
         {
             findings.push(Finding {
                     kind: FindingKind::DosWithFailedCall,
+                    confidence_override: None,
                     severity: Severity::High,
                     message: format!(
                         "DS-04: `{}` uses a required push payment (`require(...send/transfer/call...)`); a reverting recipient can DoS the function",
@@ -1221,6 +1234,7 @@ fn detect_force_ether_balance_check(ast: &NormalizedAst) -> Vec<Finding> {
                         let func_name = func.name.as_deref().unwrap_or("<anonymous>");
                         findings.push(Finding {
                             kind: FindingKind::ForceEtherBalanceCheck,
+                            confidence_override: None,
                             severity: Severity::High,
                             message: format!(
                                 "DS-05: `require()` / `assert()` in `{func_name}` \
@@ -1279,6 +1293,7 @@ fn detect_unsafe_send_in_require(ast: &NormalizedAst) -> Vec<Finding> {
                         let func_name = func.name.as_deref().unwrap_or("<anonymous>");
                         findings.push(Finding {
                             kind: FindingKind::UnsafeSendInRequire,
+                            confidence_override: None,
                             severity: Severity::High,
                             message: format!(
                                 "DS-06: `.send()` used inside `require()` in \

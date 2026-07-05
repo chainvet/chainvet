@@ -72,7 +72,7 @@ impl HybridFindingRow {
                 provenances: vec!["static".to_string()],
                 kind: finding.kind.as_str().to_string(),
                 severity: Some(finding.severity.as_str().to_string()),
-                confidence: None,
+                confidence: Some(finding.confidence().as_str().to_string()),
                 category: Some(finding.kind.category().as_str().to_string()),
                 message: finding.message.clone(),
                 function_id: finding.function,

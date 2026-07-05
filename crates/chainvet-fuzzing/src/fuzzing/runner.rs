@@ -1625,6 +1625,7 @@ mod tests {
         let findings = vec![
             Finding {
                 kind: FindingKind::TransactionOrderDependency,
+                confidence_override: None,
                 severity: Severity::Medium,
                 message: "tod".to_string(),
                 span: Span {
@@ -1636,6 +1637,7 @@ mod tests {
             },
             Finding {
                 kind: FindingKind::SignatureMalleability,
+                confidence_override: None,
                 severity: Severity::Medium,
                 message: "sig".to_string(),
                 span: Span {
@@ -1647,6 +1649,7 @@ mod tests {
             },
             Finding {
                 kind: FindingKind::TxOrigin,
+                confidence_override: None,
                 severity: Severity::High,
                 message: "other".to_string(),
                 span: Span {
@@ -1779,6 +1782,7 @@ mod tests {
         let static_findings = vec![
             Finding {
                 kind: FindingKind::WeakPrng,
+                confidence_override: None,
                 severity: Severity::Medium,
                 message: "weak-prng".to_string(),
                 span: Span {
@@ -1790,6 +1794,7 @@ mod tests {
             },
             Finding {
                 kind: FindingKind::LockedEther,
+                confidence_override: None,
                 severity: Severity::High,
                 message: "locked".to_string(),
                 span: Span {
@@ -1801,6 +1806,7 @@ mod tests {
             },
             Finding {
                 kind: FindingKind::UnusedReturnValue,
+                confidence_override: None,
                 severity: Severity::Medium,
                 message: "unchecked".to_string(),
                 span: Span {
@@ -1831,6 +1837,7 @@ mod tests {
         let ast = make_contract_ast(true);
         let static_findings = vec![Finding {
             kind: FindingKind::ForceEtherBalanceCheck,
+            confidence_override: None,
             severity: Severity::High,
             message: "force-ether".to_string(),
             span: Span {
@@ -1897,6 +1904,7 @@ mod tests {
         )];
         let static_findings = vec![Finding {
             kind: FindingKind::DosBlockGasLimit,
+            confidence_override: None,
             severity: Severity::Medium,
             message: "dynamic bound".to_string(),
             span: Span {
@@ -1924,6 +1932,7 @@ mod tests {
         let static_findings = vec![
             Finding {
                 kind: FindingKind::DosWithFailedCall,
+                confidence_override: None,
                 severity: Severity::High,
                 message: "dos".to_string(),
                 span: span(),
@@ -1931,6 +1940,7 @@ mod tests {
             },
             Finding {
                 kind: FindingKind::UnusedReturnValue,
+                confidence_override: None,
                 severity: Severity::Medium,
                 message: "unchecked".to_string(),
                 span: span(),
@@ -1938,6 +1948,7 @@ mod tests {
             },
             Finding {
                 kind: FindingKind::ReentrancyNoEthTransfer,
+                confidence_override: None,
                 severity: Severity::Medium,
                 message: "reentrancy".to_string(),
                 span: span(),
@@ -2009,6 +2020,7 @@ mod tests {
 
         let static_findings = vec![Finding {
             kind: FindingKind::WeakPrng,
+            confidence_override: None,
             severity: Severity::Medium,
             message: "timestamp-seeded randomness".to_string(),
             span: Span {

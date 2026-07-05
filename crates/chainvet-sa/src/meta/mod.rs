@@ -574,6 +574,7 @@ mod tests {
         let output = test_output();
         let static_findings = vec![StaticFinding {
             kind: FindingKind::DefaultVisibility,
+            confidence_override: None,
             severity: Severity::Medium,
             message: "function visibility omitted".to_string(),
             span: Span {
@@ -606,6 +607,7 @@ mod tests {
         let output = test_output();
         let static_findings = vec![StaticFinding {
             kind: FindingKind::Shadowing,
+            confidence_override: None,
             severity: Severity::Low,
             message: "shadow".to_string(),
             span: Span::default(),

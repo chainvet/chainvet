@@ -37,7 +37,7 @@ Test fixtures live in `crates/chainvet-cli/tests/fixtures/` (e.g. `vuln_reentran
 1. **Frontend** (`chainvet-frontend`): solc primary → tree-sitter fallback → optional AI fallback (`ai_fallback.rs`, env-gated). Produces a `NormalizedAst`.
 2. **Core** (`chainvet-core`): the shared types every crate agrees on — `norm` (NormalizedAst), `ir` (SlithIR-style), `cfg`, `ssa`, `artifacts` (finding model), `util::error`, `OutputFormat`. No engine logic, no I/O.
 3. **Engines** (each a pure library):
-   - `chainvet-sa` — call graph, taint, function summaries, 45+ detectors in `analysis/detectors/` (IDs like AC-01, RE-04). Also hosts `meta` + `surfaced`.
+   - `chainvet-sa` — call graph, taint, function summaries, 45+ detectors in `analysis/detectors/` (IDs like AC-01, RE-04). Also hosts `meta` + `surfaced`, and defines the shared `Confidence` scale (`-se` re-exports it) so every engine ranks findings on one axis. Each static `Finding` resolves confidence via `Finding::confidence()`: a detector's `confidence_override` when set, else the per-kind `FindingKind::base_confidence()` default (detectors with local evidence — reentrancy call type, taint sink type — set the override).
    - `chainvet-se` — Z3 symbolic execution; `analyze_with_options` returns typed findings + witnesses.
    - `chainvet-fuzzing` — generator/mutator/executor/oracle/scheduler; `runner::run` returns a typed report.
    - `chainvet-hybrid` — the control loop; `analyze()` returns the typed payload, `run()` = analyze + print.

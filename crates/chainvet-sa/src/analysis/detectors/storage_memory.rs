@@ -485,6 +485,7 @@ fn detect_arbitrary_function_jump(ast: &NormalizedAst) -> Vec<Finding> {
             let func_name = func.name.as_deref().unwrap_or("<anonymous>");
             findings.push(Finding {
                 kind: FindingKind::ArbitraryFunctionJump,
+                confidence_override: None,
                 severity: Severity::High,
                 message: format!(
                     "function `{func_name}` uses inline assembly, which can modify \
@@ -525,6 +526,7 @@ fn detect_bytes_variables_risk(ast: &NormalizedAst) -> Vec<Finding> {
                 let func_name = func.name.as_deref().unwrap_or("<anonymous>");
                 findings.push(Finding {
                     kind: FindingKind::BytesVariablesRisk,
+                    confidence_override: None,
                     severity: Severity::Medium,
                     message: format!(
                         "function `{func_name}` uses `msg.data`; ABI encoding may \
@@ -573,6 +575,7 @@ fn detect_msg_value_in_loop(ast: &NormalizedAst) -> Vec<Finding> {
                 let func_name = func.name.as_deref().unwrap_or("<anonymous>");
                 findings.push(Finding {
                     kind: FindingKind::MsgValueInLoop,
+                    confidence_override: None,
                     severity: Severity::High,
                     message: format!(
                         "function `{func_name}` uses `msg.value` inside a loop; \
@@ -619,6 +622,7 @@ fn detect_error_prone_assembly(ast: &NormalizedAst) -> Vec<Finding> {
                     .unwrap_or_default();
                 findings.push(Finding {
                     kind: FindingKind::ErrorProneAssembly,
+                    confidence_override: None,
                     severity: Severity::Low,
                     message: format!(
                         "function `{func_name}` uses inline assembly{lang_info}; \
@@ -711,6 +715,7 @@ fn detect_memory_manipulation(ast: &NormalizedAst) -> Vec<Finding> {
             };
             findings.push(Finding {
                 kind: FindingKind::MemoryManipulation,
+                confidence_override: None,
                 severity: Severity::High,
                 message: format!(
                     "function `{func_name}` uses inline assembly and {detail}; \
@@ -782,6 +787,7 @@ fn detect_storage_array_by_value(ast: &NormalizedAst) -> Vec<Finding> {
                     let func_name = func.name.as_deref().unwrap_or("<anonymous>");
                     findings.push(Finding {
                         kind: FindingKind::StorageArrayByValue,
+                        confidence_override: None,
                         severity: Severity::Medium,
                         message: format!(
                             "function `{func_name}` assigns a memory parameter to a \
@@ -798,6 +804,7 @@ fn detect_storage_array_by_value(ast: &NormalizedAst) -> Vec<Finding> {
                     let func_name = func.name.as_deref().unwrap_or("<anonymous>");
                     findings.push(Finding {
                         kind: FindingKind::StorageArrayByValue,
+                        confidence_override: None,
                         severity: Severity::Medium,
                         message: format!(
                             "function `{func_name}` assigns a storage variable to a \
@@ -896,6 +903,7 @@ fn detect_delegatecall_in_loop(ast: &NormalizedAst) -> Vec<Finding> {
                 let func_name = func.name.as_deref().unwrap_or("<anonymous>");
                 findings.push(Finding {
                     kind: FindingKind::DelegatecallInLoop,
+                    confidence_override: None,
                     severity: Severity::High,
                     message: format!(
                         "payable function `{func_name}` uses `delegatecall` inside \
