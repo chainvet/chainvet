@@ -127,6 +127,7 @@ fn result_for(
         "properties": {
             "tier": f.tier,
             "provenance": f.provenance,
+            "confidence": f.confidence,
             "category": f.category,
             "severity": f.severity,
         },
@@ -151,7 +152,7 @@ mod tests {
             provenances: Vec::new(),
             kind: "reentrancy".to_string(),
             severity: Some("high".to_string()),
-            confidence: None,
+            confidence: Some("high".to_string()),
             category: Some("Reentrancy".to_string()),
             message: "example".to_string(),
             function_id: None,
@@ -195,6 +196,13 @@ mod tests {
             r["locations"][0]["physicalLocation"]["artifactLocation"]["uri"],
             "contracts/A.sol"
         );
+    }
+
+    // The raw per-detector confidence rides along in `properties` (not just tier).
+    #[test]
+    fn properties_carry_confidence() {
+        let r = result_for(&finding(Some("contracts/A.sol")), &HashMap::new(), None).unwrap();
+        assert_eq!(r["properties"]["confidence"], "high");
     }
 
     #[test]

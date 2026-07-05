@@ -133,7 +133,14 @@ fn build_table(findings: &[&ScanFinding], sources: &HashMap<String, String>, col
         .load_preset(comfy_table::presets::UTF8_FULL)
         .set_content_arrangement(ContentArrangement::Dynamic)
         .set_width(120)
-        .set_header(vec!["Severity", "Kind", "Location", "Tier", "Message"]);
+        .set_header(vec![
+            "Severity",
+            "Kind",
+            "Location",
+            "Tier",
+            "Confidence",
+            "Message",
+        ]);
 
     for f in findings {
         let sev = f.severity.as_deref().unwrap_or("-");
@@ -144,6 +151,7 @@ fn build_table(findings: &[&ScanFinding], sources: &HashMap<String, String>, col
             Cell::new(&f.kind),
             Cell::new(location(f, sources)),
             tier_cell,
+            Cell::new(f.confidence.as_deref().unwrap_or("-")),
             Cell::new(truncate(&f.message, 64)),
         ]);
     }

@@ -3,10 +3,11 @@
 //! (symbolic + fuzzing). A tower-lsp shell over `orchestrator::scan`.
 //!
 //! Findings reach clients two ways: as standard LSP **diagnostics** (universal —
-//! every editor renders them, with tier/provenance in `Diagnostic.data`), and as
-//! a `chainvet/publishFindings` **notification** carrying the structured rows a
-//! rich client (the VS Code tree) groups and filters by tier. Plain LSP clients
-//! ignore the notification and just use the diagnostics.
+//! every editor renders them, with tier/provenance/confidence in `Diagnostic.data`
+//! and folded into the message), and as a `chainvet/publishFindings`
+//! **notification** carrying the structured rows a rich client (the VS Code tree)
+//! groups and filters by tier. Plain LSP clients ignore the notification and just
+//! use the diagnostics.
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -24,12 +25,14 @@ struct Backend {
 }
 
 /// A structured finding for the `chainvet/publishFindings` notification — the
-/// tier/provenance/severity the tree groups and filters by, plus a resolved
-/// range so clients don't recompute byte offsets.
+/// tier/provenance/severity the tree groups and filters by, the raw per-detector
+/// confidence, plus a resolved range so clients don't recompute byte offsets.
 #[derive(Serialize, Deserialize)]
 struct FindingItem {
     tier: String,
     provenance: String,
+    /// Raw per-detector engine confidence; absent for symbolic/fuzz findings.
+    confidence: Option<String>,
     kind: String,
     severity: String,
     category: String,
@@ -166,15 +169,23 @@ fn finding_range(f: &ScanFinding, text: &str) -> Range {
 }
 
 fn to_diagnostic(f: &ScanFinding, text: &str) -> Diagnostic {
+    // Include confidence in the visible message only when present, so findings
+    // without a per-detector confidence don't show an empty `//` segment.
+    let conf = f
+        .confidence
+        .as_deref()
+        .map(|c| format!("/{c}"))
+        .unwrap_or_default();
     Diagnostic {
         range: finding_range(f, text),
         severity: Some(severity_for(f.severity.as_deref())),
         code: Some(NumberOrString::String(f.kind.clone())),
         source: Some("chainvet".to_string()),
-        message: format!("[{}/{}] {}", f.tier, f.provenance, f.message),
+        message: format!("[{}/{}{}] {}", f.tier, f.provenance, conf, f.message),
         data: Some(serde_json::json!({
             "tier": f.tier,
             "provenance": f.provenance,
+            "confidence": f.confidence,
             "category": f.category,
             "kind": f.kind,
         })),
@@ -186,6 +197,7 @@ fn to_item(f: &ScanFinding, text: &str) -> FindingItem {
     FindingItem {
         tier: f.tier.clone(),
         provenance: f.provenance.clone(),
+        confidence: f.confidence.clone(),
         kind: f.kind.clone(),
         severity: f.severity.clone().unwrap_or_else(|| "low".to_string()),
         category: f.category.clone().unwrap_or_default(),
