@@ -49,7 +49,7 @@ fn render_pretty(result: &ScanResult, args: &ScanArgs) -> Result<()> {
     // An exact `--severity`/`--confidence` set (when given) takes precedence over
     // the `--min-*` floor for that axis; clap already forbids passing both.
     let min = args.min_severity.map(sev_rank_enum).unwrap_or(0);
-    let min_tier = args.min_confidence.map(tier_rank_enum).unwrap_or(0);
+    let min_conf = args.min_confidence.map(conf_rank_enum).unwrap_or(0);
     let mut findings: Vec<&ScanFinding> = result
         .findings
         .iter()
@@ -62,11 +62,11 @@ fn render_pretty(result: &ScanResult, args: &ScanArgs) -> Result<()> {
             }
         })
         .filter(|f| {
-            let r = tier_rank(&f.tier);
+            let r = conf_rank(f.confidence.as_deref());
             if args.confidence.is_empty() {
-                r >= min_tier
+                r >= min_conf
             } else {
-                args.confidence.iter().any(|c| tier_rank_enum(*c) == r)
+                args.confidence.iter().any(|c| conf_rank_enum(*c) == r)
             }
         })
         .collect();
@@ -137,7 +137,6 @@ fn build_table(findings: &[&ScanFinding], sources: &HashMap<String, String>, col
             "Severity",
             "Kind",
             "Location",
-            "Tier",
             "Confidence",
             "Message",
         ]);
@@ -145,13 +144,13 @@ fn build_table(findings: &[&ScanFinding], sources: &HashMap<String, String>, col
     for f in findings {
         let sev = f.severity.as_deref().unwrap_or("-");
         let sev_cell = maybe_color(Cell::new(sev.to_uppercase()), sev_color(sev), color);
-        let tier_cell = maybe_color(Cell::new(&f.tier), tier_color(&f.tier), color);
+        let conf = f.confidence.as_deref().unwrap_or("-");
+        let conf_cell = maybe_color(Cell::new(conf), conf_color(conf), color);
         table.add_row(vec![
             sev_cell,
             Cell::new(&f.kind),
             Cell::new(location(f, sources)),
-            tier_cell,
-            Cell::new(f.confidence.as_deref().unwrap_or("-")),
+            conf_cell,
             Cell::new(truncate(&f.message, 64)),
         ]);
     }
@@ -166,21 +165,27 @@ fn summary_line(findings: &[&ScanFinding], color: bool) -> String {
             .count()
     };
     let (high, medium, low) = (count("high"), count("medium"), count("low"));
-    let confirmed = findings.iter().filter(|f| f.tier == "confirmed").count();
-    let candidate = findings.len() - confirmed;
+    let conf = |s: &str| {
+        findings
+            .iter()
+            .filter(|f| f.confidence.as_deref() == Some(s))
+            .count()
+    };
+    let (ch, cm, cl) = (conf("high"), conf("medium"), conf("low"));
 
     if color {
         format!(
-            "  {} · {} · {}      {} · {}",
+            "  {} · {} · {}      {} · {} · {}",
             format!("{high} high").red().bold(),
             format!("{medium} medium").yellow(),
             format!("{low} low").cyan(),
-            format!("{confirmed} confirmed").green(),
-            format!("{candidate} candidate").dimmed(),
+            format!("{ch} high conf.").green(),
+            format!("{cm} medium conf.").yellow(),
+            format!("{cl} low conf.").dimmed(),
         )
     } else {
         format!(
-            "  {high} high · {medium} medium · {low} low      {confirmed} confirmed · {candidate} candidate"
+            "  {high} high · {medium} medium · {low} low      {ch} high conf. · {cm} medium conf. · {cl} low conf."
         )
     }
 }
@@ -213,9 +218,11 @@ fn sev_color(sev: &str) -> Color {
     }
 }
 
-fn tier_color(tier: &str) -> Color {
-    match tier {
-        "confirmed" => Color::Green,
+fn conf_color(confidence: &str) -> Color {
+    match confidence {
+        "high" => Color::Green,
+        "medium" => Color::Yellow,
+        "low" => Color::Cyan,
         _ => Color::DarkGrey,
     }
 }
@@ -236,18 +243,20 @@ fn sev_rank_enum(sev: Severity) -> u8 {
     }
 }
 
-/// Confidence-tier rank: `confirmed` (2) outranks `candidate` (1); unknown → 1.
-fn tier_rank(tier: &str) -> u8 {
-    match tier {
-        "confirmed" => 2,
-        _ => 1, // candidate + unknown
+/// Confidence rank: high (3) > medium (2) > low (1); unknown → 1 (low).
+fn conf_rank(confidence: Option<&str>) -> u8 {
+    match confidence {
+        Some("high") => 3,
+        Some("medium") => 2,
+        _ => 1, // low + unknown/absent
     }
 }
 
-fn tier_rank_enum(tier: Confidence) -> u8 {
-    match tier {
-        Confidence::Confirmed => 2,
-        Confidence::Candidate => 1,
+fn conf_rank_enum(confidence: Confidence) -> u8 {
+    match confidence {
+        Confidence::High => 3,
+        Confidence::Medium => 2,
+        Confidence::Low => 1,
     }
 }
 

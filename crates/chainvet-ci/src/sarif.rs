@@ -125,7 +125,6 @@ fn result_for(
         "level": level_for(f.severity.as_deref()),
         "message": { "text": message },
         "properties": {
-            "tier": f.tier,
             "provenance": f.provenance,
             "confidence": f.confidence,
             "category": f.category,
@@ -147,7 +146,6 @@ mod tests {
 
     fn finding(file: Option<&str>) -> ScanFinding {
         ScanFinding {
-            tier: "candidate".to_string(),
             provenance: "static".to_string(),
             provenances: Vec::new(),
             kind: "reentrancy".to_string(),
@@ -198,7 +196,7 @@ mod tests {
         );
     }
 
-    // The raw per-detector confidence rides along in `properties` (not just tier).
+    // The raw per-detector confidence rides along in `properties`.
     #[test]
     fn properties_carry_confidence() {
         let r = result_for(&finding(Some("contracts/A.sol")), &HashMap::new(), None).unwrap();

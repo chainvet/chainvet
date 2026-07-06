@@ -23,7 +23,7 @@ cargo run -p chainvet-cli -- scan -s high --severity medium <p>  # filters: -s/-
 cargo run -p chainvet-cli -- ir <path.sol> -f text       # dump IR: text|json|tuple
 
 # Other frontends
-cargo run -p chainvet-ci -- <path> --fail-on high --sarif out.sarif
+cargo run -p chainvet-ci -- <path> -s high -c high --sarif out.sarif  # -s/--fail-on-severity, -c/--fail-on-confidence
 CHAINVET_SERVER_ROOT=./contracts cargo run -p chainvet-server   # REST on :8080
 cargo run -p chainvet-lsp                                       # stdio language server
 ```
@@ -41,7 +41,7 @@ Test fixtures live in `crates/chainvet-cli/tests/fixtures/` (e.g. `vuln_reentran
    - `chainvet-se` — Z3 symbolic execution; `analyze_with_options` returns typed findings + witnesses.
    - `chainvet-fuzzing` — generator/mutator/executor/oracle/scheduler; `runner::run` returns a typed report.
    - `chainvet-hybrid` — the control loop; `analyze()` returns the typed payload, `run()` = analyze + print.
-4. **Orchestrator** (`chainvet-orchestrator`): `scan(output, ScanMode, budget) -> ScanResult` — runs the engine(s), unifies findings via `HybridFindingRow::collect` (merge/dedup/tier), and applies optional AI review (`ai_report`, env-gated). This is the one entry point every frontend calls.
+4. **Orchestrator** (`chainvet-orchestrator`): `scan(output, ScanMode, budget) -> ScanResult` — runs the engine(s), unifies findings via `HybridFindingRow::collect` (merge/dedup), and applies optional AI review (`ai_report`, env-gated). This is the one entry point every frontend calls.
 5. **Frontends** (thin, built on the orchestrator + the shared `chainvet-report` renderer): `chainvet-cli` (render text/JSON + audit reports), `chainvet-ci` (SARIF + exit codes), `chainvet-server` (axum REST: file browser, analyze with filters/budget, `/api/report` md/html/pdf), `chainvet-lsp` (tower-lsp diagnostics).
 
 ### Audit reports (`chainvet-report`)

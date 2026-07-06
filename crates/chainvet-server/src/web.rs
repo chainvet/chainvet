@@ -621,12 +621,12 @@ impl Filters {
             min_confidence: request
                 .min_confidence
                 .as_deref()
-                .map(tier_filter_rank)
+                .map(confidence_filter_rank)
                 .unwrap_or(0),
             exact_confidence: request
                 .confidence
                 .iter()
-                .map(|c| tier_filter_rank(c))
+                .map(|c| confidence_filter_rank(c))
                 .collect(),
         }
     }
@@ -642,11 +642,15 @@ impl Filters {
         } else {
             self.exact_severity.contains(&sev)
         };
-        let tier = tier_filter_rank(&finding.tier);
+        let conf = finding
+            .confidence
+            .as_deref()
+            .map(confidence_filter_rank)
+            .unwrap_or(1);
         let confidence_ok = if self.exact_confidence.is_empty() {
-            tier >= self.min_confidence
+            conf >= self.min_confidence
         } else {
-            self.exact_confidence.contains(&tier)
+            self.exact_confidence.contains(&conf)
         };
         severity_ok && confidence_ok
     }
@@ -661,10 +665,11 @@ fn sev_filter_rank(severity: &str) -> u8 {
     }
 }
 
-/// Confidence-tier rank (confirmed=2, candidate/unknown=1) — matches the CLI.
-fn tier_filter_rank(tier: &str) -> u8 {
-    match tier.trim().to_ascii_lowercase().as_str() {
-        "confirmed" => 2,
+/// Confidence rank (high=3, medium=2, low/unknown=1) — matches the CLI.
+fn confidence_filter_rank(confidence: &str) -> u8 {
+    match confidence.trim().to_ascii_lowercase().as_str() {
+        "high" => 3,
+        "medium" => 2,
         _ => 1,
     }
 }
@@ -792,7 +797,10 @@ fn build_summary_cards(mode: WebMode, findings: &[WebFinding]) -> Vec<SummaryCar
         .iter()
         .filter(|f| f.severity.as_deref() == Some("high"))
         .count();
-    let confirmed = findings.iter().filter(|f| f.layer != "static").count();
+    let high_confidence = findings
+        .iter()
+        .filter(|f| f.confidence.as_deref() == Some("high"))
+        .count();
     let card = |label: &str, value: String| SummaryCard {
         label: label.to_string(),
         value,
@@ -801,8 +809,7 @@ fn build_summary_cards(mode: WebMode, findings: &[WebFinding]) -> Vec<SummaryCar
         card("Mode", mode.as_str().to_string()),
         card("Findings", findings.len().to_string()),
         card("High Severity", high.to_string()),
-        card("Confirmed", confirmed.to_string()),
-        card("Candidate", (findings.len() - confirmed).to_string()),
+        card("High Confidence", high_confidence.to_string()),
     ]
 }
 

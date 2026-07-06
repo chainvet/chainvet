@@ -1,6 +1,6 @@
 //! Chainvet hybrid engine: the coverage-guided control loop that runs static
 //! analysis, an upfront symbolic pass (witness seeds), then fuzz epochs with
-//! on-stall symbolic assists, and merges/dedups/tiers the combined findings.
+//! on-stall symbolic assists, and merges/dedups the combined findings.
 
 // Style/complexity clippy lints tolerated across this crate's hand-written
 // analysis code (index-based token/graph loops, multi-parameter engine entry

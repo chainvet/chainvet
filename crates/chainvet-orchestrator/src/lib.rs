@@ -33,8 +33,8 @@ pub enum ScanMode {
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct ScanResult {
     pub mode: ScanMode,
-    /// Unified findings, already merged/deduplicated and tier-tagged — exactly
-    /// what the CLI hybrid report renders, but available for any frontend.
+    /// Unified findings, already merged/deduplicated — exactly what the CLI
+    /// hybrid report renders, but available for any frontend.
     pub findings: Vec<HybridFindingRow>,
     /// Full hybrid telemetry (targets, seeds, coverage, SE assists). `Some` only
     /// when `mode == Hybrid`.
@@ -54,7 +54,7 @@ pub fn scan(output: &FrontendOutput, mode: ScanMode, budget: &HybridBudget) -> R
             let call_graph = analysis::build_call_graph(ast);
             let taint = analysis::taint::analyze(ast, &cfgs);
             let static_findings = analysis::detectors::run_detectors(ast, &call_graph, &taint);
-            // `collect` already merges/deduplicates across sources and tiers each row.
+            // `collect` already merges/deduplicates across sources.
             (
                 HybridFindingRow::collect(ast, &static_findings, &[], &[]),
                 None,

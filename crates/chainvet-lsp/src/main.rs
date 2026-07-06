@@ -3,11 +3,11 @@
 //! (symbolic + fuzzing). A tower-lsp shell over `orchestrator::scan`.
 //!
 //! Findings reach clients two ways: as standard LSP **diagnostics** (universal —
-//! every editor renders them, with tier/provenance/confidence in `Diagnostic.data`
+//! every editor renders them, with provenance/confidence in `Diagnostic.data`
 //! and folded into the message), and as a `chainvet/publishFindings`
 //! **notification** carrying the structured rows a rich client (the VS Code tree)
-//! groups and filters by tier. Plain LSP clients ignore the notification and just
-//! use the diagnostics.
+//! groups and filters by confidence. Plain LSP clients ignore the notification and
+//! just use the diagnostics.
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -25,13 +25,13 @@ struct Backend {
 }
 
 /// A structured finding for the `chainvet/publishFindings` notification — the
-/// tier/provenance/severity the tree groups and filters by, the raw per-detector
-/// confidence, plus a resolved range so clients don't recompute byte offsets.
+/// provenance/severity plus the raw per-detector confidence the tree groups and
+/// filters by, plus a resolved range so clients don't recompute byte offsets.
 #[derive(Serialize, Deserialize)]
 struct FindingItem {
-    tier: String,
     provenance: String,
-    /// Raw per-detector engine confidence; absent for symbolic/fuzz findings.
+    /// Raw per-detector engine confidence (`high`/`medium`/`low`); absent when the
+    /// engine did not report one.
     confidence: Option<String>,
     kind: String,
     severity: String,
@@ -181,9 +181,8 @@ fn to_diagnostic(f: &ScanFinding, text: &str) -> Diagnostic {
         severity: Some(severity_for(f.severity.as_deref())),
         code: Some(NumberOrString::String(f.kind.clone())),
         source: Some("chainvet".to_string()),
-        message: format!("[{}/{}{}] {}", f.tier, f.provenance, conf, f.message),
+        message: format!("[{}{}] {}", f.provenance, conf, f.message),
         data: Some(serde_json::json!({
-            "tier": f.tier,
             "provenance": f.provenance,
             "confidence": f.confidence,
             "category": f.category,
@@ -195,7 +194,6 @@ fn to_diagnostic(f: &ScanFinding, text: &str) -> Diagnostic {
 
 fn to_item(f: &ScanFinding, text: &str) -> FindingItem {
     FindingItem {
-        tier: f.tier.clone(),
         provenance: f.provenance.clone(),
         confidence: f.confidence.clone(),
         kind: f.kind.clone(),

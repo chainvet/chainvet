@@ -185,7 +185,6 @@ fn write_finding(w: &mut String, idx: usize, finding: &AuditFinding) {
     let _ = writeln!(w);
     let _ = writeln!(w, "- **Severity:** {}", severity_label(&finding.severity));
     let _ = writeln!(w, "- **Category:** {}", finding.category);
-    let _ = writeln!(w, "- **Tier:** {}", finding.tier);
     let _ = writeln!(
         w,
         "- **Confidence:** {}",

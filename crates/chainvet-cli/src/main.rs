@@ -52,19 +52,18 @@ pub struct ScanArgs {
     #[arg(long, value_enum, value_name = "SEVERITY")]
     pub severity: Vec<Severity>,
 
-    /// Only report findings at or above this confidence tier
-    /// (candidate = static heuristic; confirmed = corroborated by execution).
+    /// Only report findings at or above this confidence (low/medium/high).
     #[arg(
         short = 'c',
         long,
         value_enum,
-        value_name = "TIER",
+        value_name = "CONFIDENCE",
         conflicts_with = "confidence"
     )]
     pub min_confidence: Option<Confidence>,
 
-    /// Only report findings of exactly this confidence tier (repeatable).
-    #[arg(long, value_enum, value_name = "TIER")]
+    /// Only report findings of exactly this confidence (repeatable).
+    #[arg(long, value_enum, value_name = "CONFIDENCE")]
     pub confidence: Vec<Confidence>,
 
     /// Suppress the banner.
@@ -156,12 +155,12 @@ pub enum Severity {
     High,
 }
 
-/// Confidence tier of a finding, ordered low→high. `candidate` is a static-only
-/// heuristic detection; `confirmed` was corroborated by symbolic/fuzz execution.
+/// Per-detector confidence of a finding (precision estimate), ordered low→high.
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
 pub enum Confidence {
-    Candidate,
-    Confirmed,
+    Low,
+    Medium,
+    High,
 }
 
 #[derive(Copy, Clone, ValueEnum)]

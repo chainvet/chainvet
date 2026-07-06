@@ -52,9 +52,8 @@ pub struct AuditFinding {
     pub category: String,
     pub kind: String,
     pub severity: String,
-    /// Confidence tier (`confirmed`/`candidate`).
-    pub tier: String,
-    /// Raw per-detector engine confidence; absent for symbolic/fuzz findings.
+    /// Raw per-detector engine confidence (`high`/`medium`/`low`); absent when
+    /// the engine did not report one.
     pub confidence: Option<String>,
     pub message: String,
     pub file: Option<String>,
@@ -195,7 +194,6 @@ impl AuditFinding {
                 .clone()
                 .filter(|s| !s.trim().is_empty())
                 .unwrap_or_else(|| "informational".to_string()),
-            tier: row.tier.clone(),
             confidence: row.confidence.clone(),
             message: row.message.clone(),
             file: row.file.clone(),

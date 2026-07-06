@@ -208,7 +208,6 @@ fn write_finding(w: &mut String, idx: usize, finding: &AuditFinding) {
     );
     meta(w, "Severity", severity_label(&finding.severity));
     meta(w, "Category", &finding.category);
-    meta(w, "Tier", &finding.tier);
     meta(
         w,
         "Confidence",
