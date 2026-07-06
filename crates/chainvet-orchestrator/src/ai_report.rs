@@ -9,9 +9,9 @@
 use std::env;
 use std::fs;
 
+use chainvet_hybrid::hybrid::HybridFindingRow as ScanFinding;
 use chainvet_llm::ollama::{self, OllamaConfig};
 use chainvet_llm::{debug_enabled, parse_json_object};
-use chainvet_hybrid::hybrid::HybridFindingRow as ScanFinding;
 
 use crate::ScanResult;
 

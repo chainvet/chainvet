@@ -184,11 +184,7 @@ fn check_shadowing_in_stmt(
 /// arbitrary-external-call sinks (`delegatecall`/`call`) reached by
 /// attacker-controlled data are the strongest signal, value transfers and
 /// static calls are mid, and calls whose target we cannot resolve are weak.
-fn classify_tainted_call(
-    ast: &NormalizedAst,
-    span: Span,
-    uses_source: bool,
-) -> Option<Confidence> {
+fn classify_tainted_call(ast: &NormalizedAst, span: Span, uses_source: bool) -> Option<Confidence> {
     // A tainted call wrapped in an `emit` is an event emission, not an
     // external sink — never surface it.
     if ast.statements.iter().any(|stmt| match stmt.kind {
