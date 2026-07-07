@@ -17,20 +17,24 @@ use crate::{Confidence, Format, ScanArgs, Severity};
 
 pub fn render(result: &ScanResult, args: &ScanArgs) -> Result<()> {
     match args.format {
-        Format::Json => render_json(result),
+        Format::Json => render_json(result, args),
         // Audit-report formats are handled by `report` before reaching here.
         Format::Pretty | Format::Md | Format::Html | Format::Pdf => render_pretty(result, args),
     }
 }
 
 /// Stable machine-readable output — unchanged, never filtered or colored.
-fn render_json(result: &ScanResult) -> Result<()> {
+fn render_json(result: &ScanResult, args: &ScanArgs) -> Result<()> {
     let payload = match &result.hybrid {
         Some(hybrid) => serde_json::to_string_pretty(hybrid),
         None => serde_json::to_string_pretty(&result.findings),
     }
     .map_err(|e| Error::msg(format!("failed to serialize report: {e}")))?;
-    println!("{payload}");
+    match &args.output {
+        Some(file) => std::fs::write(file, format!("{payload}\n"))
+            .map_err(|e| Error::msg(format!("write {file}: {e}")))?,
+        None => println!("{payload}"),
+    }
     Ok(())
 }
 
