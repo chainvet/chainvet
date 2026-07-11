@@ -67,8 +67,21 @@ impl CoverageMap {
     }
 }
 
+/// Outcome of folding one execution into the corpus.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct CorpusUpdate {
+    /// The individual was admitted into the corpus.
+    pub added: bool,
+    /// Number of edges seen for the very first time in this execution. Drives
+    /// per-contract stall detection in the runner — a value of 0 means this
+    /// execution discovered nothing new for *this* contract, independent of
+    /// what any other contract is doing to the global coverage counter.
+    pub new_edges: usize,
+}
+
 /// Update the corpus with a new individual if it provides new coverage.
-/// Returns true if the individual was added.
+/// Returns a [`CorpusUpdate`] describing whether it was admitted and how many
+/// brand-new edges it discovered.
 ///
 /// Admission is gated on a genuinely **new edge** (first time seen), not on a
 /// hit-count bucket change. Admitting on every bucket change (count 1→2→3…)
@@ -81,7 +94,7 @@ pub fn update_corpus(
     individual: &Individual,
     trace: &ExecutionTrace,
     coverage: &mut CoverageMap,
-) -> bool {
+) -> CorpusUpdate {
     // Count edges never seen before, *before* folding this trace into the map.
     let new_edges = trace
         .coverage
@@ -98,10 +111,16 @@ pub fn update_corpus(
             coverage: trace.coverage.clone(),
             finding_hashes: Vec::new(),
         });
-        return true;
+        return CorpusUpdate {
+            added: true,
+            new_edges,
+        };
     }
 
-    false
+    CorpusUpdate {
+        added: false,
+        new_edges,
+    }
 }
 
 /// Select the next individual from the corpus using energy-weighted selection.
@@ -129,7 +148,10 @@ pub fn select_next<'a>(corpus: &'a Corpus, rng: &mut impl Rng) -> Option<&'a Ind
 }
 
 /// Assign energy to corpus entries based on coverage novelty, rarity, and patterns.
-pub fn assign_energy(corpus: &mut Corpus, global_coverage: &CoverageMap) {
+///
+/// `global_coverage` is retained in the signature for API stability but the
+/// breadth reward no longer divides by its size — see the breadth term below.
+pub fn assign_energy(corpus: &mut Corpus, _global_coverage: &CoverageMap) {
     // Pre-compute edge rarity: how many corpus entries cover each edge.
     let mut edge_freq: HashMap<(u32, u32), usize> = HashMap::new();
     for entry in corpus.entries.iter() {
@@ -142,13 +164,13 @@ pub fn assign_energy(corpus: &mut Corpus, global_coverage: &CoverageMap) {
     for (idx, entry) in corpus.entries.iter_mut().enumerate() {
         let mut energy = 1.0;
 
-        // Reward coverage breadth
-        let coverage_ratio = if global_coverage.count() > 0 {
-            entry.coverage.len() as f64 / global_coverage.count() as f64
-        } else {
-            0.0
-        };
-        energy += coverage_ratio * 2.0;
+        // Reward coverage breadth on a log scale of the *absolute* edge count.
+        // The previous reward was `entry.coverage.len() / global_coverage.count()`,
+        // which shrank toward 0 for every entry as the global map grew with
+        // contract size — flattening all energies to ~uniform on large contracts
+        // and destroying the selection signal exactly when it matters most.
+        // `ln_1p` grows with breadth but never vanishes as the contract scales.
+        energy += (entry.coverage.len() as f64).ln_1p();
 
         // Reward longer sequences (more state transitions)
         let seq_len = entry.individual.transactions.len() as f64;
@@ -218,6 +240,53 @@ pub fn minimize_corpus(corpus: &mut Corpus) {
     corpus.entries = kept;
 }
 
+/// Bound the corpus to at most `cap` entries.
+///
+/// The corpus is admission-gated on new edges, so its size grows with the
+/// number of distinct edges — which itself grows with contract size. Left
+/// unbounded, a large contract makes every `select_next` (O(n)), `assign_energy`
+/// (O(n·cov)) and `minimize_corpus` (O(n²)) more expensive, so the fuzz loop
+/// completes fewer real iterations per unit time and coverage collapses under a
+/// wall-clock budget. Capping keeps per-iteration cost independent of size.
+///
+/// Eviction order: first minimize (drop coverage-subsumed entries), then, if
+/// still over cap, drop the lowest-energy entries that carry **no findings**.
+/// Finding-bearing entries are always retained.
+pub fn cap_corpus(corpus: &mut Corpus, cap: usize) {
+    if corpus.entries.len() <= cap {
+        return;
+    }
+
+    minimize_corpus(corpus);
+    if corpus.entries.len() <= cap {
+        return;
+    }
+
+    // Stable-partition finding-bearing entries (always kept) from the rest.
+    let mut protected: Vec<CorpusEntry> = Vec::new();
+    let mut evictable: Vec<CorpusEntry> = Vec::new();
+    for entry in corpus.entries.drain(..) {
+        if entry.finding_hashes.is_empty() {
+            evictable.push(entry);
+        } else {
+            protected.push(entry);
+        }
+    }
+
+    // Keep the highest-energy evictable entries up to the remaining budget.
+    let remaining = cap.saturating_sub(protected.len());
+    evictable.sort_by(|a, b| {
+        b.individual
+            .energy
+            .partial_cmp(&a.individual.energy)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    evictable.truncate(remaining);
+
+    protected.append(&mut evictable);
+    corpus.entries = protected;
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -268,15 +337,17 @@ mod tests {
         let mut trace = ExecutionTrace::default();
         trace.coverage.insert((0, 0));
 
-        let added = update_corpus(&mut corpus, &ind, &trace, &mut coverage);
-        assert!(added);
+        let update = update_corpus(&mut corpus, &ind, &trace, &mut coverage);
+        assert!(update.added);
+        assert_eq!(update.new_edges, 1);
         assert_eq!(corpus.entries.len(), 1);
 
         // Same coverage — no NEW edge, so it is NOT admitted again (admission is
         // gated on first-seen edges to keep the corpus bounded; the hit-count
         // bucket still increments internally for energy weighting).
-        let added_again = update_corpus(&mut corpus, &ind, &trace, &mut coverage);
-        assert!(!added_again);
+        let update_again = update_corpus(&mut corpus, &ind, &trace, &mut coverage);
+        assert!(!update_again.added);
+        assert_eq!(update_again.new_edges, 0);
         assert_eq!(corpus.entries.len(), 1);
     }
 
@@ -322,5 +393,41 @@ mod tests {
         // Entry 0 should be removed (strict subset of entry 1)
         assert_eq!(corpus.entries.len(), 1);
         assert_eq!(corpus.entries[0].coverage.len(), 2);
+    }
+
+    #[test]
+    fn cap_corpus_bounds_size_and_keeps_findings() {
+        let mut corpus = Corpus::default();
+        // 20 entries, each with a distinct edge so none is a subset of another
+        // (minimize can't shrink them). Energies increase with index.
+        for i in 0..20u32 {
+            let mut cov = HashSet::new();
+            cov.insert((0, i));
+            let mut ind = make_individual();
+            ind.energy = i as f64;
+            // Mark one low-energy entry as finding-bearing; it must survive.
+            let finding_hashes = if i == 0 {
+                vec!["finding".to_string()]
+            } else {
+                Vec::new()
+            };
+            corpus.entries.push(CorpusEntry {
+                individual: ind,
+                coverage: cov,
+                finding_hashes,
+            });
+        }
+
+        cap_corpus(&mut corpus, 5);
+        assert_eq!(corpus.entries.len(), 5, "corpus should be capped to 5");
+        // The finding-bearing entry (lowest energy) must be retained despite the
+        // cap keeping otherwise-highest-energy entries.
+        assert!(
+            corpus
+                .entries
+                .iter()
+                .any(|e| !e.finding_hashes.is_empty()),
+            "finding-bearing entry must survive capping"
+        );
     }
 }

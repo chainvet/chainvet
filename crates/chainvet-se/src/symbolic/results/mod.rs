@@ -10,4 +10,4 @@ pub use coverage::{CoverageReport, CoverageTracker};
 #[allow(unused_imports)]
 pub use finding::{Confidence, SeFinding, SeVulnKind};
 #[allow(unused_imports)]
-pub use witness::Witness;
+pub use witness::{CoverageWitness, Witness};

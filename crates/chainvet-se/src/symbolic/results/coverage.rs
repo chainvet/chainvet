@@ -30,9 +30,18 @@ impl CoverageTracker {
         }
     }
 
-    /// Record that a block was visited during execution.
-    pub fn record_block(&mut self, func_id: IrFunctionId, block_id: BlockId) {
-        self.visited_blocks.insert((func_id, block_id));
+    /// Record that a block was visited during execution. Returns `true` if this
+    /// is the first time the block is seen (used to gate one-per-block coverage
+    /// witness capture, which bounds solver cost to the number of distinct
+    /// blocks rather than the number of paths).
+    pub fn record_block(&mut self, func_id: IrFunctionId, block_id: BlockId) -> bool {
+        self.visited_blocks.insert((func_id, block_id))
+    }
+
+    /// Snapshot of all `(function_id, block_id)` pairs visited so far. Used by
+    /// the hybrid orchestrator to union SE coverage with fuzzer coverage.
+    pub fn visited_blocks(&self) -> HashSet<(IrFunctionId, BlockId)> {
+        self.visited_blocks.clone()
     }
 
     /// Record that an edge was traversed during execution.

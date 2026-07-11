@@ -1,0 +1,18 @@
+[package]
+name = "chainvet-evm"
+version = "0.1.0"
+edition = "2024"
+
+# Opt-in EVM validation layer: replays fuzzer inputs / SE witnesses against a
+# real EVM (revm) to measure the fidelity gap of the IR-level interpreter.
+# This is the ONE crate allowed to depend on revm — no pure engine crate may
+# depend on chainvet-evm, so the heavy EVM dependency never leaks into
+# chainvet-core/-sa/-se/-fuzzing/-hybrid.
+
+[dependencies]
+revm = "41"
+chainvet-core = { path = "../chainvet-core" }
+chainvet-fuzzing = { path = "../chainvet-fuzzing" }
+chainvet-frontend = { path = "../chainvet-frontend" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

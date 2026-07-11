@@ -578,6 +578,7 @@ mod tests {
             FunctionDeps {
                 reads: HashSet::new(),
                 writes: HashSet::from(["balance".to_string()]),
+                ..Default::default()
             },
         );
         deps.functions.insert(
@@ -585,6 +586,7 @@ mod tests {
             FunctionDeps {
                 reads: HashSet::from(["balance".to_string()]),
                 writes: HashSet::new(),
+                ..Default::default()
             },
         );
 

@@ -13,3 +13,6 @@ benchmark_hybrid.py
 benchmark_hybrid_dual_policy_results.json
 benchmark_hybrid_multi_policy_results.json
 __pycache__/
+
+# graphify knowledge graph (generated output; regenerate with `graphify update .`)
+graphify-out/

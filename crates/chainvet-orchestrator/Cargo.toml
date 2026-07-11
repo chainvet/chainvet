@@ -11,4 +11,12 @@ chainvet-sa = { path = "../chainvet-sa" }
 chainvet-se = { path = "../chainvet-se" }
 chainvet-fuzzing = { path = "../chainvet-fuzzing" }
 chainvet-hybrid = { path = "../chainvet-hybrid" }
+# Opt-in EVM validation layer. Pulls in revm, so it is off by default and only
+# compiled when a frontend enables the `evm-validation` feature. Runtime use is
+# additionally gated by the CHAINVET_EVM_CONFIRM env var.
+chainvet-evm = { path = "../chainvet-evm", optional = true }
 serde = { version = "1", features = ["derive"] }
+
+[features]
+default = []
+evm-validation = ["dep:chainvet-evm"]

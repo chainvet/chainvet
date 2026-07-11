@@ -13,6 +13,7 @@ use std::sync::Arc;
 use crate::symbolic::detectors::DetectorRegistry;
 use crate::symbolic::engine::run_engine;
 use crate::symbolic::engine::scheduler::SeConfig;
+use crate::symbolic::results::CoverageWitness;
 use crate::symbolic::results::coverage::CoverageReport;
 use crate::symbolic::results::finding::SeFinding;
 use crate::symbolic::results::report::print_se_report;
@@ -37,6 +38,11 @@ pub struct SymbolicAnalysis {
     pub findings: Vec<SeFinding>,
     pub coverage: CoverageReport,
     pub total_states: usize,
+    /// Every `(function_id, block_id)` pair SE reached across all contracts —
+    /// so the hybrid orchestrator can union it with fuzzer coverage.
+    pub covered_blocks: HashSet<(u32, u32)>,
+    /// Concrete inputs reaching specific blocks, for seeding the fuzzer.
+    pub coverage_witnesses: Vec<CoverageWitness>,
 }
 
 /// Entry point for symbolic execution analysis.
@@ -51,6 +57,11 @@ pub fn run(output: &FrontendOutput, format: OutputFormat) -> Result<()> {
         &output.ast.files,
     )
 }
+
+/// Ceiling on coverage witnesses accumulated across all contracts in one
+/// analysis, so multi-contract projects don't hand the fuzzer an unbounded seed
+/// set. Per-contract capture is separately capped inside the engine.
+const MAX_HYBRID_COVERAGE_WITNESSES: usize = 1024;
 
 pub fn analyze_with_options(
     output: &FrontendOutput,
@@ -70,6 +81,8 @@ pub fn analyze_with_options(
                 function_coverage_pct: 0.0,
             },
             total_states: 0,
+            covered_blocks: HashSet::new(),
+            coverage_witnesses: Vec::new(),
         });
     }
 
@@ -79,6 +92,8 @@ pub fn analyze_with_options(
 
     let mut all_findings: Vec<SeFinding> = Vec::new();
     let mut total_states: usize = 0;
+    let mut all_covered_blocks: HashSet<(u32, u32)> = HashSet::new();
+    let mut all_coverage_witnesses: Vec<CoverageWitness> = Vec::new();
     // TODO: merge coverage across contracts (Phase 6); for now use last contract's report.
     let mut combined_coverage = CoverageReport {
         blocks_visited: 0,
@@ -131,6 +146,11 @@ pub fn analyze_with_options(
         all_findings.extend(result.findings);
         total_states += result.states_explored;
         combined_coverage = result.coverage;
+        all_covered_blocks.extend(result.covered_blocks);
+        // Keep witnesses across contracts, still bounded by the per-run cap.
+        if all_coverage_witnesses.len() < MAX_HYBRID_COVERAGE_WITNESSES {
+            all_coverage_witnesses.extend(result.coverage_witnesses);
+        }
     }
 
     // In Solidity >= 0.8 the compiler inserts overflow/underflow checks (a
@@ -156,6 +176,8 @@ pub fn analyze_with_options(
         findings: all_findings,
         coverage: combined_coverage,
         total_states,
+        covered_blocks: all_covered_blocks,
+        coverage_witnesses: all_coverage_witnesses,
     })
 }
 

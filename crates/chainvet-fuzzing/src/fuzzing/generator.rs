@@ -623,6 +623,7 @@ mod tests {
             crate::fuzzing::types::FunctionDeps {
                 reads: std::collections::HashSet::new(),
                 writes: std::collections::HashSet::from(["balance".to_string()]),
+                ..Default::default()
             },
         );
         deps.functions.insert(
@@ -630,6 +631,7 @@ mod tests {
             crate::fuzzing::types::FunctionDeps {
                 reads: std::collections::HashSet::from(["balance".to_string()]),
                 writes: std::collections::HashSet::new(),
+                ..Default::default()
             },
         );
         let config = FuzzConfig {

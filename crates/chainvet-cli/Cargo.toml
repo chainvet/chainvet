@@ -15,3 +15,10 @@ serde_json = "1"
 clap = { version = "4", features = ["derive"] }
 owo-colors = "4"
 comfy-table = "7"
+
+[features]
+default = []
+# Opt-in EVM confirmation of fuzzer findings (pulls in revm via the
+# orchestrator). Build with `--features evm-validation`, then run with
+# CHAINVET_EVM_CONFIRM=1 to flag/demote findings the real EVM refutes.
+evm-validation = ["chainvet-orchestrator/evm-validation"]

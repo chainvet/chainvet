@@ -21,6 +21,33 @@ use chainvet_sa::analysis;
 use chainvet_sa::meta;
 use chainvet_sa::surfaced;
 
+// ---------------------------------------------------------------------------
+// Contract-size budget scaling
+//
+// A fixed iteration budget (`max_iterations`) explores a shrinking *fraction*
+// of a contract as its block count grows, because coverage_pct's denominator
+// (`total_blocks`) grows while the numerator saturates at "what the fixed
+// budget can reach". These constants scale the per-contract iteration budget
+// and the transaction-sequence length with contract size so coverage stays
+// meaningful as contracts get larger. Wall-clock is still bounded by
+// `max_duration_ms` when a caller sets one (hybrid always does).
+// ---------------------------------------------------------------------------
+
+/// Reachable blocks that one unit of `max_iterations` is calibrated for. A
+/// contract with N× this many blocks receives up to N× the iteration budget.
+const BLOCKS_PER_ITER_BUDGET: usize = 24;
+/// Ceiling on the size-scaling multiplier, so a pathologically large contract
+/// can't blow the iteration budget without bound (wall-clock caps still apply).
+const MAX_ITER_SCALE: usize = 24;
+/// Every this many callable functions adds one to the effective transaction
+/// sequence length — deep state in large contracts needs longer setup chains.
+const FUNCS_PER_EXTRA_TX: usize = 4;
+/// Absolute ceiling on the size-scaled transaction sequence length.
+const MAX_SEQUENCE_LENGTH_CAP: usize = 30;
+/// Hard cap on corpus entries. Bounds per-iteration selection / energy /
+/// minimization cost so throughput doesn't degrade with contract size.
+const CORPUS_CAP: usize = 4096;
+
 /// Run the fuzzer on a parsed contract.
 pub fn run(output: &FrontendOutput, config: &FuzzConfig) -> FuzzReport {
     let mut session = FuzzSession::new(output, config.clone());
@@ -44,10 +71,12 @@ struct ContractFuzzState {
     abi_index: usize,
     rng: rand::rngs::StdRng,
     stall_counter: usize,
-    last_coverage_count: usize,
     iters_run: usize,
     initialized: bool,
     locked_ether_candidate: bool,
+    /// Size-scaled multiplier applied to the per-slice `max_iterations` for this
+    /// contract. 1 for small contracts; up to `MAX_ITER_SCALE` for large ones.
+    iter_scale: usize,
 }
 
 /// A persistent fuzzing session. One-time setup (IR/CFG/detectors/dictionary)
@@ -88,7 +117,7 @@ pub struct FuzzSession<'a> {
 
 impl<'a> FuzzSession<'a> {
     /// One-time setup: static pre-pass, IR/CFG, dictionary, per-contract state.
-    pub fn new(output: &'a FrontendOutput, config: FuzzConfig) -> Self {
+    pub fn new(output: &'a FrontendOutput, mut config: FuzzConfig) -> Self {
         let start = Instant::now();
         let ast = &output.ast;
 
@@ -105,7 +134,30 @@ impl<'a> FuzzSession<'a> {
         let (tod_allowed, sig_mall_allowed) = build_static_fp_guards(&static_findings);
         let locked_ether_candidates = build_locked_ether_candidates(ast, &ir_module);
         let dictionary = generator::extract_dictionary(&ir_module);
-        let total_blocks: usize = cfgs.iter().map(|c| c.blocks.len()).sum();
+
+        // Coverage denominators and budget scaling both use *reachable* blocks:
+        // structurally-dead blocks (no control-flow path from the entry block)
+        // can't be covered by any input, so counting them would drag
+        // `coverage_pct` down toward a floor set by dead code and waste
+        // iteration budget on unreachable regions. `total_blocks` therefore
+        // means "total *reachable* blocks" — the honest coverage denominator.
+        // Coverage edges are keyed by function id, and ABI functions carry the
+        // matching id, so the per-function map drives per-contract scaling.
+        let reachable_by_function: std::collections::HashMap<u32, usize> =
+            cfgs.iter().map(|c| (c.id, c.reachable_block_count())).collect();
+        let total_blocks: usize = reachable_by_function.values().sum();
+
+        // Size-scale the transaction sequence length by the largest contract's
+        // callable-function count. Deep, stateful blocks in a big contract need
+        // longer setup→configure→trigger chains than the fixed default reaches.
+        let max_functions = abis
+            .iter()
+            .map(|a| a.functions.len())
+            .max()
+            .unwrap_or(0);
+        config.max_sequence_length = (config.max_sequence_length
+            + max_functions / FUNCS_PER_EXTRA_TX)
+            .min(MAX_SEQUENCE_LENGTH_CAP);
 
         let no_targets = abis.is_empty() || abis.iter().all(|a| a.functions.is_empty());
 
@@ -121,17 +173,25 @@ impl<'a> FuzzSession<'a> {
                     ),
                     None => <rand::rngs::StdRng as rand::SeedableRng>::from_entropy(),
                 };
+                // Iteration budget scales with this contract's reachable blocks.
+                let contract_blocks: usize = abi
+                    .functions
+                    .iter()
+                    .map(|f| reachable_by_function.get(&f.id).copied().unwrap_or(0))
+                    .sum();
+                let iter_scale =
+                    (contract_blocks / BLOCKS_PER_ITER_BUDGET).clamp(1, MAX_ITER_SCALE);
                 ContractFuzzState {
                     abi_index,
                     rng,
                     stall_counter: 0,
-                    last_coverage_count: 0,
                     iters_run: 0,
                     initialized: false,
                     locked_ether_candidate: locked_ether_candidates
                         .get(&abi.contract_name)
                         .copied()
                         .unwrap_or(false),
+                    iter_scale,
                 }
             })
             .collect();
@@ -179,6 +239,38 @@ impl<'a> FuzzSession<'a> {
     /// Total distinct edges covered so far.
     pub fn covered_edges(&self) -> usize {
         self.global_coverage.count()
+    }
+
+    /// The set of `(function_id, block_id)` blocks the fuzzer has covered. Used
+    /// by the hybrid orchestrator to union fuzzer coverage with SE coverage.
+    pub fn covered_block_set(&self) -> std::collections::HashSet<(u32, u32)> {
+        self.global_coverage.visited_set()
+    }
+
+    /// Total reachable blocks across all target functions — the coverage
+    /// denominator (structurally-dead blocks excluded; see `new`).
+    pub fn reachable_block_total(&self) -> usize {
+        self.total_blocks
+    }
+
+    /// Read-after-write storage dependencies between functions. The hybrid
+    /// orchestrator uses this to prepend setup transactions to SE coverage
+    /// seeds, so a block gated behind a writer→reader sequence is reachable.
+    pub fn dependency_map(&self) -> &DependencyMap {
+        &self.deps
+    }
+
+    /// The accumulated corpus of coverage-increasing inputs. Read-only; used by
+    /// the EVM validation layer to replay the IR interpreter's prized inputs on
+    /// a real EVM and measure the fidelity gap.
+    pub fn corpus(&self) -> &Corpus {
+        &self.corpus
+    }
+
+    /// The per-contract ABIs (function id → name/params), needed to map the
+    /// fuzzer's `function_id`s onto a compiled contract for EVM replay.
+    pub fn abis(&self) -> &[ContractAbi] {
+        &self.abis
     }
 
     /// Run one slice: optionally inject `extra_seeds`, then run up to
@@ -261,12 +353,14 @@ impl<'a> FuzzSession<'a> {
     }
 
     /// Execute one individual, run oracles, fold findings + coverage into state.
+    /// Returns the number of brand-new coverage edges this execution discovered,
+    /// used by the fuzz loop for per-contract stall detection.
     fn execute_and_absorb(
         &mut self,
         abi_index: usize,
         ind: &crate::fuzzing::types::Individual,
         locked_ether_candidate: bool,
-    ) {
+    ) -> usize {
         let trace = executor::execute_individual(
             ind,
             self.output,
@@ -299,7 +393,7 @@ impl<'a> FuzzSession<'a> {
         findings.retain(|finding| keep_locked_ether_finding(finding, locked_ether_candidate));
 
         // New-edge admission keeps the corpus bounded.
-        let added =
+        let update =
             scheduler::update_corpus(&mut self.corpus, ind, &trace, &mut self.global_coverage);
 
         if !findings.is_empty() {
@@ -314,7 +408,7 @@ impl<'a> FuzzSession<'a> {
                 }
             }
             self.all_findings.extend(findings);
-            if !added && !novel_hashes.is_empty() {
+            if !update.added && !novel_hashes.is_empty() {
                 self.corpus
                     .entries
                     .push(crate::fuzzing::types::CorpusEntry {
@@ -324,6 +418,8 @@ impl<'a> FuzzSession<'a> {
                     });
             }
         }
+
+        update.new_edges
     }
 
     /// The core fuzz loop for one contract, continuing from carried state.
@@ -335,7 +431,13 @@ impl<'a> FuzzSession<'a> {
         max_duration_ms: Option<u64>,
     ) {
         let abi_index = self.contract_states[state_idx].abi_index;
-        for _ in 0..max_iterations {
+        // Scale the per-slice iteration budget by this contract's size so a
+        // larger contract gets proportionally more exploration instead of a
+        // shrinking fraction of a fixed budget. Wall-clock is still bounded by
+        // `max_duration_ms` (the hybrid orchestrator always passes one).
+        let effective_iters =
+            max_iterations.saturating_mul(self.contract_states[state_idx].iter_scale);
+        for _ in 0..effective_iters {
             if let Some(ms) = max_duration_ms
                 && slice_start.elapsed().as_millis() as u64 >= ms
             {
@@ -380,13 +482,17 @@ impl<'a> FuzzSession<'a> {
             };
 
             let locked = self.contract_states[state_idx].locked_ether_candidate;
-            self.execute_and_absorb(abi_index, &child, locked);
+            let new_edges = self.execute_and_absorb(abi_index, &child, locked);
 
             let st = &mut self.contract_states[state_idx];
-            let current_coverage = self.global_coverage.count();
-            if current_coverage > st.last_coverage_count {
+            // Per-contract stall detection: reset only when *this* execution
+            // discovered a new edge. The old code compared the *global* coverage
+            // counter, so on a large or multi-contract target any unrelated
+            // progress reset this contract's stall counter — and the
+            // havoc-only / dependency-seed escalation (stall ≥ 100 / ≥ 150)
+            // effectively never fired for a genuinely stuck contract.
+            if new_edges > 0 {
                 st.stall_counter = 0;
-                st.last_coverage_count = current_coverage;
             } else {
                 st.stall_counter += 1;
             }
@@ -398,6 +504,10 @@ impl<'a> FuzzSession<'a> {
             }
             if n.is_multiple_of(200) && n > 0 {
                 scheduler::minimize_corpus(&mut self.corpus);
+                // Bound the corpus so selection/energy/minimize cost stays
+                // independent of contract size (keeps throughput up on big
+                // contracts under a wall-clock budget).
+                scheduler::cap_corpus(&mut self.corpus, CORPUS_CAP);
             }
         }
     }
@@ -439,8 +549,12 @@ impl<'a> FuzzSession<'a> {
 
         let findings = oracle::deduplicate(all_findings);
         let covered_blocks = self.global_coverage.count();
+        // Denominator is reachable blocks (see `new`). Clamp to 100% defensively:
+        // if CFG edge construction ever under-approximates reachability, the
+        // executor could cover a block the CFG marked dead, pushing the ratio
+        // over 1.0 — that would be an edge-construction bug, not >100% coverage.
         let coverage_pct = if self.total_blocks > 0 {
-            (covered_blocks as f64 / self.total_blocks as f64) * 100.0
+            ((covered_blocks as f64 / self.total_blocks as f64) * 100.0).min(100.0)
         } else {
             0.0
         };
