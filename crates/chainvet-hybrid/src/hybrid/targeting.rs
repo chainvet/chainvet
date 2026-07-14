@@ -146,6 +146,7 @@ mod tests {
     fn high_signal_findings_become_targets() {
         let finding = Finding {
             kind: FindingKind::UnsafeDelegatecall,
+            confidence_override: None,
             severity: Severity::High,
             message: "delegatecall sink".to_string(),
             span: Span {
@@ -164,6 +165,7 @@ mod tests {
     fn low_signal_findings_are_filtered_out() {
         let finding = Finding {
             kind: FindingKind::Shadowing,
+            confidence_override: None,
             severity: Severity::High,
             message: "shadowing".to_string(),
             span: Span {

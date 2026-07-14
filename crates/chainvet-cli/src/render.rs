@@ -13,23 +13,28 @@ use chainvet_orchestrator::{ScanFinding, ScanMode, ScanResult};
 use comfy_table::{Cell, Color, ContentArrangement, Table};
 use owo_colors::OwoColorize;
 
-use crate::{Format, ScanArgs, Severity};
+use crate::{Confidence, Format, ScanArgs, Severity};
 
 pub fn render(result: &ScanResult, args: &ScanArgs) -> Result<()> {
     match args.format {
-        Format::Json => render_json(result),
-        Format::Pretty => render_pretty(result, args),
+        Format::Json => render_json(result, args),
+        // Audit-report formats are handled by `report` before reaching here.
+        Format::Pretty | Format::Md | Format::Html | Format::Pdf => render_pretty(result, args),
     }
 }
 
 /// Stable machine-readable output — unchanged, never filtered or colored.
-fn render_json(result: &ScanResult) -> Result<()> {
+fn render_json(result: &ScanResult, args: &ScanArgs) -> Result<()> {
     let payload = match &result.hybrid {
         Some(hybrid) => serde_json::to_string_pretty(hybrid),
         None => serde_json::to_string_pretty(&result.findings),
     }
     .map_err(|e| Error::msg(format!("failed to serialize report: {e}")))?;
-    println!("{payload}");
+    match &args.output {
+        Some(file) => std::fs::write(file, format!("{payload}\n"))
+            .map_err(|e| Error::msg(format!("write {file}: {e}")))?,
+        None => println!("{payload}"),
+    }
     Ok(())
 }
 
@@ -44,12 +49,30 @@ fn render_pretty(result: &ScanResult, args: &ScanArgs) -> Result<()> {
         print_banner(&args.path, result.mode, banner_color);
     }
 
-    // Filter is a display concern (JSON stays complete for tooling parity).
+    // Filters are a display concern (JSON stays complete for tooling parity).
+    // An exact `--severity`/`--confidence` set (when given) takes precedence over
+    // the `--min-*` floor for that axis; clap already forbids passing both.
     let min = args.min_severity.map(sev_rank_enum).unwrap_or(0);
+    let min_conf = args.min_confidence.map(conf_rank_enum).unwrap_or(0);
     let mut findings: Vec<&ScanFinding> = result
         .findings
         .iter()
-        .filter(|f| sev_rank(f.severity.as_deref()) >= min)
+        .filter(|f| {
+            let r = sev_rank(f.severity.as_deref());
+            if args.severity.is_empty() {
+                r >= min
+            } else {
+                args.severity.iter().any(|s| sev_rank_enum(*s) == r)
+            }
+        })
+        .filter(|f| {
+            let r = conf_rank(f.confidence.as_deref());
+            if args.confidence.is_empty() {
+                r >= min_conf
+            } else {
+                args.confidence.iter().any(|c| conf_rank_enum(*c) == r)
+            }
+        })
         .collect();
     findings.sort_by(|a, b| {
         sev_rank(b.severity.as_deref())
@@ -114,17 +137,24 @@ fn build_table(findings: &[&ScanFinding], sources: &HashMap<String, String>, col
         .load_preset(comfy_table::presets::UTF8_FULL)
         .set_content_arrangement(ContentArrangement::Dynamic)
         .set_width(120)
-        .set_header(vec!["Severity", "Kind", "Location", "Tier", "Message"]);
+        .set_header(vec![
+            "Severity",
+            "Kind",
+            "Location",
+            "Confidence",
+            "Message",
+        ]);
 
     for f in findings {
         let sev = f.severity.as_deref().unwrap_or("-");
         let sev_cell = maybe_color(Cell::new(sev.to_uppercase()), sev_color(sev), color);
-        let tier_cell = maybe_color(Cell::new(&f.tier), tier_color(&f.tier), color);
+        let conf = f.confidence.as_deref().unwrap_or("-");
+        let conf_cell = maybe_color(Cell::new(conf), conf_color(conf), color);
         table.add_row(vec![
             sev_cell,
             Cell::new(&f.kind),
             Cell::new(location(f, sources)),
-            tier_cell,
+            conf_cell,
             Cell::new(truncate(&f.message, 64)),
         ]);
     }
@@ -139,21 +169,27 @@ fn summary_line(findings: &[&ScanFinding], color: bool) -> String {
             .count()
     };
     let (high, medium, low) = (count("high"), count("medium"), count("low"));
-    let confirmed = findings.iter().filter(|f| f.tier == "confirmed").count();
-    let candidate = findings.len() - confirmed;
+    let conf = |s: &str| {
+        findings
+            .iter()
+            .filter(|f| f.confidence.as_deref() == Some(s))
+            .count()
+    };
+    let (ch, cm, cl) = (conf("high"), conf("medium"), conf("low"));
 
     if color {
         format!(
-            "  {} · {} · {}      {} · {}",
+            "  {} · {} · {}      {} · {} · {}",
             format!("{high} high").red().bold(),
             format!("{medium} medium").yellow(),
             format!("{low} low").cyan(),
-            format!("{confirmed} confirmed").green(),
-            format!("{candidate} candidate").dimmed(),
+            format!("{ch} high conf.").green(),
+            format!("{cm} medium conf.").yellow(),
+            format!("{cl} low conf.").dimmed(),
         )
     } else {
         format!(
-            "  {high} high · {medium} medium · {low} low      {confirmed} confirmed · {candidate} candidate"
+            "  {high} high · {medium} medium · {low} low      {ch} high conf. · {cm} medium conf. · {cl} low conf."
         )
     }
 }
@@ -186,9 +222,11 @@ fn sev_color(sev: &str) -> Color {
     }
 }
 
-fn tier_color(tier: &str) -> Color {
-    match tier {
-        "confirmed" => Color::Green,
+fn conf_color(confidence: &str) -> Color {
+    match confidence {
+        "high" => Color::Green,
+        "medium" => Color::Yellow,
+        "low" => Color::Cyan,
         _ => Color::DarkGrey,
     }
 }
@@ -206,6 +244,23 @@ fn sev_rank_enum(sev: Severity) -> u8 {
         Severity::High => 3,
         Severity::Medium => 2,
         Severity::Low => 1,
+    }
+}
+
+/// Confidence rank: high (3) > medium (2) > low (1); unknown → 1 (low).
+fn conf_rank(confidence: Option<&str>) -> u8 {
+    match confidence {
+        Some("high") => 3,
+        Some("medium") => 2,
+        _ => 1, // low + unknown/absent
+    }
+}
+
+fn conf_rank_enum(confidence: Confidence) -> u8 {
+    match confidence {
+        Confidence::High => 3,
+        Confidence::Medium => 2,
+        Confidence::Low => 1,
     }
 }
 

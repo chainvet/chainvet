@@ -339,7 +339,13 @@ pub fn resolve_root(path: &str) -> Result<PathBuf> {
     let root = if metadata.is_dir() {
         input
     } else {
-        input.parent().unwrap_or(input)
+        // A bare filename (e.g. "Foo.sol") has an *empty* parent, not `None`.
+        // Fall back to "." so we never hand solc an empty working directory,
+        // which would make its spawn fail with ENOENT.
+        match input.parent() {
+            Some(parent) if !parent.as_os_str().is_empty() => parent,
+            _ => Path::new("."),
+        }
     };
 
     match root.canonicalize() {
@@ -706,5 +712,33 @@ mod tests {
             .find(|function| function.name.as_deref() == Some("withdrawLeftOver"))
             .expect("withdrawLeftOver function should exist");
         assert!(!has_public_sender_payout_hint(function, &ast));
+    }
+
+    #[test]
+    fn resolve_root_of_bare_filename_is_the_current_dir_not_empty() {
+        // Regression: a bare filename has an empty (not None) parent, which used
+        // to leave solc with an empty working directory (spawn -> ENOENT), so the
+        // whole analysis silently degraded to the tree-sitter fallback.
+        let dir =
+            std::env::temp_dir().join(format!("chainvet_resolve_root_{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("Bare.sol");
+        fs::write(&file, "contract C {}").unwrap();
+
+        let expected = dir.canonicalize().unwrap();
+
+        let prev = std::env::current_dir().unwrap();
+        std::env::set_current_dir(&dir).unwrap();
+        let root = resolve_root("Bare.sol");
+        std::env::set_current_dir(&prev).unwrap();
+        fs::remove_dir_all(&dir).ok();
+
+        let root = root.expect("resolve_root should succeed for a bare filename");
+        assert!(
+            !root.as_os_str().is_empty(),
+            "root must not be empty (was {root:?})"
+        );
+        // "." canonicalizes to the directory we ran in.
+        assert_eq!(root, expected);
     }
 }

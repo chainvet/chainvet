@@ -2,6 +2,7 @@ mod render;
 
 use chainvet_core::util::error::Result;
 use chainvet_orchestrator::{HybridBudget, ScanMode, scan};
+use chainvet_report as report;
 use clap::{Parser, Subcommand, ValueEnum};
 
 /// Hybrid Solidity smart-contract security analyzer.
@@ -38,8 +39,32 @@ pub struct ScanArgs {
     pub output: Option<String>,
 
     /// Only report findings at or above this severity.
-    #[arg(short = 's', long, value_enum, value_name = "SEVERITY")]
+    #[arg(
+        short = 's',
+        long,
+        value_enum,
+        value_name = "SEVERITY",
+        conflicts_with = "severity"
+    )]
     pub min_severity: Option<Severity>,
+
+    /// Only report findings of exactly this severity (repeatable).
+    #[arg(long, value_enum, value_name = "SEVERITY")]
+    pub severity: Vec<Severity>,
+
+    /// Only report findings at or above this confidence (low/medium/high).
+    #[arg(
+        short = 'c',
+        long,
+        value_enum,
+        value_name = "CONFIDENCE",
+        conflicts_with = "confidence"
+    )]
+    pub min_confidence: Option<Confidence>,
+
+    /// Only report findings of exactly this confidence (repeatable).
+    #[arg(long, value_enum, value_name = "CONFIDENCE")]
+    pub confidence: Vec<Confidence>,
 
     /// Suppress the banner.
     #[arg(short, long)]
@@ -115,10 +140,24 @@ pub enum Mode {
 pub enum Format {
     Pretty,
     Json,
+    /// Cyfrin-style audit report as Markdown.
+    Md,
+    /// Cyfrin-style audit report as a standalone HTML page.
+    Html,
+    /// Audit report as PDF (renders the branded HTML via weasyprint/wkhtmltopdf).
+    Pdf,
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
 pub enum Severity {
+    Low,
+    Medium,
+    High,
+}
+
+/// Per-detector confidence of a finding (precision estimate), ordered low→high.
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
+pub enum Confidence {
     Low,
     Medium,
     High,
@@ -182,7 +221,41 @@ fn run_scan(args: ScanArgs) -> Result<()> {
 
     let output = chainvet_frontend::frontend::load_project(&args.path)?;
     let result = scan(&output, scan_mode, &budget)?;
-    render::render(&result, &args)
+
+    // Audit-report formats build a document from the result (+ AST for function
+    // names) and honor `--output`; pretty/json stay on the standard renderer.
+    match args.format {
+        Format::Md | Format::Html => {
+            let audit = report::AuditReport::from_scan(&result, &output.ast, &args.path);
+            let text = match args.format {
+                Format::Html => report::render_html(&audit),
+                _ => report::render_markdown(&audit),
+            };
+            write_report(&args.output, &text)
+        }
+        Format::Pdf => {
+            let audit = report::AuditReport::from_scan(&result, &output.ast, &args.path);
+            let out = args.output.as_deref().ok_or_else(|| {
+                chainvet_core::util::error::Error::msg(
+                    "`-f pdf` needs an output path — use `-o report.pdf`",
+                )
+            })?;
+            report::write_pdf(&audit, std::path::Path::new(out))
+        }
+        Format::Pretty | Format::Json => render::render(&result, &args),
+    }
+}
+
+/// Write a rendered report to `--output` if set, else stdout.
+fn write_report(output: &Option<String>, text: &str) -> Result<()> {
+    match output {
+        Some(file) => std::fs::write(file, text)
+            .map_err(|e| chainvet_core::util::error::Error::msg(format!("write {file}: {e}"))),
+        None => {
+            print!("{text}");
+            Ok(())
+        }
+    }
 }
 
 fn run_ir(args: IrArgs) -> Result<()> {

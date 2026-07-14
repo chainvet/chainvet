@@ -23,6 +23,49 @@ pub struct Finding {
     pub message: String,
     pub span: Span,
     pub function: Option<u32>,
+    /// Per-finding confidence override. `None` falls back to the detector's
+    /// per-kind default ([`FindingKind::base_confidence`]); a detector that has
+    /// local evidence (a guard, a confirmed taint path, an ETH-sending sink)
+    /// sets `Some(..)` to raise or lower confidence for this specific instance.
+    /// Read through [`Finding::confidence`], never directly.
+    pub confidence_override: Option<Confidence>,
+}
+
+impl Finding {
+    /// Resolved confidence for this finding: the per-finding override when the
+    /// detector set one, otherwise the per-kind default.
+    pub fn confidence(&self) -> Confidence {
+        self.confidence_override
+            .unwrap_or_else(|| self.kind.base_confidence())
+    }
+}
+
+/// Confidence that a finding is a true positive.
+///
+/// Shared across all engines (static, symbolic, fuzzing) so the orchestrator
+/// can rank and merge findings on one scale. For static analysis the value is
+/// heuristic — it reflects a detector's expected precision, not a proof — while
+/// symbolic execution derives it from solver evidence and fuzzing from concrete
+/// reproduction.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub enum Confidence {
+    /// High-precision detection; false positives are rare.
+    High,
+    /// Plausible but pattern/heuristic-based; warrants manual triage.
+    Medium,
+    /// Speculative or false-positive-prone.
+    Low,
+}
+
+impl Confidence {
+    /// Return a human-readable label for this confidence level.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Confidence::High => "high",
+            Confidence::Medium => "medium",
+            Confidence::Low => "low",
+        }
+    }
 }
 
 /// Vulnerability category — groups related detectors together.
@@ -296,6 +339,68 @@ impl FindingKind {
             | FindingKind::DelegatecallInLoop => Category::StorageAndMemory,
 
             FindingKind::Shadowing | FindingKind::TaintedCall => Category::Miscellaneous,
+        }
+    }
+
+    /// Default confidence for this detector, used when a finding carries no
+    /// per-finding override. Reflects the detector's expected precision:
+    /// syntactic, near-unambiguous checks are `High`; dataflow/heuristic checks
+    /// that are prone to false positives are `Low`; the rest are `Medium`.
+    pub fn base_confidence(&self) -> Confidence {
+        match self {
+            // High-precision, largely syntactic detectors.
+            FindingKind::TxOrigin
+            | FindingKind::DefaultVisibility
+            | FindingKind::ContractDestructable
+            | FindingKind::UnprotectedSelfdestruct
+            | FindingKind::PublicMintBurn
+            | FindingKind::DangerousBlockTimestamp
+            | FindingKind::WeakPrng
+            | FindingKind::SignatureMalleability
+            | FindingKind::HardcodedGasTransfer
+            | FindingKind::MsgValueInLoop
+            | FindingKind::DelegatecallInLoop
+            | FindingKind::ArbitraryFunctionJump => Confidence::High,
+
+            // Heuristic / dataflow detectors with a meaningful false-positive rate.
+            FindingKind::ReentrancyNegativeEvents
+            | FindingKind::ReentrancySameEffect
+            | FindingKind::ReentrancyNoEthTransfer
+            | FindingKind::TransactionOrderDependency
+            | FindingKind::DangerousStateVarInit
+            | FindingKind::MissingInputValidation
+            | FindingKind::UnusedReturnValue
+            | FindingKind::BytesVariablesRisk
+            | FindingKind::ErrorProneAssembly
+            | FindingKind::MemoryManipulation
+            | FindingKind::StorageArrayByValue
+            | FindingKind::Shadowing
+            | FindingKind::TaintedCall => Confidence::Low,
+
+            // Everything else: reasonable precision but not certain.
+            FindingKind::ArbitraryTransferFrom
+            | FindingKind::ArbitraryCalldata
+            | FindingKind::CallerNotChecked
+            | FindingKind::UninitializedPermissionCheck
+            | FindingKind::PermitArbitraryTransferFrom
+            | FindingKind::MissingSenderCheckTransferFrom
+            | FindingKind::ArbitraryEtherSend
+            | FindingKind::UnprotectedEtherWithdrawal
+            | FindingKind::UnsafeDelegatecall
+            | FindingKind::ArbitraryStorageWrite
+            | FindingKind::DivisionBeforeMultiplication
+            | FindingKind::IntegerOverflow
+            | FindingKind::IntegerUnderflow
+            | FindingKind::UnsafeArrayLengthAssignment
+            | FindingKind::LackOfSignatureVerification
+            | FindingKind::LockedEther
+            | FindingKind::DosBlockGasLimit
+            | FindingKind::DosWithFailedCall
+            | FindingKind::ForceEtherBalanceCheck
+            | FindingKind::UnsafeSendInRequire
+            | FindingKind::UncheckedSend
+            | FindingKind::ReentrancyTransfer
+            | FindingKind::ReentrancyEthTransfer => Confidence::Medium,
         }
     }
 }

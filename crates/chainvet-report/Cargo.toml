@@ -1,0 +1,8 @@
+[package]
+name = "chainvet-report"
+version.workspace = true
+edition = "2024"
+
+[dependencies]
+chainvet-core = { path = "../chainvet-core" }
+chainvet-orchestrator = { path = "../chainvet-orchestrator" }

@@ -37,8 +37,8 @@ pub enum ScanMode {
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct ScanResult {
     pub mode: ScanMode,
-    /// Unified findings, already merged/deduplicated and tier-tagged — exactly
-    /// what the CLI hybrid report renders, but available for any frontend.
+    /// Unified findings, already merged/deduplicated — exactly what the CLI
+    /// hybrid report renders, but available for any frontend.
     pub findings: Vec<HybridFindingRow>,
     /// Full hybrid telemetry (targets, seeds, coverage, SE assists). `Some` only
     /// when `mode == Hybrid`.
@@ -62,7 +62,7 @@ pub fn scan(output: &FrontendOutput, mode: ScanMode, budget: &HybridBudget) -> R
             let call_graph = analysis::build_call_graph(ast);
             let taint = analysis::taint::analyze(ast, &cfgs);
             let static_findings = analysis::detectors::run_detectors(ast, &call_graph, &taint);
-            // `collect` already merges/deduplicates across sources and tiers each row.
+            // `collect` already merges/deduplicates across sources.
             (
                 HybridFindingRow::collect(ast, &static_findings, &[], &[]),
                 None,
@@ -98,7 +98,7 @@ pub fn scan(output: &FrontendOutput, mode: ScanMode, budget: &HybridBudget) -> R
     // Optional EVM confirmation of fuzzer findings (opt-in via the
     // `evm-validation` feature + CHAINVET_EVM_CONFIRM env; no-op otherwise).
     evm_confirm::enhance(&mut result, output, &raw_fuzz, &raw_abis);
-    // Optional AI review of findings (opt-in via CHAINVET_AI_REPORT; no-op otherwise).
+    // Optional AI review of findings (opt-in via CHAINVET_LLM_REPORT; no-op otherwise).
     ai_report::enhance(&mut result);
     Ok(result)
 }

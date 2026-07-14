@@ -15,7 +15,7 @@ fn evm_layer_annotates_fuzz_findings() {
 
     // The reentrancy fixture is a stateful pool whose fuzzer findings do NOT
     // reproduce on a real EVM (state-machine + msg.value gating), so they should
-    // come back flagged `evm-divergent` and demoted out of the confirmed tier.
+    // come back flagged `evm-divergent` with lowered confidence.
     let path = concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/../chainvet-cli/tests/fixtures/vuln_reentrancy.sol"
@@ -49,7 +49,7 @@ fn evm_layer_annotates_fuzz_findings() {
         .filter(|r| r.provenances.iter().any(|p| p.starts_with("evm-")))
         .count();
     for r in &fuzz_rows {
-        println!("  [{}] {} :: {:?}", r.tier, r.kind, r.provenances);
+        println!("  [{:?}] {} :: {:?}", r.confidence, r.kind, r.provenances);
     }
     assert!(
         annotated > 0,

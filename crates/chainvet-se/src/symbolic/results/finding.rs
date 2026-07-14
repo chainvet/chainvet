@@ -1,5 +1,5 @@
-// Reuses Severity and Category from static analysis — these are stable,
-// engine-agnostic classifications shared across all analysis modes.
+// Reuses Severity, Category and Confidence from static analysis — these are
+// stable, engine-agnostic classifications shared across all analysis modes.
 use crate::symbolic::state::StateId;
 use chainvet_core::norm::Span;
 use chainvet_sa::analysis::detectors::{Category, Severity};
@@ -7,27 +7,12 @@ use serde::Serialize;
 
 use super::witness::Witness;
 
-/// Confidence in a symbolic execution finding.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-pub enum Confidence {
-    /// SAT + concrete witness, no approximations in path.
-    High,
-    /// SAT but path involves keccak approx, loop truncation, or havoc.
-    Medium,
-    /// Pattern-based detection, no solver confirmation.
-    Low,
-}
-
-impl Confidence {
-    /// Return a human-readable label for this confidence level.
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Confidence::High => "high",
-            Confidence::Medium => "medium",
-            Confidence::Low => "low",
-        }
-    }
-}
+// The confidence scale is shared with static analysis (defined in `chainvet-sa`)
+// so the orchestrator ranks findings from every engine on one axis. For
+// symbolic execution: `High` = SAT + concrete witness with no approximations;
+// `Medium` = SAT but the path involves keccak approx, loop truncation, or havoc;
+// `Low` = pattern-based detection with no solver confirmation.
+pub use chainvet_sa::analysis::detectors::Confidence;
 
 /// Vulnerability kinds that SE detectors check.
 ///

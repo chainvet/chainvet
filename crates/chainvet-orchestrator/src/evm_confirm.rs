@@ -106,12 +106,13 @@ fn annotate_rows(
             row.provenances.push((*tag).to_string());
         }
         // Demote only *pure fuzz* findings the real EVM refutes — those are the
-        // likeliest false positives. A `hybrid-confirmed` finding has
+        // likeliest false positives. Lower their confidence to `low` (rows no
+        // longer carry a separate tier). A `hybrid-confirmed` finding has
         // independent static/SE corroboration (and SE may reach it by a path
-        // the fuzzer's sequence doesn't represent), so we annotate it but keep
-        // its tier; the benchmark can still see the `evm-divergent` flag.
-        if *tag == "evm-divergent" && row.provenance == "fuzz" && row.tier == "confirmed" {
-            row.tier = "candidate".to_string();
+        // the fuzzer's sequence doesn't represent), so we annotate it but leave
+        // its confidence; the benchmark can still see the `evm-divergent` flag.
+        if *tag == "evm-divergent" && row.provenance == "fuzz" {
+            row.confidence = Some("low".to_string());
         }
     }
 }

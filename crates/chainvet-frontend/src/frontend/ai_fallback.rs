@@ -48,7 +48,7 @@ pub fn enrich_ast_if_enabled(ast: &mut NormalizedAst) -> bool {
 
 fn ai_fallback_enabled() -> bool {
     matches!(
-        env::var("CHAINVET_AI_FALLBACK_PARSER")
+        env::var("CHAINVET_LLM_FALLBACK_PARSER")
             .unwrap_or_default()
             .trim()
             .to_ascii_lowercase()
@@ -794,13 +794,13 @@ fn is_safe_identifier(value: &str) -> bool {
 }
 
 fn ollama_generate(config: &AiFallbackConfig, prompt: &str) -> std::result::Result<String, String> {
-    let oc = chainvet_ai::ollama::OllamaConfig {
+    let oc = chainvet_llm::ollama::OllamaConfig {
         endpoint: config.endpoint.clone(),
         model: config.model.clone(),
         timeout: config.timeout,
         num_predict: config.num_predict,
     };
-    chainvet_ai::ollama::generate(&oc, prompt)
+    chainvet_llm::ollama::generate(&oc, prompt)
 }
 
 fn parse_json_object(raw: &str) -> std::result::Result<Value, String> {
@@ -818,8 +818,8 @@ fn parse_json_object(raw: &str) -> std::result::Result<Value, String> {
 }
 
 fn debug_log(message: String) {
-    if env::var("CHAINVET_AI_FALLBACK_DEBUG").ok().as_deref() == Some("1")
-        || env::var("CHAINVET_AI_DEBUG").ok().as_deref() == Some("1")
+    if env::var("CHAINVET_LLM_FALLBACK_DEBUG").ok().as_deref() == Some("1")
+        || env::var("CHAINVET_LLM_DEBUG").ok().as_deref() == Some("1")
     {
         eprintln!("{message}");
     }
@@ -838,27 +838,27 @@ struct AiFallbackConfig {
 impl AiFallbackConfig {
     fn from_env() -> Self {
         let endpoint =
-            env::var("CHAINVET_AI_ENDPOINT").unwrap_or_else(|_| DEFAULT_ENDPOINT.to_string());
-        let model = env::var("CHAINVET_AI_MODEL").unwrap_or_else(|_| DEFAULT_MODEL.to_string());
-        let timeout_ms = env::var("CHAINVET_AI_FALLBACK_TIMEOUT_MS")
-            .or_else(|_| env::var("CHAINVET_AI_TIMEOUT_MS"))
+            env::var("CHAINVET_LLM_ENDPOINT").unwrap_or_else(|_| DEFAULT_ENDPOINT.to_string());
+        let model = env::var("CHAINVET_LLM_MODEL").unwrap_or_else(|_| DEFAULT_MODEL.to_string());
+        let timeout_ms = env::var("CHAINVET_LLM_FALLBACK_TIMEOUT_MS")
+            .or_else(|_| env::var("CHAINVET_LLM_TIMEOUT_MS"))
             .ok()
             .and_then(|value| value.parse::<u64>().ok())
             .unwrap_or(DEFAULT_TIMEOUT_MS);
-        let num_predict = env::var("CHAINVET_AI_FALLBACK_NUM_PREDICT")
-            .or_else(|_| env::var("CHAINVET_AI_NUM_PREDICT"))
+        let num_predict = env::var("CHAINVET_LLM_FALLBACK_NUM_PREDICT")
+            .or_else(|_| env::var("CHAINVET_LLM_NUM_PREDICT"))
             .ok()
             .and_then(|value| value.parse::<u32>().ok())
             .unwrap_or(DEFAULT_NUM_PREDICT);
-        let max_source_bytes = env::var("CHAINVET_AI_FALLBACK_MAX_SOURCE_BYTES")
+        let max_source_bytes = env::var("CHAINVET_LLM_FALLBACK_MAX_SOURCE_BYTES")
             .ok()
             .and_then(|value| value.parse::<usize>().ok())
             .unwrap_or(DEFAULT_MAX_SOURCE_BYTES);
-        let chunk_bytes = env::var("CHAINVET_AI_FALLBACK_CHUNK_BYTES")
+        let chunk_bytes = env::var("CHAINVET_LLM_FALLBACK_CHUNK_BYTES")
             .ok()
             .and_then(|value| value.parse::<usize>().ok())
             .unwrap_or(DEFAULT_CHUNK_BYTES);
-        let max_chunks_per_file = env::var("CHAINVET_AI_FALLBACK_MAX_CHUNKS")
+        let max_chunks_per_file = env::var("CHAINVET_LLM_FALLBACK_MAX_CHUNKS")
             .ok()
             .and_then(|value| value.parse::<usize>().ok())
             .unwrap_or(DEFAULT_MAX_CHUNKS_PER_FILE);

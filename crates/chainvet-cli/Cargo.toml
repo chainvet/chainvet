@@ -1,6 +1,6 @@
 [package]
 name = "chainvet-cli"
-version = "0.1.0"
+version.workspace = true
 edition = "2024"
 
 [[bin]]
@@ -11,6 +11,7 @@ path = "src/main.rs"
 chainvet-core = { path = "../chainvet-core" }
 chainvet-frontend = { path = "../chainvet-frontend" }
 chainvet-orchestrator = { path = "../chainvet-orchestrator" }
+chainvet-report = { path = "../chainvet-report" }
 serde_json = "1"
 clap = { version = "4", features = ["derive"] }
 owo-colors = "4"

@@ -366,6 +366,7 @@ fn detect_division_before_multiplication(ast: &NormalizedAst) -> Vec<Finding> {
                 if lhs_is_div || rhs_is_div {
                     findings.push(Finding {
                         kind: FindingKind::DivisionBeforeMultiplication,
+                        confidence_override: None,
                         severity: Severity::Medium,
                         message: "integer division is performed before multiplication — \
                                 this truncates the intermediate result and loses precision"
@@ -421,6 +422,7 @@ fn detect_integer_overflow(ast: &NormalizedAst, taint: &[TaintSummary]) -> Vec<F
                     if is_inside_unchecked_block(ast, &expr.span) {
                         findings.push(Finding {
                             kind: FindingKind::IntegerOverflow,
+                            confidence_override: None,
                             severity: Severity::Medium,
                             message: format!(
                                 "arithmetic `{op}` inside `unchecked` block — \
@@ -435,6 +437,7 @@ fn detect_integer_overflow(ast: &NormalizedAst, taint: &[TaintSummary]) -> Vec<F
                     // not every `+`/`*` (which floods FPs across the codebase).
                     findings.push(Finding {
                         kind: FindingKind::IntegerOverflow,
+                        confidence_override: None,
                         severity: Severity::High,
                         message: format!(
                             "arithmetic `{op}` on untrusted input in Solidity < 0.8 — \
@@ -486,6 +489,7 @@ fn detect_integer_underflow(ast: &NormalizedAst, taint: &[TaintSummary]) -> Vec<
                 if is_inside_unchecked_block(ast, &expr.span) {
                     findings.push(Finding {
                         kind: FindingKind::IntegerUnderflow,
+                        confidence_override: None,
                         severity: Severity::Medium,
                         message: "subtraction inside `unchecked` block — \
                                 underflow protection is disabled"
@@ -498,6 +502,7 @@ fn detect_integer_underflow(ast: &NormalizedAst, taint: &[TaintSummary]) -> Vec<
                 // Pre-0.8: flag subtraction on attacker-influenceable input only.
                 findings.push(Finding {
                     kind: FindingKind::IntegerUnderflow,
+                    confidence_override: None,
                     severity: Severity::High,
                     message: "subtraction on untrusted input in Solidity < 0.8 — \
                             no automatic underflow protection; consider using SafeMath"
@@ -556,6 +561,7 @@ fn detect_unsafe_array_length_assignment(ast: &NormalizedAst) -> Vec<Finding> {
                 if !params.is_empty() && expr_references_any_ident(ast, *rhs, &params) {
                     findings.push(Finding {
                         kind: FindingKind::UnsafeArrayLengthAssignment,
+                        confidence_override: None,
                         severity: Severity::High,
                         message: "array `.length` assigned from user-controlled parameter — \
                                 may allow arbitrary storage access (Solidity < 0.6)"

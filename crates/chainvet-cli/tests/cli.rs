@@ -72,6 +72,57 @@ fn scan_json_is_valid_and_has_findings() {
 }
 
 #[test]
+fn scan_markdown_report_has_audit_sections() {
+    let out = run(&["scan", "-m", "hybrid", "-f", "md", REENTRANCY]);
+    assert_ok(&out, "hybrid md report");
+    let md = String::from_utf8_lossy(&out.stdout);
+    for section in [
+        "# ChainVet Audit Report",
+        "## Disclaimer",
+        "## Findings",
+        "**Recommended Mitigation**",
+    ] {
+        assert!(
+            md.contains(section),
+            "markdown report missing `{section}`:\n{md}",
+        );
+    }
+}
+
+#[test]
+fn scan_html_report_is_self_contained() {
+    let out = run(&["scan", "-m", "hybrid", "-f", "html", REENTRANCY]);
+    assert_ok(&out, "hybrid html report");
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        html.starts_with("<!DOCTYPE html>"),
+        "must be an HTML document"
+    );
+    for needle in ["</html>", "<style>", "<svg", "Recommended Mitigation"] {
+        assert!(html.contains(needle), "html report missing `{needle}`");
+    }
+    // Self-contained: no external fetches (an SVG xmlns is not a fetch, so we
+    // check for actual resource references rather than the bare scheme).
+    for external in ["<link", "src=\"http", "src=\"/", "@import"] {
+        assert!(
+            !html.contains(external),
+            "html report must not reference external resources (`{external}`)",
+        );
+    }
+}
+
+#[test]
+fn scan_pdf_requires_output_path() {
+    let out = run(&["scan", "-m", "hybrid", "-f", "pdf", REENTRANCY]);
+    assert!(!out.status.success(), "-f pdf without -o should fail");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("output path") || stderr.contains("-o"),
+        "error should name the missing output path:\n{stderr}",
+    );
+}
+
+#[test]
 fn ir_dump_exits_ok() {
     assert_ok(&run(&["ir", REENTRANCY, "-f", "text"]), "ir dump");
 }

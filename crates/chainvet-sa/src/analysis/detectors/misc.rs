@@ -8,11 +8,9 @@ use std::collections::HashSet;
 use crate::analysis::taint::TaintSummary;
 use chainvet_core::norm::{CallTarget, ExprKind, NormalizedAst, Span, StmtKind};
 
-use super::{Finding, FindingKind, Severity};
+use super::{Confidence, Finding, FindingKind, Severity};
 
 const NON_EXTERNAL_MEMBER_HELPERS: &[&str] = &["add", "sub", "mul", "div", "mod", "push", "pop"];
-const RISKY_EXTERNAL_MEMBER_CALLS: &[&str] =
-    &["call", "delegatecall", "staticcall", "send", "transfer"];
 
 // ═══════════════════════════════════════════════════════════════════════════════
 //  Entry point
@@ -56,6 +54,7 @@ fn detect_shadowing(ast: &NormalizedAst) -> Vec<Finding> {
                 {
                     findings.push(Finding {
                         kind: FindingKind::Shadowing,
+                        confidence_override: None,
                         severity: Severity::Medium,
                         message: format!(
                             "parameter '{param_name}' shadows state variable with the same name"
@@ -101,6 +100,7 @@ fn check_shadowing_in_stmt(
                 if local_vars.contains(name) {
                     findings.push(Finding {
                         kind: FindingKind::Shadowing,
+                        confidence_override: None,
                         severity: Severity::Medium,
                         message: format!("variable '{name}' shadows existing local variable"),
                         span: stmt.span,
@@ -114,6 +114,7 @@ fn check_shadowing_in_stmt(
                         if state_var.contract == cid && state_var.name == *name {
                             findings.push(Finding {
                                 kind: FindingKind::Shadowing,
+                                confidence_override: None,
                                 severity: Severity::Medium,
                                 message: format!("variable '{name}' shadows state variable"),
                                 span: stmt.span,
@@ -177,7 +178,15 @@ fn check_shadowing_in_stmt(
 //  MI-02 – Tainted call arguments
 // ═══════════════════════════════════════════════════════════════════════════════
 
-fn should_surface_tainted_call(ast: &NormalizedAst, span: Span) -> bool {
+/// Decide whether a tainted call is worth surfacing and, if so, how confident
+/// we are that it is a true positive. `None` drops the finding; `Some(conf)`
+/// surfaces it. Confidence is derived from the sink: arbitrary-code /
+/// arbitrary-external-call sinks (`delegatecall`/`call`) reached by
+/// attacker-controlled data are the strongest signal, value transfers and
+/// static calls are mid, and calls whose target we cannot resolve are weak.
+fn classify_tainted_call(ast: &NormalizedAst, span: Span, uses_source: bool) -> Option<Confidence> {
+    // A tainted call wrapped in an `emit` is an event emission, not an
+    // external sink — never surface it.
     if ast.statements.iter().any(|stmt| match stmt.kind {
         StmtKind::Emit(_) => {
             stmt.span.file == span.file
@@ -186,7 +195,7 @@ fn should_surface_tainted_call(ast: &NormalizedAst, span: Span) -> bool {
         }
         _ => false,
     }) {
-        return false;
+        return None;
     }
 
     let Some(expr) = ast
@@ -194,20 +203,43 @@ fn should_surface_tainted_call(ast: &NormalizedAst, span: Span) -> bool {
         .iter()
         .find(|expr| expr.span == span && matches!(expr.kind, ExprKind::Call { .. }))
     else {
-        return true;
+        // Couldn't resolve the call expression — surface conservatively.
+        return Some(Confidence::Low);
     };
 
     match expr.meta.call.as_ref().map(|call| &call.target) {
-        Some(CallTarget::Direct { .. }) => false,
+        Some(CallTarget::Direct { .. }) => None,
         Some(CallTarget::Member { name, receiver }) => {
             let is_helper = NON_EXTERNAL_MEMBER_HELPERS.contains(&name.as_str());
             let is_internal_receiver = receiver.last().is_some_and(|segment| {
                 segment.eq_ignore_ascii_case("this") || segment.eq_ignore_ascii_case("super")
             });
-            let is_risky_sink = RISKY_EXTERNAL_MEMBER_CALLS.contains(&name.as_str());
-            !is_helper && !is_internal_receiver && is_risky_sink
+            if is_helper || is_internal_receiver {
+                return None;
+            }
+            sink_confidence(name.as_str(), uses_source)
         }
-        Some(CallTarget::Unknown) | None => true,
+        // Unresolved target that still reaches a call: risky but unconfirmed.
+        Some(CallTarget::Unknown) | None => Some(Confidence::Low),
+    }
+}
+
+/// Confidence for a tainted member call given its sink method, or `None` when
+/// the method is not a risky external sink (so the call is not surfaced).
+/// `uses_source` marks taint that originates from attacker-controlled input,
+/// which raises confidence on the arbitrary-execution sinks.
+fn sink_confidence(name: &str, uses_source: bool) -> Option<Confidence> {
+    match name {
+        // Arbitrary code execution / arbitrary external call with tainted data.
+        "delegatecall" | "call" => Some(if uses_source {
+            Confidence::High
+        } else {
+            Confidence::Medium
+        }),
+        // Value transfer or read-only call with a tainted target/amount.
+        "staticcall" | "send" | "transfer" => Some(Confidence::Medium),
+        // Not in RISKY_EXTERNAL_MEMBER_CALLS — do not surface.
+        _ => None,
     }
 }
 
@@ -215,11 +247,12 @@ fn detect_taint(ast: &NormalizedAst, summaries: &[TaintSummary]) -> Vec<Finding>
     let mut findings = Vec::new();
     for summary in summaries {
         for span in &summary.tainted_calls {
-            if !should_surface_tainted_call(ast, *span) {
+            let Some(confidence) = classify_tainted_call(ast, *span, summary.uses_source) else {
                 continue;
-            }
+            };
             findings.push(Finding {
                 kind: FindingKind::TaintedCall,
+                confidence_override: Some(confidence),
                 severity: Severity::High,
                 message: "call with tainted arguments".to_string(),
                 span: *span,

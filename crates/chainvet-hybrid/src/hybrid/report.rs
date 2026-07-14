@@ -29,10 +29,6 @@ pub struct HybridRunSummary {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct HybridFindingRow {
-    /// Confidence tier derived from provenance: `confirmed` when corroborated by
-    /// dynamic execution (fuzz/hybrid-confirmed) or a symbolic feasibility
-    /// witness; `candidate` when reported by static heuristics only.
-    pub tier: String,
     pub provenance: String,
     pub provenances: Vec<String>,
     pub kind: String,
@@ -67,12 +63,11 @@ impl HybridFindingRow {
         // targets) so static-only detections — TOD especially — reach the report.
         for finding in static_findings {
             rows.push(Self {
-                tier: tier_for("static").to_string(),
                 provenance: "static".to_string(),
                 provenances: vec!["static".to_string()],
                 kind: finding.kind.as_str().to_string(),
                 severity: Some(finding.severity.as_str().to_string()),
-                confidence: None,
+                confidence: Some(finding.confidence().as_str().to_string()),
                 category: Some(finding.kind.category().as_str().to_string()),
                 message: finding.message.clone(),
                 function_id: finding.function,
@@ -87,7 +82,6 @@ impl HybridFindingRow {
 
         for finding in se_findings {
             rows.push(Self {
-                tier: tier_for("symbolic").to_string(),
                 provenance: "symbolic".to_string(),
                 provenances: vec!["symbolic".to_string()],
                 kind: finding.kind.as_str().to_string(),
@@ -118,11 +112,10 @@ impl HybridFindingRow {
             // (e.g. aggregate findings like reentrancy).
             let function_id = extract_function_id_from_message(&finding.message);
             let function_span = function_id
-                .and_then(|id| ast.functions.get(id as usize))
+                .and_then(|id| ast.functions.iter().find(|f| f.id == id))
                 .map(|function| function.span);
             let loc = finding.span.or(function_span);
             rows.push(Self {
-                tier: tier_for(provenance).to_string(),
                 provenance: provenance.to_string(),
                 provenances: vec![provenance.to_string()],
                 kind: canonical,
@@ -201,22 +194,28 @@ pub fn print_hybrid_report(report: &HybridJsonReport, format: OutputFormat) -> R
                     stats.seeded_inputs_provided, stats.seeded_inputs_executed
                 );
             }
-            let confirmed = report
-                .findings
-                .iter()
-                .filter(|f| f.tier == "confirmed")
-                .count();
-            let candidate = report.findings.len() - confirmed;
+            let conf_count = |level: &str| {
+                report
+                    .findings
+                    .iter()
+                    .filter(|f| f.confidence.as_deref() == Some(level))
+                    .count()
+            };
+            let (high, medium, low) = (conf_count("high"), conf_count("medium"), conf_count("low"));
             println!(
-                "findings: {} total — {} confirmed (dynamic/SE evidence), {} candidate (static-only)",
+                "findings: {} total — {} high, {} medium, {} low confidence",
                 report.findings.len(),
-                confirmed,
-                candidate
+                high,
+                medium,
+                low
             );
             for finding in &report.findings {
                 println!(
                     "  [{}|{}] {} {}",
-                    finding.tier, finding.provenance, finding.kind, finding.message
+                    finding.confidence.as_deref().unwrap_or("-"),
+                    finding.provenance,
+                    finding.kind,
+                    finding.message
                 );
             }
             Ok(())
@@ -230,10 +229,12 @@ pub fn print_hybrid_report(report: &HybridJsonReport, format: OutputFormat) -> R
     }
 }
 
+/// Pull the function id out of an oracle message. The id follows the word
+/// `function` (e.g. "... in function 1 —"); parsing the first digit run instead
+/// wrongly grabs numbers from IR temp names like `$t3`.
 fn extract_function_id_from_message(message: &str) -> Option<u32> {
-    let digits = message
-        .split(|ch: char| !ch.is_ascii_digit())
-        .find(|part| !part.is_empty())?;
+    let after = message.split_once("function ")?.1;
+    let digits: String = after.chars().take_while(|c| c.is_ascii_digit()).collect();
     digits.parse().ok()
 }
 
@@ -282,11 +283,6 @@ pub fn deduplicate_rows(rows: Vec<HybridFindingRow>) -> Vec<HybridFindingRow> {
                 right.message.as_str(),
             ))
     });
-    // Recompute the tier from the merged provenance: a static finding that fuzz
-    // or SE also reported becomes hybrid-confirmed, promoting it to `confirmed`.
-    for row in &mut deduped {
-        row.tier = tier_for(&row.provenance).to_string();
-    }
     deduped
 }
 
@@ -315,16 +311,6 @@ fn merge_rows(existing: &mut HybridFindingRow, incoming: HybridFindingRow) {
     existing.start = min_opt(existing.start, incoming.start);
     existing.end = max_opt(existing.end, incoming.end);
     existing.message = merge_message(existing.message.as_str(), incoming.message.as_str());
-}
-
-/// Map a provenance to its confidence tier. Dynamic execution (fuzz /
-/// hybrid-confirmed) and symbolic feasibility witnesses are `confirmed`; a
-/// static-only heuristic is a `candidate`.
-fn tier_for(provenance: &str) -> &'static str {
-    match provenance {
-        "hybrid-confirmed" | "fuzz" | "symbolic" => "confirmed",
-        _ => "candidate",
-    }
 }
 
 fn select_primary_provenance(provenances: &[String]) -> &'static str {
@@ -425,7 +411,6 @@ mod tests {
     fn dedup_merges_same_issue_and_preserves_provenance() {
         let rows = vec![
             HybridFindingRow {
-                tier: String::new(),
                 provenance: "symbolic".to_string(),
                 provenances: vec!["symbolic".to_string()],
                 kind: "reentrancy".to_string(),
@@ -439,7 +424,6 @@ mod tests {
                 end: Some(20),
             },
             HybridFindingRow {
-                tier: String::new(),
                 provenance: "hybrid-confirmed".to_string(),
                 provenances: vec!["hybrid-confirmed".to_string()],
                 kind: "reentrancy".to_string(),
@@ -471,7 +455,6 @@ mod tests {
     fn dedup_keeps_distinct_files_separate() {
         let rows = vec![
             HybridFindingRow {
-                tier: String::new(),
                 provenance: "symbolic".to_string(),
                 provenances: vec!["symbolic".to_string()],
                 kind: "reentrancy".to_string(),
@@ -485,7 +468,6 @@ mod tests {
                 end: Some(2),
             },
             HybridFindingRow {
-                tier: String::new(),
                 provenance: "hybrid-confirmed".to_string(),
                 provenances: vec!["hybrid-confirmed".to_string()],
                 kind: "reentrancy".to_string(),

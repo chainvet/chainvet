@@ -8,8 +8,8 @@ engines over a shared frontend and IR — **static analysis** (45+ detectors),
 mode that runs them as one feedback loop: static analysis steers symbolic
 execution, whose concrete witnesses seed the fuzzer, whose coverage stalls
 trigger further symbolic assists. Findings are merged, deduplicated, and tagged
-with a confidence tier (**confirmed** by dynamic/symbolic evidence vs **candidate**
-from static heuristics only).
+with a **confidence** level (**high** / **medium** / **low**) reflecting how
+precise the detector that reported them is.
 
 ## Install
 
@@ -67,10 +67,27 @@ binary is just `chainvet`); plain `cargo build --release` builds all four.
 chainvet scan <path.sol>               # hybrid analysis (the default mode)
 chainvet scan -m static <path.sol>     # one engine: static | symbolic | fuzzing | hybrid
 chainvet scan -f json <path.sol>       # machine-readable output
-chainvet scan -s high <path.sol>       # only findings at/above a severity
+chainvet scan -s high <path.sol>       # findings at/above a severity (floor)
+chainvet scan --severity medium <path> # findings of exactly a severity (repeatable)
+chainvet scan -c high <path.sol>       # findings at/above a confidence (floor)
+chainvet scan --confidence medium .    # findings of exactly a confidence (repeatable)
+chainvet scan -f md -o audit.md <path> # Cyfrin-style audit report (Markdown)
+chainvet scan -f html -o audit.html .  # ...as a self-contained HTML page (print-to-PDF)
+chainvet scan -f pdf -o audit.pdf .    # ...as PDF (via weasyprint/wkhtmltopdf)
 chainvet scan -o report.txt <path.sol> # write the report to a file
 chainvet ir <path.sol> -f text         # inspect the IR (text | json | tuple)
 ```
+
+Confidence (`high`/`medium`/`low`) is the detector's own precision estimate for a
+finding. The `--min-*` floors and the exact `--severity`/`--confidence` filters
+are mutually exclusive per axis.
+
+Audit-report formats (`-f md`/`html`/`pdf`) render a Cyfrin-style report — protocol
+summary, disclaimer, risk classification, per-finding impact/PoC/mitigation. `html`
+and `pdf` share one branded look (dark ChainVet theme, logo, severity colors): `pdf`
+renders the same HTML through an HTML→PDF engine — `weasyprint` (recommended) or
+`wkhtmltopdf` on PATH (override with `CHAINVET_PDF_ENGINE`). For a dependency-free
+artifact, use `-f html` and "Print to PDF" from a browser — identical output.
 
 The human report is colored and tabular on a terminal (auto-plain when piped or
 under `NO_COLOR`; force off with `--no-color`). Run `chainvet scan --help` for
@@ -80,12 +97,17 @@ all options, including the hybrid tuning flags (`--epochs`, `--fuzz-time-ms`,
 ### CI (SARIF)
 
 ```bash
-chainvet-ci contracts/ --mode hybrid --fail-on high --sarif chainvet.sarif
+chainvet-ci contracts/ --mode hybrid --fail-on-severity high --sarif chainvet.sarif
 ```
 
-Emits a SARIF 2.1.0 report and exits non-zero when a finding meets `--fail-on`
-(`high`/`medium`/`low`/`none`). See **chainvet-action** for a ready-made GitHub
-workflow that uploads the SARIF to code scanning.
+Emits a SARIF 2.1.0 report and exits non-zero when a finding meets both
+`--fail-on-severity`/`-s` (`high`/`medium`/`low`, default `high`) and
+`--fail-on-confidence`/`-c` (`high`/`medium`/`low`, default `low` — i.e. any
+confidence). Raise `--fail-on-confidence high` to gate only on the most precise
+detections. Pass `--no-fail` to scan and emit SARIF without ever failing the job
+(report-only; mutually exclusive with the `--fail-on-*` flags). See
+**chainvet-action** for a ready-made GitHub workflow that uploads the SARIF to
+code scanning.
 
 ### Server (REST)
 
@@ -109,9 +131,9 @@ them off (the default), Chainvet runs fully offline and deterministically.
 
 | Env var | Effect |
 |---|---|
-| `CHAINVET_AI_FALLBACK_PARSER=1` | AI-assisted parsing when solc and tree-sitter both fail |
-| `CHAINVET_AI_REPORT=1` | LLM review of findings: drop false positives, annotate the rest |
-| `CHAINVET_AI_ENDPOINT`, `CHAINVET_AI_MODEL` | Ollama endpoint/model (default `http://127.0.0.1:11434`, `qwen2.5-coder:7b`) |
+| `CHAINVET_LLM_FALLBACK_PARSER=1` | AI-assisted parsing when solc and tree-sitter both fail |
+| `CHAINVET_LLM_REPORT=1` | LLM review of findings: drop false positives, annotate the rest |
+| `CHAINVET_LLM_ENDPOINT`, `CHAINVET_LLM_MODEL` | Ollama endpoint/model (default `http://127.0.0.1:11434`, `qwen2.5-coder:7b`) |
 
 ## Workspace
 
@@ -122,12 +144,13 @@ orchestration crate exposes a typed `scan()` facade; thin frontends render it.
 crates/
 chainvet-core          shared types: normalized AST, IR, CFG, SSA, findings
 chainvet-frontend      load Solidity: solc → tree-sitter → optional AI fallback
-chainvet-ai            local-LLM (Ollama) transport, shared by frontend + reports
+chainvet-llm           LLM transport (Ollama today), shared by frontend + reports
     chainvet-sa            static analysis: call graph, taint, detectors
 chainvet-se            symbolic execution (Z3)
     chainvet-fuzzing       coverage-guided greybox fuzzer
     chainvet-hybrid        the hybrid control loop
-chainvet-orchestrator  scan(config) -> ScanResult (merge/dedup/tier + AI review)
+chainvet-orchestrator  scan(config) -> ScanResult (merge/dedup + AI review)
+chainvet-report        Cyfrin-style audit report (md/html/pdf), shared by cli + server
     chainvet-cli           binary: chainvet
     chainvet-ci            binary: chainvet-ci  (SARIF + fail-on-severity)
     chainvet-server        binary: chainvet-server (REST API)
