@@ -94,6 +94,20 @@ fn bootstrap_payable_value(rng: &mut impl Rng, dict: Option<&Dictionary>) -> u12
     if value == 0 { 1 } else { value }
 }
 
+/// Value for a payable call in generated/mutated transactions. Real payable
+/// functions almost always gate on `require(msg.value > 0)`, so a zero-value
+/// call usually reverts on a real EVM — and the IR interpreter doesn't model
+/// `msg.value`, so it explores a path that doesn't exist. Bias strongly to
+/// nonzero to keep exploration EVM-valid, but keep a ~10% chance of 0 so the
+/// zero-value guard block itself still gets covered.
+fn payable_tx_value(rng: &mut impl Rng, dict: Option<&Dictionary>) -> u128 {
+    if rng.gen_bool(0.1) {
+        0
+    } else {
+        bootstrap_payable_value(rng, dict)
+    }
+}
+
 /// Generate a single random transaction, optionally using dictionary values.
 pub(crate) fn random_transaction_with_dict(
     abi: &ContractAbi,
@@ -118,7 +132,7 @@ pub(crate) fn random_transaction_with_dict(
         .map(|_p| random_value_with_dict(rng, dict))
         .collect();
     let value = if func.is_payable {
-        random_value_amount_with_dict(rng, dict)
+        payable_tx_value(rng, dict)
     } else {
         0
     };
@@ -183,7 +197,7 @@ fn dependency_aware_sequence(
                     args,
                     sender: random_sender(rng, config.address_pool_size),
                     value: if func.is_payable {
-                        random_value_amount_with_dict(rng, dict)
+                        payable_tx_value(rng, dict)
                     } else {
                         0
                     },
@@ -203,7 +217,7 @@ fn dependency_aware_sequence(
                     args,
                     sender: random_sender(rng, config.address_pool_size),
                     value: if func.is_payable {
-                        random_value_amount_with_dict(rng, dict)
+                        payable_tx_value(rng, dict)
                     } else {
                         0
                     },
@@ -544,6 +558,22 @@ mod tests {
             first_payable.value > 0,
             "expected first payable bootstrap tx to carry value"
         );
+    }
+
+    #[test]
+    fn payable_tx_value_biases_nonzero_but_keeps_some_zero() {
+        let mut rng = <rand::rngs::StdRng as rand::SeedableRng>::seed_from_u64(7);
+        let n = 2000;
+        let zeros = (0..n).filter(|_| payable_tx_value(&mut rng, None) == 0).count();
+        let nonzero_frac = 1.0 - zeros as f64 / n as f64;
+        // Payable calls must be nonzero the large majority of the time (so they
+        // don't revert on `require(msg.value > 0)`), but not always — a few
+        // zeros keep the zero-value guard block covered.
+        assert!(
+            nonzero_frac > 0.8,
+            "payable value should be nonzero most of the time, got {nonzero_frac}"
+        );
+        assert!(zeros > 0, "should still produce some zero values for guard coverage");
     }
 
     #[test]

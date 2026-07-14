@@ -407,12 +407,16 @@ fn make_tx_for_function(
 }
 
 fn random_payable_value(rng: &mut impl Rng) -> u128 {
-    let strategy: u32 = rng.gen_range(0..5);
+    // Bias to nonzero: payable functions almost always gate on `msg.value > 0`,
+    // so a zero-value mutation usually reverts on a real EVM (and the IR can't
+    // model msg.value), wasting the mutation. Keep ~10% zero so the zero-value
+    // guard block is still exercised.
+    let strategy: u32 = rng.gen_range(0..10);
     match strategy {
         0 => 0,
-        1 => 1,
-        2 => rng.gen_range(1..1_000_000),
-        3 => rng.gen_range(1_000_000..1_000_000_000_000_000_000),
+        1 | 2 => 1,
+        3..=6 => rng.gen_range(1..1_000_000),
+        7 | 8 => rng.gen_range(1_000_000..1_000_000_000_000_000_000),
         _ => u128::MAX,
     }
 }
