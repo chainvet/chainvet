@@ -5,6 +5,7 @@ use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use serde::Deserialize;
@@ -141,8 +142,7 @@ impl SolcManager {
 
         fs::create_dir_all(&bin_dir)?;
         let url = self.binary_url(version, list)?;
-        download_file(&url, &bin_path)?;
-        set_executable(&bin_path)?;
+        download_file(&url, &bin_path, true)?;
         Ok(bin_path)
     }
 
@@ -171,7 +171,7 @@ impl SolcManager {
 
         if refresh && !is_offline_mode() {
             let url = self.list_url();
-            if let Err(err) = download_file(&url, &path)
+            if let Err(err) = download_file(&url, &path, false)
                 && !path.exists()
             {
                 return Err(err);
@@ -674,24 +674,47 @@ fn is_fresh(meta: &fs::Metadata, ttl: Duration) -> bool {
     false
 }
 
-fn download_file(url: &str, dest: &Path) -> Result<()> {
+static TMP_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+/// Per-process-unique sibling of `dest`, so concurrent downloads of the same
+/// destination never share a temp file.
+fn unique_tmp_path(dest: &Path) -> PathBuf {
+    dest.with_extension(format!(
+        "tmp.{}.{}",
+        std::process::id(),
+        TMP_COUNTER.fetch_add(1, Ordering::Relaxed)
+    ))
+}
+
+fn download_file(url: &str, dest: &Path, executable: bool) -> Result<()> {
     let parent = dest
         .parent()
         .ok_or_else(|| Error::msg("download destination has no parent"))?;
     fs::create_dir_all(parent)?;
 
-    let tmp = dest.with_extension("tmp");
+    let tmp = unique_tmp_path(dest);
     let tmp_str = tmp
         .to_str()
         .ok_or_else(|| Error::msg("download path is not valid UTF-8"))?;
     if let Err(err) = download_with_command("curl", &["-fsSL", "-o", tmp_str, url])
         && let Err(err2) = download_with_command("wget", &["-q", "-O", tmp_str, url])
     {
+        let _ = fs::remove_file(&tmp);
         let message = format!("download failed: {err}; fallback failed: {err2}");
         return Err(Error::msg(message));
     }
 
-    fs::rename(tmp, dest)?;
+    // Publish only a complete, ready-to-run file: chmod before the rename so
+    // `dest` is never visible in a non-executable state.
+    if executable && let Err(err) = set_executable(&tmp) {
+        let _ = fs::remove_file(&tmp);
+        return Err(err);
+    }
+
+    if let Err(err) = fs::rename(&tmp, dest) {
+        let _ = fs::remove_file(&tmp);
+        return Err(err.into());
+    }
     Ok(())
 }
 
@@ -922,6 +945,16 @@ mod tests {
             path: format!("C{id}.sol"),
             source: body.to_string(),
         }
+    }
+
+    #[test]
+    fn unique_tmp_paths_do_not_collide() {
+        let dest = Path::new("/tmp/solc-v0.8.20/solc");
+        let a = unique_tmp_path(dest);
+        let b = unique_tmp_path(dest);
+        assert_ne!(a, b);
+        assert_eq!(a.parent(), dest.parent());
+        assert_eq!(b.parent(), dest.parent());
     }
 
     #[test]
