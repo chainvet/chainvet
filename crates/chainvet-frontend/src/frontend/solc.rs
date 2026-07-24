@@ -466,7 +466,7 @@ fn normalize_function(
     let id = ast.functions.len() as u32;
     let name = read_string(node, "name")
         .or_else(|| read_attr_string(node, "name"))
-        .and_then(|value| if value.is_empty() { None } else { Some(value) });
+        .filter(|value| !value.is_empty());
     let kind = parse_function_kind(node);
     let visibility = parse_visibility(node);
     let mutability = parse_mutability(node);
