@@ -1,0 +1,165 @@
+Category,No.,Type,Description,Recommendation
+Access Control,1,Arbitrary `from` in transferFrom() without msg.sender Check,Detect when `msg.sender` is not used as `from` in `transferFrom` and does not have a modifier that has `msg.sender` check.,"Use `msg.sender` as `from` in `transferFrom`, or add a modifier with `msg.sender` check."
+Access Control,2,Call to Arbitrary Addresses with Unchecked Calldata,Call to arbitrary addresses with malicious calldata may incur unexpected behavior.,Check the target address and calldata when use call
+Access Control,3,Caller Not Checked,"The opcode extcodesize of the caller contract is always zero if the call is from a constructor, though the caller is genuinely a contract account. It results in a false positive when checking whether the caller is a contract account.","Not solely take codesize of account to distinguish a contract account from an external one. For example, give thought to `tx.origin`."
+Access Control,4,Contract Could be Destructed,Detects logic contract that can be destructed.,Add a constructor to ensure `initialize` cannot be called on the logic contract.
+Access Control,5,Dangerous Immediate Initialization of State Variables,Detects the immediate initialization of state variables through function calls that are not pure/constant or use non-constant state variables.,"Remove any initialization of state variables via non-constant state variables or function calls. If variables must be set upon contract deployment, locate initialization in the constructor instead."
+Access Control,6,Dangerous Usage of `tx.origin`,It is not recommended to use `tx.origin` for authorization. `tx.origin` based protection can be abused by a malicious contract if a legitimate user interacts with the malicious contract.,Do not use `tx.origin` for authorization.
+Access Control,7,Default Function Visibility,"Functions that do not have a function visibility type specified are public by default, Which can lead to a vulnerability if a developer forgets to set the visibility. A malicious user can make unauthorized or unintended state changes.","Functions can be specified as being external, public, internal or private. It is recommended to make a conscious decision on which visibility type is appropriate for a function, which can dramatically reduce the attack surface of a contract system."
+Access Control,8,Initializing Method without Permission Check,Initialize method of the protocol without permission check might be manipulated by hackers.,Initialize method should has a permission check
+Access Control,9,Method permit() Used for Arbitrary `from` in transferFrom(),"Method `permit` is used in ERC20 token, which is used to change an account's ERC20 allowance by presenting a message signed by the account. By not relying on `approve` method, the token holder account doesn't need to send a transaction. When we use this method in `transferFrom` and `msg.sender` is not used as from in transferFrom. If an ERC20 token does not implement `permit` and has a fallback function, `transferFrom` allows an attacker to transfer all tokens approved for this contract.",Ensure that the underlying ERC20 token correctly implements a permit function.
+Access Control,10,Missing `msg.sender` Check for transferFrom(),"When we use the `ERC20` method `transferFrom`, the parameter from should be carefully checked. It shouldn't be an arbitrary address that may lead to someone `transfer` anyone's token to himself.  So we, for instance, should detect whether `msg.sender` was used as `from` in transferFrom.",Use `msg.sender` to check the parameter `from` in transferFrom.
+Access Control,11,Missing Input Validation,"In solidity, there is no ""null"" equivalent. So we should know every default value for different value types. Meanwhile, we should validate the value passed to state variable. So, for example, when we assign an address type, we should check the value to ensure it's not a zero address.",Validate input value.
+Access Control,12,Sending Ether to Arbitrary Destinations,"When we use function `call` to send ether, the target address should be carefully checked, and an arbitrary address may lead to exploitability.",Ensure that an arbitrary user cannot withdraw unauthorized funds.
+Access Control,13,Unprotected Contract Destruction,"`selfdestruct`/`suicide` are keywords used to terminate a contract, remove the bytecode from the Ethereum blockchain, and send any contract funds to a specified address. We primarily use the `selfdestruct` function to improve smart contract code security, clean up unused contracts and transfer Ethereum assets quickly. However, `selfdestruct` is a double-edged sword, this function gives an easier avenue for a projectâ€™s core team to rug their users or community, and assets like `ERC20/ERC721` will never be recovered once `selfdestruct` is called.",We should use `selfdestruct` carefully and add protections to this kind of function call.
+Access Control,14,Unprotected Ether Withdrawal,"Because of missing or insufficient access controls, like unintentionally exposing the initialization functions, no subtraction of balance after the refund is called, and wrong comparison operator in withdraw function, some or all Ethers from the contract account can be withdrawn by malicious parties.",Design and implement controls for withdrawals so that only authorized parties can access them.
+Access Control,15,Unsafe Delegatecall,"`delegatecall` is different from `call`. When using `delegatecall`, the code at the target address is executed in the current contract context, which means it will change the current contract's storage, which may lead to an unexpected result. So the target address should be carefully checked before using it.","Use `delegatecall` with caution, and use only trusted destinations. In addition, the storage data structure should be checked between the proxy and target contract."
+Access Control,16,Unused Return Value,"Either the return value of an external call is not stored in a local or state variable, or the return value is declared but never used in the function body.",Ensure the return value of external function calls is used. Remove or comment out the unused return function parameters.
+Access Control,17,Usage of public mint or burn,"Public mint or burn method are dangerous for token, anyone can manipulate token balance which may lead to negative effects.",Add permission check for mint() or burn() methods.
+Access Control,18,Write to Arbitrary Storage Location,"A smart contract's state variables are persistently stored at some storage location named slot on the EVM level. The contract ensures that only legitimate operations can write to sensitive storage locations.
+- However, under the Solidity 0.6 version, this restriction can be circumvented caused by the length of an array is capable of modifying. Primarily the result of the underflow of the length of an array whose type is unit is extremely large. So that arbitrary storage is accessible. Hackers can illegitimately modify state variables by elaborately calculating their location.","As general advice, given that all data structures share the same storage (address) space, one should make sure that writes to one data structure cannot inadvertently overwrite entries of another data structure.
+- particularly, do not modify the length of an array."
+Arithmetic,1,Inappropriate Integer Division before Multiplication,"Performing integer division before multiplication truncates the low bits, losing the precision of the calculation.",Consider ordering multiplication before division.
+Arithmetic,2,Integer Overflow,"Overflow is a situation when an unsigned integer reaches its byte size. Then the next element added will return the first variable element. On the contrary, underflow means the preview element will return the last variable element. In Solidity 0.8, the compiler will automatically check for overflow and underflow.","Use solc version above 0.8, or use OpenZeppelin's SafeMath.sol implementation."
+Arithmetic,3,Integer Underflow,"Overflow is a situation when an unsigned integer reaches its byte size. Then the next element added will return the first variable element. On the contrary, underflow means the preview element will return the last variable element. In Solidity 0.8, the compiler will automatically check for overflow and underflow.","Use solc version above 0.8, or use OpenZeppelinâ€™s SafeMath.sol implementation."
+Arithmetic,4,Unsafe Array Length Assignment,User-controlled variables cannot reach an array length assignment.,User-controlled variables cannot reach an array length assignment.
+Block Manipulation,1,Dangerous Usage of `block.timestamp`,Dangerous usage of `block.timestamp`. `block.timestamp` can be manipulated by miners.,Avoid relying on `block.timestamp`.
+Block Manipulation,2,Transaction Order Dependency,"In the blockchain system, miners look at transactions they have received and select which transactions to include in a block based on who has paid a high enough gas price. Thus, the transactions may not be finalized into the blockchain based on the order of submission. The transaction order dependency occurs when the code depends on the order of the transactions submitted, which may cause unexpected results.","A possible way to remedy race conditions in submitting information in exchange for a reward is a commit reveal hash scheme. For example, instead of submitting the answer, the party who has the answer submits hash(salt, address, answer) the contract stores this hash and the sender's address. The sender then submits a transaction with the salt and answer to claim the reward. The contract hashes (salt, msg.sender, answer) and checks the hash produced against the stored hash. If the hash matches, the contract releases the reward. Another solution is the fix for the ERC20 race condition, where it adds a field to the approved inputs, which is the expected current value."
+Block Manipulation,3,Weak PRNG (Pseudorandom Number Generator),"`block.timestamp`, `now`, `block.difficulty`, and `blockhash` miners can influence these values, so they should not be used to generate random numbers.","Instead of using `block.timestamp`, `block.difficulty`, `msg.sender`, `block.coinbase`, `block.number`, `gasLeft` or `blockhash` as a source of randomness, we recommend using a verifiable source of randomness, such as Chainlink VRF, for random number generation."
+Cryptographic,1,Lack of Proper Signature Verification,"It is a common pattern for smart contract systems to allow users to sign message off-chain instead of directly requesting users to do an on-chain transaction because of the flexibility and increased transferability that this provides. Smart contract systems that process signed messages must implement their own logic to recover the authenticity of the sign messages. Some signature verification implementations attempt to solve this problem by assuming the validity of a signed message based on other methods that do not have this limitation. An example of such a method is to rely on msg.sender and assume that if a signed message originated from the sender address, it has also been created by the sender address. This can lead to vulnerabilities, especially in scenarios where proxies can be used to relay transactions.",It is not recommended to use alternate verification schemes that do not require proper signature verification through `ecrecover()`.
+Cryptographic,2,Signature Malleability,"Implementing a cryptographic signature system in Ethereum contracts often assumes that the signature is unique. However, signatures can be altered without possessing the private key and still be valid. The EVM specification defines several so-called `precompiled` contracts, one of which is `ecrecover`, which executes the elliptic curve public key recovery. A malicious user can slightly modify the three values v, r and s to create other valid signatures. A system that performs signature verification on the contract level might be susceptible to attacks if the signature is part of the signed message hash. A malicious user could create valid signatures to replay previously signed messages.",A signature should never be included in a signed message hash to check if the contract has processed previous messages.
+Denial of Services,1,`transfer()` and `send()` with Hardcoded Gas Amount,"The `transfer()` and `send()` functions forward a fixed amount of 2300 gas. Historically, it has often been recommended to use these functions for value transfers to guarding against reentrancy attacks. However, the gas cost of EVM instructions may change significantly during hard forks, breaking already deployed contract systems that make fixed assumptions about gas costs. For example. EIP 1884 broke several existing smart contracts due to a cost increase in the SLOAD instruction.",Avoid the use of `transfer()` and `send()` and do not otherwise specify a fixed amount of gas when performing calls. Use `.call.value(...)` instead. Use the checks-effects-interactions pattern or reentrancy locks to prevent reentrancy attacks.
+Denial of Services,2,Contract Could Lock Ether,Contract with a `payable` function but without a withdrawal capacity.,Remove the payable attribute or add a withdraw function.
+Denial of Services,3,DoS with Block Gas Limit,"When smart contracts are deployed, functions inside them are called, and the execution of these actions always requires a certain amount of gas based on how much computation is needed to complete them. The Ethereum network specifies a block gas limit, and the sum of all transactions included in a block can not exceed the threshold.\nProgramming patterns that are harmless in centralized applications can lead to Denial of Service conditions in smart contracts when the cost of executing a function exceeds the block gas limit. For example, modifying an array of unknown size that increases over time can lead to a Denial of Service condition.","Caution is advised when you expect to have large arrays that grow over time. Actions that require looping across the entire data structure should be avoided.\n If you absolutely must loop over an array of unknown size, then you should plan for it to take multiple blocks and potentially require multiple transactions."
+Denial of Services,4,DoS With Failed Call,"External calls can fail accidentally or deliberately, which can cause a DoS condition in the contract. To minimize the damage caused by such failures, it is better to isolate each external call into its transaction that the recipient can initiate. Namely, the state change of the recipient should be initiated by himself. \nThis is especially relevant for payments, where it is better to let users withdraw funds rather than push funds to them automatically (this also reduces the chance of problems with the gas limit).","Avoid combining multiple calls in a single transaction, especially when calls are executed as part of a loop. Always assume that external calls can fail. Implement the contract logic to handle failed calls"
+Denial of Services,5,Force Sending Ether with this.balance check in require() or assert(),"if there is force send ether in function(use `selfdestruct`) and also have require or assert check with `this.balance`, the attacker may use force send ether to mislead ether balance of contract, let the contract will always failed in force send ether",use transfer logic instead of send.
+Denial of Services,6,Unsafe send() in the require() Condition,"if there is send in require logic, the logic may revert from recipient by return false, cause dos attack.",use transfer logic instead of send.
+Reentrancy,1,Reentrancy Vulnerability with Negative Events,"A state variable is changed after a contract calls another contract function. The target contract can callback and reenter before the state variable is updated. This may lead to an unexpected result.
+
+For example:
+```solidity
+function withdrawBalance(){
+  // send userBalance[msg.sender] Ether to msg.sender
+  // if mgs.sender is a contract, it will call its fallback function
+  if( ! (msg.sender.call.value(userBalance[msg.sender])() ) ){
+      throw;
+  }
+  userBalance[msg.sender] = 0;
+}
+```
+`msg.sender` can reenter the withdrawBalance function and withdraw all ether in the contract.",Apply the [`check-effects-interactions pattern`](http://solidity.readthedocs.io/en/v0.4.21/security-considerations.html#re-entrancy).
+Reentrancy,2,Reentrancy Vulnerability with Transfer,"A state variable is changed after a contract calls another contract function. The target contract can callback and reenter before the state variable is updated. This may lead to an unexpected result.
+
+For example:
+```solidity
+function withdrawBalance(){
+  // send userBalance[msg.sender] Ether to msg.sender
+  // if mgs.sender is a contract, it will call its fallback function
+  if( ! (msg.sender.call.value(userBalance[msg.sender])() ) ){
+      throw;
+  }
+  userBalance[msg.sender] = 0;
+}
+```
+`msg.sender` can reenter the withdrawBalance function and withdraw all ether in the contract.",Apply the [`check-effects-interactions pattern`](http://solidity.readthedocs.io/en/v0.4.21/security-considerations.html#re-entrancy).
+Reentrancy,3,Reentrancy Vulnerability with Same Effect,"A state variable is changed after a contract calls another contract function. The target contract can callback and reenter before the state variable is updated. This may lead to an unexpected result.
+
+For example:
+```solidity
+function withdrawBalance(){
+  // send userBalance[msg.sender] Ether to msg.sender
+  // if mgs.sender is a contract, it will call its fallback function
+  if( ! (msg.sender.call.value(userBalance[msg.sender])() ) ){
+      throw;
+  }
+  userBalance[msg.sender] = 0;
+}
+```
+`msg.sender` can reenter the withdrawBalance function and withdraw all ether in the contract.",Apply the [`check-effects-interactions pattern`](http://solidity.readthedocs.io/en/v0.4.21/security-considerations.html#re-entrancy).
+Reentrancy,4,Reentrancy Vulnerability with ETH Transfer,"A state variable is changed after a contract calls another contract function. The target contract can callback and reenter before the state variable is updated. This may lead to an unexpected result.
+
+For example:
+```solidity
+function withdrawBalance(){
+  // send userBalance[msg.sender] Ether to msg.sender
+  // if mgs.sender is a contract, it will call its fallback function
+  if( ! (msg.sender.call.value(userBalance[msg.sender])() ) ){
+      throw;
+  }
+  userBalance[msg.sender] = 0;
+}
+```
+`msg.sender` can reenter the withdrawBalance function and withdraw all ether in the contract.",Apply the [`check-effects-interactions pattern`](http://solidity.readthedocs.io/en/v0.4.21/security-considerations.html#re-entrancy).
+Reentrancy,5,Reentrancy Vulnerability without ETH Transfer,"A state variable is changed after a contract calls another contract function. The target contract can callback and reenter before the state variable is updated. This may lead to an unexpected result.
+
+For example:
+```solidity
+function withdrawBalance(){
+  // send userBalance[msg.sender] Ether to msg.sender
+  // if mgs.sender is a contract, it will call its fallback function
+  if( ! (msg.sender.call.value(userBalance[msg.sender])() ) ){
+      throw;
+  }
+  userBalance[msg.sender] = 0;
+}
+```
+`msg.sender` can reenter the withdrawBalance function and withdraw all ether in the contract.",Apply the [`check-effects-interactions pattern`](http://solidity.readthedocs.io/en/v0.4.21/security-considerations.html#re-entrancy).
+Storage & Memory,1,Arbitrary Function Jump via Inline Assembly,"The inline assembly can modify the logic of the `memory` function type by changing the corresponding memory, which may cause unexpected behavior.",Should not modify the function type by the inline assembly that may cause unexpected behavior.
+Storage & Memory,2,Bytes Variables Risk,"The `msg.data` apply ABI encode. So if the data is too long or short but still validated, the bytes of an ABI-encoded variable will, whether padding or truncating the low-order bytes. So that different msg.data might produce the same value assigned.",Check the input from ABI function and ensure the length of msg.data  is legitimate.
+Storage & Memory,3,Dangerous Usage of `msg.value` inside a Loop,"Detect the use of `msg.value` inside a loop.
+
+For example:
+```solidity
+contract MsgValueInLoop{
+    mapping (address => uint256) balances;
+
+    function bad(address[] memory receivers) public payable {
+        for (uint256 i=0; i < receivers.length; i++) {
+            balances[receivers[i]] += msg.value;
+        }
+    }
+}
+```",Track `msg.value` through a local variable and decrease its amount on every iteration/usage.
+Storage & Memory,4,Error-prone Assembly Usage,The use of assembly is error-prone and should be avoided.,"We advise against using EVM assembly, as it is error-prone."
+Storage & Memory,5,Memory Manipulation,"Memory Manipulation: This vulnerability occurs when a contract's memory-related operations are improperly handled, leading to unintended behavior or potential security risks. Memory manipulation vulnerabilities can result from incorrect access or modification of memory storage, causing unexpected outcomes.
+
+For example:
+
+```solidity
+contract MemoryManipulation {
+    uint256 public value;
+
+    function setValue(uint256 _value) public {
+        uint256[] memory array = new uint256[](1);
+        array[0] = _value;
+        assembly {
+            mstore(add(value, 0x20), mload(add(array, 0x20)))
+        }
+    }
+}
+```
+
+In this example, the memory manipulation vulnerability is demonstrated through the use of inline assembly to modify the contract's `value` state variable. The misuse of memory operations in this manner can lead to unintended behavior or potential security risks.","Avoid using low-level assembly operations for memory manipulation whenever possible. Instead, rely on Solidity's built-in functions and language constructs to handle memory operations safely and correctly. In cases where assembly is unavoidable, thoroughly review and test the code to ensure proper memory handling and prevent unintended behavior."
+Storage & Memory,6,Modifying storage array by value,"When arrays are passed to a function that expects a reference to a storage array, they should be tested to make sure the expected result. Usually, memory is used in function parameters, and assignment to storage variables should be made in a function body.",Ensure the correct usage of memory and storage in the function parameters. Make all the locations explicit.
+Storage & Memory,7,Payable Functions using `delegatecall` inside a Loop,"Detect `delegatecall` inside a loop in a payable function. When using `delegatecall` in a payable function, the msg.value will be passed to the target contract. The amount or balance will be accredited multiple times if we use this inside a loop.
+
+For example:
+
+```solidity
+contract DelegatecallInLoop{
+
+    mapping (address => uint256) balances;
+
+    function bad(address[] memory receivers) public payable {
+        for (uint256 i = 0; i < receivers.length; i++) {
+            address(this).delegatecall(abi.encodeWithSignature(""addBalance(address)"", receivers[i]));
+        }
+    }
+
+    function addBalance(address a) public payable {
+        balances[a] += msg.value;
+    } 
+
+}
+```
+When calling bad the same `msg.value` amount will be accredited multiple times.",Carefully check that the function called by `delegatecall` is not payable/doesn't use `msg.value`
