@@ -11,6 +11,50 @@ pub struct CfgFunction {
     pub edges: Vec<Edge>,
 }
 
+impl CfgFunction {
+    /// Block ids reachable from the entry block (the first block) by following
+    /// control-flow edges. Blocks with no path from entry are structurally dead
+    /// code — no input can reach them, so they cannot harbor a triggerable bug.
+    ///
+    /// Soundness: a block reported unreachable here is genuinely unreachable
+    /// (structural reachability under-approximates true reachability). It is not
+    /// *complete* — a block guarded by a statically-false condition (e.g.
+    /// `if (false)`) is still structurally reachable and won't be flagged. Use
+    /// this to exclude provably-dead blocks from coverage denominators so a
+    /// coverage percentage reflects *reachable* code rather than being dragged
+    /// down by dead branches the lowering emits.
+    pub fn reachable_block_ids(&self) -> std::collections::HashSet<u32> {
+        use std::collections::{HashMap, HashSet, VecDeque};
+        let mut reachable = HashSet::new();
+        let Some(entry) = self.blocks.first() else {
+            return reachable;
+        };
+        let mut adjacency: HashMap<u32, Vec<u32>> = HashMap::new();
+        for edge in &self.edges {
+            adjacency.entry(edge.from).or_default().push(edge.to);
+        }
+        let mut queue = VecDeque::new();
+        reachable.insert(entry.id);
+        queue.push_back(entry.id);
+        while let Some(block) = queue.pop_front() {
+            if let Some(succs) = adjacency.get(&block) {
+                for &succ in succs {
+                    if reachable.insert(succ) {
+                        queue.push_back(succ);
+                    }
+                }
+            }
+        }
+        reachable
+    }
+
+    /// Number of blocks reachable from the entry block. See
+    /// [`reachable_block_ids`](Self::reachable_block_ids).
+    pub fn reachable_block_count(&self) -> usize {
+        self.reachable_block_ids().len()
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Cfg {
     pub blocks: Vec<Block>,
@@ -394,6 +438,36 @@ mod tests {
 
     fn edges_set(cfg: &CfgFunction) -> HashSet<(u32, u32)> {
         cfg.edges.iter().map(|edge| (edge.from, edge.to)).collect()
+    }
+
+    #[test]
+    fn reachable_block_count_excludes_dead_block_after_return() {
+        // A block emitted after an unconditional return has no incoming edge and
+        // is therefore structurally dead — no input can reach it.
+        let s = span();
+        let cfg = cfg_from_instrs(vec![
+            IrInstr::Eval {
+                expr: IrValue::Var(IrVar::Named("live".to_string())),
+                span: s,
+            },
+            IrInstr::Return {
+                values: vec![],
+                span: s,
+            },
+            IrInstr::Eval {
+                expr: IrValue::Var(IrVar::Named("dead".to_string())),
+                span: s,
+            },
+        ]);
+        assert_eq!(cfg.blocks.len(), 2, "expected one live and one dead block");
+        let reachable = cfg.reachable_block_ids();
+        assert_eq!(
+            cfg.reachable_block_count(),
+            1,
+            "dead block must be excluded"
+        );
+        assert!(reachable.contains(&cfg.blocks[0].id));
+        assert!(!reachable.contains(&cfg.blocks[1].id));
     }
 
     #[test]

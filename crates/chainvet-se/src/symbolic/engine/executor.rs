@@ -1035,7 +1035,7 @@ fn fresh_symbolic_bool(prefix: &str) -> Bool {
 /// Attempt to extract a `Witness` from the current solver state.
 ///
 /// Uses push/pop to avoid polluting the permanent constraint stack.
-fn extract_witness(solver: &dyn SmtSolver, state: &SymbolicState) -> Option<Witness> {
+pub(crate) fn extract_witness(solver: &dyn SmtSolver, state: &SymbolicState) -> Option<Witness> {
     solver.push();
     for (c, _) in state.path_constraints.constraints() {
         solver.assert_constraint(c);

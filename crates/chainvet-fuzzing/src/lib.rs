@@ -13,8 +13,7 @@
     clippy::collapsible_match,
     clippy::question_mark,
     clippy::while_let_loop,
-    clippy::field_reassign_with_default,
-    clippy::manual_checked_ops
+    clippy::field_reassign_with_default
 )]
 
 pub mod fuzzing;

@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use chainvet_core::artifacts::Finding;
 use chainvet_core::ir::{IrInstr, IrModule, IrPlace, IrValue, IrVar, PlaceClass};
-use chainvet_core::norm::{FunctionKind, Mutability, NormalizedAst, Span, Visibility};
+use chainvet_core::norm::{FunctionKind, Literal, Mutability, NormalizedAst, Span, Visibility};
 use chainvet_frontend::frontend::{self, CompilerInfo};
 use serde::Serialize;
 
@@ -244,10 +244,37 @@ pub struct Dictionary {
 // Dependency Map (Read-After-Write analysis from IR)
 // ---------------------------------------------------------------------------
 
+/// How a function writes a storage variable — the basis for value-aware setup
+/// seed selection. Only *direct* writes are classified; computed writes (e.g.
+/// `total += x`) are left unclassified, so the writer is treated as neutral.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WriteValue {
+    /// Writes a constant literal (e.g. `flag = true;`, `mode = 2;`).
+    Const(u128),
+    /// Writes parameter #i directly (e.g. `mode = m;`), so the caller can pick
+    /// the argument that satisfies a downstream guard.
+    Param(usize),
+}
+
+/// An equality guard on a storage variable (`if (mode == 2)`). The value that
+/// makes the comparison hold is what a setup writer should produce to unlock the
+/// gated block. Polarity is not analyzed — the equality value is the harder,
+/// more valuable branch to reach, and needs no branch-direction reasoning.
 #[derive(Debug, Clone)]
+pub struct EqGuard {
+    pub var: String,
+    pub value: u128,
+}
+
+#[derive(Debug, Clone, Default)]
 pub struct FunctionDeps {
     pub reads: HashSet<String>,
     pub writes: HashSet<String>,
+    /// For each storage var written, how it is written (direct writes only).
+    /// First direct write per var wins; absent when the write is computed.
+    pub write_values: HashMap<String, WriteValue>,
+    /// Storage-variable equality guards in this function's body.
+    pub eq_guards: Vec<EqGuard>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -264,31 +291,67 @@ pub fn build_dependency_map(ir_module: &IrModule, ast: &NormalizedAst) -> Depend
             .and_then(|f| f.contract)
             .and_then(|cid| ast.contracts.get(cid as usize))
             .map(|c| c.name.clone());
+        // Parameter name → positional index, so a direct `storageVar = param;`
+        // write can be classified as `WriteValue::Param(i)`.
+        let param_index: HashMap<&str, usize> = ast
+            .functions
+            .get(func.id as usize)
+            .map(|f| {
+                f.params
+                    .iter()
+                    .enumerate()
+                    .map(|(i, name)| (name.as_str(), i))
+                    .collect()
+            })
+            .unwrap_or_default();
+
         let mut reads = HashSet::new();
         let mut writes = HashSet::new();
+        let mut write_values: HashMap<String, WriteValue> = HashMap::new();
+        let mut eq_guards: Vec<EqGuard> = Vec::new();
+        // Temp/local variable → storage var it was loaded from, so an equality
+        // comparison against a loaded storage value can be attributed to the var.
+        let mut loaded_from: HashMap<IrVar, String> = HashMap::new();
+
         for block in &func.blocks {
             for instr in &block.instrs {
                 match instr {
-                    IrInstr::Store { dest, .. } => {
+                    IrInstr::Store { dest, src, .. } => {
                         if is_storage_place(dest)
                             && let Some(name) = place_root_name(dest, contract_name.as_deref())
                         {
+                            if let Some(wv) = classify_write_value(src, &param_index) {
+                                write_values.entry(name.clone()).or_insert(wv);
+                            }
                             writes.insert(name);
                         }
                     }
-                    IrInstr::Load { src, .. } => {
+                    IrInstr::Load { dest, src, .. } => {
                         if is_storage_place(src)
                             && let Some(name) = place_root_name(src, contract_name.as_deref())
                         {
+                            loaded_from.insert(dest.clone(), name.clone());
                             reads.insert(name);
+                        }
+                    }
+                    IrInstr::Binary { op, lhs, rhs, .. } if op == "==" => {
+                        if let Some(guard) = eq_guard_from_operands(lhs, rhs, &loaded_from) {
+                            eq_guards.push(guard);
                         }
                     }
                     _ => {}
                 }
             }
         }
-        map.functions
-            .insert(func.id, FunctionDeps { reads, writes });
+        map.functions.insert(
+            func.id,
+            FunctionDeps {
+                reads,
+                writes,
+                write_values,
+                eq_guards,
+            },
+        );
     }
     map
 }
@@ -327,6 +390,62 @@ fn is_contract_receiver(value: &IrValue, contract_name: Option<&str>) -> bool {
             name == "this" || name == "super" || contract_name.map(|cn| cn == name).unwrap_or(false)
         }
         _ => false,
+    }
+}
+
+/// Classify the RHS of a storage write as a constant or a direct parameter
+/// passthrough. Returns `None` for computed writes (the writer stays neutral).
+fn classify_write_value(src: &IrValue, param_index: &HashMap<&str, usize>) -> Option<WriteValue> {
+    match src {
+        IrValue::Literal(lit) => literal_to_u128(lit).map(WriteValue::Const),
+        IrValue::Var(IrVar::Named(name)) => param_index
+            .get(name.as_str())
+            .map(|i| WriteValue::Param(*i)),
+        _ => None,
+    }
+}
+
+/// Build an equality guard from the operands of a `==` comparison when exactly
+/// one side is a storage-loaded value and the other is a constant literal.
+fn eq_guard_from_operands(
+    lhs: &IrValue,
+    rhs: &IrValue,
+    loaded_from: &HashMap<IrVar, String>,
+) -> Option<EqGuard> {
+    let var_of = |v: &IrValue| match v {
+        IrValue::Var(var) => loaded_from.get(var).cloned(),
+        _ => None,
+    };
+    let const_of = |v: &IrValue| match v {
+        IrValue::Literal(lit) => literal_to_u128(lit),
+        _ => None,
+    };
+    if let (Some(var), Some(value)) = (var_of(lhs), const_of(rhs)) {
+        return Some(EqGuard { var, value });
+    }
+    if let (Some(var), Some(value)) = (var_of(rhs), const_of(lhs)) {
+        return Some(EqGuard { var, value });
+    }
+    None
+}
+
+/// Parse a numeric or boolean literal into a `u128`. `true`/`false` map to 1/0;
+/// decimal and `0x` hex integers are parsed; anything else is `None`.
+fn literal_to_u128(lit: &Literal) -> Option<u128> {
+    let value = lit.value.trim();
+    match value {
+        "true" => Some(1),
+        "false" => Some(0),
+        _ => {
+            if let Some(hex) = value
+                .strip_prefix("0x")
+                .or_else(|| value.strip_prefix("0X"))
+            {
+                u128::from_str_radix(hex, 16).ok()
+            } else {
+                value.parse::<u128>().ok()
+            }
+        }
     }
 }
 

@@ -22,7 +22,7 @@ use chainvet_se::symbolic::{self, SymbolicOptions, results::SeFinding};
 
 use super::budget::HybridBudget;
 use super::report::{HybridFindingRow, HybridJsonReport, HybridRunSummary, print_hybrid_report};
-use super::seeding::build_hybrid_seeds;
+use super::seeding::{build_coverage_seeds, build_hybrid_seeds};
 use super::targeting::{build_targets, classify_threshold, selected_targets};
 
 pub fn run(output: &FrontendOutput, budget: &HybridBudget, format: OutputFormat) -> Result<()> {
@@ -30,10 +30,28 @@ pub fn run(output: &FrontendOutput, budget: &HybridBudget, format: OutputFormat)
     print_hybrid_report(&payload, format)
 }
 
+/// Full in-memory result of the hybrid pipeline: the serialized
+/// [`HybridJsonReport`] plus the raw fuzz findings (each carrying its triggering
+/// `tx_sequence`) and the per-contract ABIs. The extra fields are deliberately
+/// NOT part of the JSON schema — they exist so an above-the-engines layer (the
+/// orchestrator's opt-in EVM validation) can replay findings on a real EVM
+/// without perturbing the parity-locked report.
+pub struct AnalyzeOutput {
+    pub report: HybridJsonReport,
+    pub fuzz_findings: Vec<fuzzing::types::FuzzFinding>,
+    pub abis: Vec<fuzzing::types::ContractAbi>,
+}
+
 /// Run the full hybrid pipeline and return the typed report without rendering.
 /// `run` is exactly this plus `print_hybrid_report`; the orchestrator facade
 /// calls `analyze` so any frontend can render the result however it likes.
 pub fn analyze(output: &FrontendOutput, budget: &HybridBudget) -> Result<HybridJsonReport> {
+    analyze_full(output, budget).map(|full| full.report)
+}
+
+/// As [`analyze`], but also returns the raw fuzz findings and ABIs for callers
+/// that need to replay findings against a real EVM. The JSON report is identical.
+pub fn analyze_full(output: &FrontendOutput, budget: &HybridBudget) -> Result<AnalyzeOutput> {
     let ast = &output.ast;
     let ir_module = ir::lower_module(ast);
     let cfgs = cfg::build_from_ir(&ir_module);
@@ -67,6 +85,10 @@ pub fn analyze(output: &FrontendOutput, budget: &HybridBudget) -> Result<HybridJ
     let mut pending_seeds: Vec<fuzzing::types::Individual>;
     let mut se_assists: u32 = 0;
     let mut se_done_functions: HashSet<u32> = HashSet::new();
+    // Union of every (function_id, block_id) SE reached across all SE passes,
+    // and how many fuzzer seeds we derived from SE coverage witnesses.
+    let mut se_covered_blocks: HashSet<(u32, u32)> = HashSet::new();
+    let mut coverage_seed_count: usize = 0;
     let mut total_states = 0usize;
     let symbolic_coverage: symbolic::results::coverage::CoverageReport;
     let mut epochs_run: u32 = 0;
@@ -81,8 +103,19 @@ pub fn analyze(output: &FrontendOutput, budget: &HybridBudget) -> Result<HybridJ
         let analysis = run_se_assist(output, budget, &target_function_ids)?;
         total_states += analysis.total_states;
         symbolic_coverage = analysis.coverage.clone();
+        se_covered_blocks.extend(analysis.covered_blocks.iter().copied());
         let seeds = build_hybrid_seeds(ast, &abis, &analysis.findings);
         pending_seeds = seeds.iter().map(|s| s.individual.clone()).collect();
+        // Seed the fuzzer from SE *coverage* witnesses (not just findings), so it
+        // can reach and mutate from blocks it struggles to hit unaided. Setup
+        // transactions are derived from the fuzzer's storage dependency map.
+        let coverage_seeds = build_coverage_seeds(
+            &abis,
+            session.dependency_map(),
+            &analysis.coverage_witnesses,
+        );
+        coverage_seed_count += coverage_seeds.len();
+        pending_seeds.extend(coverage_seeds);
         all_seeds.extend(seeds);
         all_se_findings.extend(analysis.findings);
         // If the upfront pass was untargeted (no high-signal sinks), it already
@@ -166,8 +199,17 @@ pub fn analyze(output: &FrontendOutput, budget: &HybridBudget) -> Result<HybridJ
         {
             let analysis = run_se_assist(output, budget, &uncovered)?;
             total_states += analysis.total_states;
+            se_covered_blocks.extend(analysis.covered_blocks.iter().copied());
             let seeds = build_hybrid_seeds(ast, &abis, &analysis.findings);
             pending_seeds = seeds.iter().map(|s| s.individual.clone()).collect();
+            // Coverage-witness seeds from the assist too, not only finding seeds.
+            let coverage_seeds = build_coverage_seeds(
+                &abis,
+                session.dependency_map(),
+                &analysis.coverage_witnesses,
+            );
+            coverage_seed_count += coverage_seeds.len();
+            pending_seeds.extend(coverage_seeds);
             all_seeds.extend(seeds);
             all_se_findings.extend(analysis.findings);
             se_done_functions.extend(uncovered);
@@ -178,6 +220,22 @@ pub fn analyze(output: &FrontendOutput, budget: &HybridBudget) -> Result<HybridJ
             break;
         }
     }
+
+    // Hybrid (tool-wide) coverage = union of SE-reached and fuzzer-reached blocks
+    // over the reachable denominator. This is what the *tool* covers — SE reaches
+    // hard equality-guarded blocks the fuzzer misses, so the union is the honest
+    // number. Capture the fuzzer's set before `finalize` consumes the session.
+    let hybrid_total_blocks = session.reachable_block_total();
+    let mut hybrid_covered: HashSet<(u32, u32)> = se_covered_blocks.clone();
+    hybrid_covered.extend(session.covered_block_set());
+    // Both SE- and fuzzer-visited blocks are feasible, hence within the reachable
+    // set, so |union| ≤ denominator; clamp defends against any keying drift.
+    let hybrid_covered_blocks = hybrid_covered.len().min(hybrid_total_blocks);
+    let hybrid_coverage_pct = if hybrid_total_blocks > 0 {
+        (hybrid_covered_blocks as f64 / hybrid_total_blocks as f64 * 100.0).min(100.0)
+    } else {
+        0.0
+    };
 
     let fuzz_report = session.finalize();
     dedup_se_findings(&mut all_se_findings);
@@ -195,7 +253,7 @@ pub fn analyze(output: &FrontendOutput, budget: &HybridBudget) -> Result<HybridJ
         meta_findings_total: static_findings.len(),
         meta_findings_unique: static_findings.len(),
         se_assists: se_assists as usize,
-        seeds_injected_by_se: all_seeds.len(),
+        seeds_injected_by_se: all_seeds.len() + coverage_seed_count,
         se_new_edges_from_injected: 0,
         time_to_first_finding_ms,
     };
@@ -206,6 +264,9 @@ pub fn analyze(output: &FrontendOutput, budget: &HybridBudget) -> Result<HybridJ
         &all_se_findings,
         &fuzz_report.findings,
     );
+    // Keep the raw fuzz findings (with their tx_sequences) for the optional EVM
+    // validation layer; the JSON payload below is unchanged.
+    let fuzz_findings = fuzz_report.findings.clone();
     let summary = HybridRunSummary {
         static_threshold: threshold.as_str().to_string(),
         static_targets_total: targets.len(),
@@ -230,10 +291,17 @@ pub fn analyze(output: &FrontendOutput, budget: &HybridBudget) -> Result<HybridJ
         fuzz_coverage_pct: fuzz_report.coverage_pct,
         fuzz_total_blocks: fuzz_report.total_blocks,
         fuzz_covered_blocks: fuzz_report.covered_blocks,
+        hybrid_coverage_pct,
+        hybrid_covered_blocks,
+        hybrid_total_blocks,
         fuzz_hybrid_stats: fuzz_report.hybrid_stats,
     };
 
-    Ok(payload)
+    Ok(AnalyzeOutput {
+        report: payload,
+        fuzz_findings,
+        abis,
+    })
 }
 
 fn run_se_assist(

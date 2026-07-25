@@ -148,6 +148,12 @@ pub struct HybridJsonReport {
     pub fuzz_coverage_pct: f64,
     pub fuzz_total_blocks: usize,
     pub fuzz_covered_blocks: usize,
+    /// Tool-wide coverage: union of SE-reached and fuzzer-reached blocks over the
+    /// reachable denominator. This is the honest "what the hybrid tool covers"
+    /// figure — SE reaches equality-guarded blocks the fuzzer misses alone.
+    pub hybrid_coverage_pct: f64,
+    pub hybrid_covered_blocks: usize,
+    pub hybrid_total_blocks: usize,
     pub fuzz_hybrid_stats: Option<FuzzHybridStats>,
 }
 
@@ -177,6 +183,12 @@ pub fn print_hybrid_report(report: &HybridJsonReport, format: OutputFormat) -> R
                 report.fuzz_covered_blocks,
                 report.fuzz_total_blocks,
                 report.fuzz_coverage_pct
+            );
+            println!(
+                "hybrid coverage (SE ∪ fuzz): {}/{} ({:.1}%)",
+                report.hybrid_covered_blocks,
+                report.hybrid_total_blocks,
+                report.hybrid_coverage_pct
             );
             if let Some(stats) = &report.fuzz_hybrid_stats {
                 println!(

@@ -7,12 +7,16 @@
 //! assumed beyond an optional convenience loader — frontends own all I/O.
 
 pub mod ai_report;
+pub mod evm_confirm;
 
 use chainvet_core::cfg;
 use chainvet_core::ir;
 use chainvet_core::util::error::Result;
 use chainvet_frontend::frontend::{self, FrontendOutput};
-use chainvet_fuzzing::fuzzing::{self, types::FuzzConfig};
+use chainvet_fuzzing::fuzzing::{
+    self,
+    types::{ContractAbi, FuzzConfig, FuzzFinding},
+};
 use chainvet_hybrid::hybrid::{self, HybridFindingRow, HybridJsonReport};
 use chainvet_sa::analysis;
 use chainvet_se::symbolic::{self, SymbolicOptions};
@@ -47,6 +51,10 @@ pub struct ScanResult {
 /// engine's default configuration (matching the standalone CLI entry points).
 pub fn scan(output: &FrontendOutput, mode: ScanMode, budget: &HybridBudget) -> Result<ScanResult> {
     let ast = &output.ast;
+    // Raw fuzz findings (with their tx_sequences) + ABIs, captured for the
+    // optional EVM confirmation layer. Empty for modes the fuzzer didn't run.
+    let mut raw_fuzz: Vec<FuzzFinding> = Vec::new();
+    let mut raw_abis: Vec<ContractAbi> = Vec::new();
     let (findings, hybrid) = match mode {
         ScanMode::Static => {
             let ir_module = ir::lower_module(ast);
@@ -66,15 +74,20 @@ pub fn scan(output: &FrontendOutput, mode: ScanMode, budget: &HybridBudget) -> R
         }
         ScanMode::Fuzzing => {
             let report = fuzzing::runner::run(output, &FuzzConfig::default());
+            raw_fuzz = report.findings.clone();
+            raw_abis = fuzzing::types::extract_abis(ast, &output.compiler);
             (
                 HybridFindingRow::collect(ast, &[], &[], &report.findings),
                 None,
             )
         }
         ScanMode::Hybrid => {
-            let payload = hybrid::analyze(output, budget)?;
-            // analyze's findings are already collected + deduplicated.
-            (payload.findings.clone(), Some(payload))
+            // analyze_full == analyze, plus the raw fuzz findings + ABIs the EVM
+            // layer needs; the JSON payload is identical.
+            let full = hybrid::analyze_full(output, budget)?;
+            raw_fuzz = full.fuzz_findings;
+            raw_abis = full.abis;
+            (full.report.findings.clone(), Some(full.report))
         }
     };
     let mut result = ScanResult {
@@ -82,6 +95,9 @@ pub fn scan(output: &FrontendOutput, mode: ScanMode, budget: &HybridBudget) -> R
         findings,
         hybrid,
     };
+    // Optional EVM confirmation of fuzzer findings (opt-in via the
+    // `evm-validation` feature + CHAINVET_EVM_CONFIRM env; no-op otherwise).
+    evm_confirm::enhance(&mut result, output, &raw_fuzz, &raw_abis);
     // Optional AI review of findings (opt-in via CHAINVET_LLM_REPORT; no-op otherwise).
     ai_report::enhance(&mut result);
     Ok(result)

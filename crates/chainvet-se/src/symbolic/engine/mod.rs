@@ -11,8 +11,8 @@ use z3::SatResult;
 use z3::ast::Bool;
 
 use crate::symbolic::detectors::DetectorRegistry;
-use crate::symbolic::results::SeFinding;
 use crate::symbolic::results::coverage::{CoverageReport, CoverageTracker};
+use crate::symbolic::results::{CoverageWitness, SeFinding};
 use crate::symbolic::solver::SmtSolver;
 use crate::symbolic::state::call_context::CallContext;
 use crate::symbolic::state::storage::StorageLayout;
@@ -22,8 +22,15 @@ use chainvet_core::cfg::{BlockId, CfgFunction};
 use chainvet_core::norm::NormalizedAst;
 
 use executor::{
-    BlockOutcome, ExecutorError, execute_block, flush_pending_calls, pre_populate_call_context,
+    BlockOutcome, ExecutorError, execute_block, extract_witness, flush_pending_calls,
+    pre_populate_call_context,
 };
+
+/// Hard cap on coverage witnesses captured per engine run. Each capture is one
+/// solver model-solve; since capture is gated on *newly-covered* blocks, the
+/// total is already bounded by the number of distinct blocks — this ceiling
+/// just protects pathologically large contracts from extra solve cost.
+const MAX_COVERAGE_WITNESSES: usize = 512;
 use explorer::{ExplorationStrategy, make_strategy};
 use scheduler::{SeConfig, WorklistEntry};
 
@@ -32,6 +39,10 @@ pub struct EngineResult {
     pub findings: Vec<SeFinding>,
     pub coverage: CoverageReport,
     pub states_explored: usize,
+    /// Every `(function_id, block_id)` pair SE reached — for hybrid union coverage.
+    pub covered_blocks: std::collections::HashSet<(u32, u32)>,
+    /// Concrete inputs reaching specific blocks, for seeding the fuzzer.
+    pub coverage_witnesses: Vec<CoverageWitness>,
 }
 
 /// Cache for solver feasibility probes.
@@ -101,6 +112,9 @@ struct RunAccumulators<'a> {
     findings: &'a mut Vec<SeFinding>,
     keccak_ctx: &'a mut KeccakContext,
     states_explored: &'a mut usize,
+    /// Concrete inputs reaching newly-covered blocks, capped at
+    /// [`MAX_COVERAGE_WITNESSES`]. Fed to the fuzzer as seeds by the hybrid loop.
+    coverage_witnesses: &'a mut Vec<CoverageWitness>,
 }
 
 /// Context passed to branch-fork helpers.
@@ -133,6 +147,7 @@ pub fn run_engine(
     let mut id_gen = StateIdGen::new();
     let mut keccak_ctx = KeccakContext::new();
     let mut states_explored: usize = 0;
+    let mut coverage_witnesses: Vec<CoverageWitness> = Vec::new();
 
     let SeConfig {
         max_path_depth,
@@ -180,6 +195,7 @@ pub fn run_engine(
             findings: &mut findings,
             keccak_ctx: &mut keccak_ctx,
             states_explored: &mut states_explored,
+            coverage_witnesses: &mut coverage_witnesses,
         };
         explore_function(
             cfg_func,
@@ -211,6 +227,8 @@ pub fn run_engine(
         findings,
         coverage: coverage.report(),
         states_explored,
+        covered_blocks: coverage.visited_blocks(),
+        coverage_witnesses,
     }
 }
 
@@ -296,8 +314,24 @@ fn run_worklist(
             .iter()
             .find(|c| c.id == entry.cfg_func_id)
             .unwrap_or(cfg_func);
-        acc.coverage
+        let newly_covered = acc
+            .coverage
             .record_block(current_cfg.id, entry.state.current_block);
+        // Capture one concrete input per newly-covered block (bounded by the
+        // number of distinct blocks, further capped for huge contracts). The
+        // witness reconstructs this path's constraints itself, so it is a valid
+        // input that reaches the block. `function_id` is the top-level callable
+        // (`cfg_func.id`) the fuzzer can invoke — not the current callee.
+        if newly_covered
+            && acc.coverage_witnesses.len() < MAX_COVERAGE_WITNESSES
+            && let Some(witness) = extract_witness(run_ctx.solver, &entry.state)
+        {
+            acc.coverage_witnesses.push(CoverageWitness {
+                function_id: cfg_func.id,
+                block_id: entry.state.current_block,
+                witness,
+            });
+        }
 
         let block = match current_cfg
             .blocks

@@ -1969,20 +1969,8 @@ fn eval_binary(op: &str, l: u128, r: u128) -> u128 {
         "+" => l.wrapping_add(r),
         "-" => l.wrapping_sub(r),
         "*" => l.wrapping_mul(r),
-        "/" => {
-            if r != 0 {
-                l / r
-            } else {
-                0
-            }
-        }
-        "%" => {
-            if r != 0 {
-                l % r
-            } else {
-                0
-            }
-        }
+        "/" => l.checked_div(r).unwrap_or(0),
+        "%" => l.checked_rem(r).unwrap_or(0),
         "**" => l.wrapping_pow(r as u32),
         "&" => l & r,
         "|" => l | r,

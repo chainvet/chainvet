@@ -94,6 +94,20 @@ fn bootstrap_payable_value(rng: &mut impl Rng, dict: Option<&Dictionary>) -> u12
     if value == 0 { 1 } else { value }
 }
 
+/// Value for a payable call in generated/mutated transactions. Real payable
+/// functions almost always gate on `require(msg.value > 0)`, so a zero-value
+/// call usually reverts on a real EVM — and the IR interpreter doesn't model
+/// `msg.value`, so it explores a path that doesn't exist. Bias strongly to
+/// nonzero to keep exploration EVM-valid, but keep a ~10% chance of 0 so the
+/// zero-value guard block itself still gets covered.
+fn payable_tx_value(rng: &mut impl Rng, dict: Option<&Dictionary>) -> u128 {
+    if rng.gen_bool(0.1) {
+        0
+    } else {
+        bootstrap_payable_value(rng, dict)
+    }
+}
+
 /// Generate a single random transaction, optionally using dictionary values.
 pub(crate) fn random_transaction_with_dict(
     abi: &ContractAbi,
@@ -118,7 +132,7 @@ pub(crate) fn random_transaction_with_dict(
         .map(|_p| random_value_with_dict(rng, dict))
         .collect();
     let value = if func.is_payable {
-        random_value_amount_with_dict(rng, dict)
+        payable_tx_value(rng, dict)
     } else {
         0
     };
@@ -131,8 +145,91 @@ pub(crate) fn random_transaction_with_dict(
     })
 }
 
-/// Build a dependency-aware transaction sequence.
-/// Tries to place writers before readers when read-after-write dependencies exist.
+/// Longest setup prefix `dependency_aware_sequence` will prepend before the
+/// target reader — bounds how much of a sequence goes to state setup so there
+/// is still room for the interesting call and random fill.
+const MAX_SETUP_CHAIN: usize = 8;
+
+/// Build a transaction for a specific function: random args, payable-aware
+/// value, random sender.
+fn tx_for_func(
+    func: &crate::fuzzing::types::FunctionAbi,
+    rng: &mut impl Rng,
+    config: &FuzzConfig,
+    dict: Option<&Dictionary>,
+) -> Transaction {
+    let args: Vec<FuzzValue> = func
+        .params
+        .iter()
+        .map(|_| random_value_with_dict(rng, dict))
+        .collect();
+    Transaction {
+        function_id: func.id,
+        args,
+        sender: random_sender(rng, config.address_pool_size),
+        value: if func.is_payable {
+            payable_tx_value(rng, dict)
+        } else {
+            0
+        },
+    }
+}
+
+/// Pick a writer of `var` other than `exclude` and not already in the chain,
+/// preferring the one with the fewest reads — the writer closest to a base
+/// setup call (e.g. `register`) rather than one gated behind more state.
+fn pick_writer(
+    deps: &DependencyMap,
+    var: &str,
+    exclude: u32,
+    visited: &std::collections::HashSet<u32>,
+) -> Option<u32> {
+    deps.functions
+        .iter()
+        .filter(|(id, fd)| **id != exclude && !visited.contains(*id) && fd.writes.contains(var))
+        .min_by_key(|(_, fd)| fd.reads.len())
+        .map(|(id, _)| *id)
+}
+
+/// Resolve an ordered setup chain ending at `target`: functions whose writes
+/// (transitively) satisfy the storage reads guarding `target`, ordered
+/// setup-first. A reader gated behind a `writer → … → writer` chain (a state
+/// machine like register→deposit→withdraw) becomes reachable because its guards
+/// are satisfied by earlier transactions. Post-order DFS with a visited set and
+/// a hard length cap; one writer is chosen per needed var.
+fn setup_chain(deps: &DependencyMap, target: u32, max_len: usize) -> Vec<u32> {
+    fn visit(
+        deps: &DependencyMap,
+        fid: u32,
+        visited: &mut std::collections::HashSet<u32>,
+        ordered: &mut Vec<u32>,
+        max_len: usize,
+    ) {
+        if ordered.len() >= max_len || !visited.insert(fid) {
+            return;
+        }
+        if let Some(fd) = deps.functions.get(&fid) {
+            // Satisfy each guarding read by running a writer of that var first.
+            for var in &fd.reads {
+                if let Some(writer) = pick_writer(deps, var, fid, visited) {
+                    visit(deps, writer, visited, ordered, max_len);
+                }
+            }
+        }
+        if ordered.len() < max_len {
+            ordered.push(fid);
+        }
+    }
+    let mut ordered = Vec::new();
+    let mut visited = std::collections::HashSet::new();
+    visit(deps, target, &mut visited, &mut ordered, max_len);
+    ordered
+}
+
+/// Build a dependency-aware transaction sequence: pick a storage-gated reader
+/// and prepend the transitive chain of writer calls that satisfies its guards,
+/// so deep, stateful blocks (which a random sequence can't reach) get set up.
+/// Remaining slots are filled with random transactions for diversity.
 fn dependency_aware_sequence(
     abi: &ContractAbi,
     deps: &DependencyMap,
@@ -143,71 +240,40 @@ fn dependency_aware_sequence(
 ) -> Vec<Transaction> {
     let mut txs = Vec::new();
 
-    // Collect (function_id, written_vars) for all writer functions
-    let writers: Vec<(u32, &std::collections::HashSet<String>)> = deps
+    // Callable functions gated behind storage they read — the chain targets.
+    let readers: Vec<u32> = deps
         .functions
         .iter()
-        .filter(|(_, fd)| !fd.writes.is_empty())
-        .map(|(id, fd)| (*id, &fd.writes))
-        .collect();
-
-    // Collect (function_id, read_vars) for all reader functions
-    let readers: Vec<(u32, &std::collections::HashSet<String>)> = deps
-        .functions
-        .iter()
-        .filter(|(_, fd)| !fd.reads.is_empty())
-        .map(|(id, fd)| (*id, &fd.reads))
-        .collect();
-
-    // Try to inject at least one writer→reader chain
-    if !writers.is_empty() && !readers.is_empty() {
-        let (wid, wvars) = &writers[rng.gen_range(0..writers.len())];
-        // Find a reader that reads from this writer's writes
-        let matching: Vec<&(u32, &std::collections::HashSet<String>)> = readers
-            .iter()
-            .filter(|(_, rvars)| rvars.intersection(wvars).next().is_some())
-            .collect();
-
-        if let Some((rid, _)) = matching.first() {
-            // Generate the writer transaction
-            if let Some(func) = abi.functions.iter().find(|f| f.id == *wid)
-                && func.is_fuzz_callable()
-            {
-                let args: Vec<FuzzValue> = func
-                    .params
+        .filter(|(id, fd)| {
+            !fd.reads.is_empty()
+                && abi
+                    .functions
                     .iter()
-                    .map(|_| random_value_with_dict(rng, dict))
-                    .collect();
-                txs.push(Transaction {
-                    function_id: func.id,
-                    args,
-                    sender: random_sender(rng, config.address_pool_size),
-                    value: if func.is_payable {
-                        random_value_amount_with_dict(rng, dict)
-                    } else {
-                        0
-                    },
-                });
+                    .any(|f| f.id == **id && f.is_fuzz_callable())
+        })
+        .map(|(id, _)| *id)
+        .collect();
+
+    if !readers.is_empty() {
+        let target = readers[rng.gen_range(0..readers.len())];
+        let cap = length.clamp(1, MAX_SETUP_CHAIN);
+        // The whole setup chain must act as one account: state machines key on
+        // `msg.sender` (e.g. `accounts[msg.sender].status`), so a per-step random
+        // sender means the reader sees a fresh, unset account and reverts. Fix the
+        // sender across every chain step.
+        let chain_sender = random_sender(rng, config.address_pool_size);
+        for fid in setup_chain(deps, target, cap) {
+            if txs.len() >= length {
+                break;
             }
-            // Generate the reader transaction
-            if let Some(func) = abi.functions.iter().find(|f| f.id == *rid)
-                && func.is_fuzz_callable()
+            if let Some(func) = abi
+                .functions
+                .iter()
+                .find(|f| f.id == fid && f.is_fuzz_callable())
             {
-                let args: Vec<FuzzValue> = func
-                    .params
-                    .iter()
-                    .map(|_| random_value_with_dict(rng, dict))
-                    .collect();
-                txs.push(Transaction {
-                    function_id: func.id,
-                    args,
-                    sender: random_sender(rng, config.address_pool_size),
-                    value: if func.is_payable {
-                        random_value_amount_with_dict(rng, dict)
-                    } else {
-                        0
-                    },
-                });
+                let mut tx = tx_for_func(func, rng, config, dict);
+                tx.sender = chain_sender;
+                txs.push(tx);
             }
         }
     }
@@ -547,6 +613,64 @@ mod tests {
     }
 
     #[test]
+    fn payable_tx_value_biases_nonzero_but_keeps_some_zero() {
+        let mut rng = <rand::rngs::StdRng as rand::SeedableRng>::seed_from_u64(7);
+        let n = 2000;
+        let zeros = (0..n)
+            .filter(|_| payable_tx_value(&mut rng, None) == 0)
+            .count();
+        let nonzero_frac = 1.0 - zeros as f64 / n as f64;
+        // Payable calls must be nonzero the large majority of the time (so they
+        // don't revert on `require(msg.value > 0)`), but not always — a few
+        // zeros keep the zero-value guard block covered.
+        assert!(
+            nonzero_frac > 0.8,
+            "payable value should be nonzero most of the time, got {nonzero_frac}"
+        );
+        assert!(
+            zeros > 0,
+            "should still produce some zero values for guard coverage"
+        );
+    }
+
+    #[test]
+    fn setup_chain_orders_writers_before_reader_transitively() {
+        use crate::fuzzing::types::{DependencyMap, FunctionDeps};
+        use std::collections::HashSet;
+        let mut deps = DependencyMap::default();
+        // 1 writes "a" (base setup, no reads); 2 reads "a" and writes "b";
+        // 3 (target) reads "b". Expected chain: 1 → 2 → 3.
+        deps.functions.insert(
+            1,
+            FunctionDeps {
+                writes: HashSet::from(["a".to_string()]),
+                ..Default::default()
+            },
+        );
+        deps.functions.insert(
+            2,
+            FunctionDeps {
+                reads: HashSet::from(["a".to_string()]),
+                writes: HashSet::from(["b".to_string()]),
+                ..Default::default()
+            },
+        );
+        deps.functions.insert(
+            3,
+            FunctionDeps {
+                reads: HashSet::from(["b".to_string()]),
+                ..Default::default()
+            },
+        );
+        let chain = setup_chain(&deps, 3, MAX_SETUP_CHAIN);
+        assert_eq!(
+            chain,
+            vec![1, 2, 3],
+            "transitive writers must precede the target reader"
+        );
+    }
+
+    #[test]
     fn bootstrap_covers_all_callable_functions_even_when_population_size_is_small() {
         let abi = ContractAbi {
             contract_name: "Many".to_string(),
@@ -623,6 +747,7 @@ mod tests {
             crate::fuzzing::types::FunctionDeps {
                 reads: std::collections::HashSet::new(),
                 writes: std::collections::HashSet::from(["balance".to_string()]),
+                ..Default::default()
             },
         );
         deps.functions.insert(
@@ -630,6 +755,7 @@ mod tests {
             crate::fuzzing::types::FunctionDeps {
                 reads: std::collections::HashSet::from(["balance".to_string()]),
                 writes: std::collections::HashSet::new(),
+                ..Default::default()
             },
         );
         let config = FuzzConfig {

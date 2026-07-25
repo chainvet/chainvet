@@ -28,6 +28,21 @@ pub struct Witness {
     pub variables: Vec<(String, Vec<u8>)>,
 }
 
+/// A concrete input that drives execution to a specific block, plus the block
+/// it reaches. Emitted by the engine (capped) so the hybrid orchestrator can
+/// seed the fuzzer with inputs that reach code the fuzzer struggles to hit on
+/// its own (e.g. equality-guarded arms). The fuzzer replays these and mutates
+/// from those deep states — improving both coverage and bug-finding.
+#[derive(Debug, Clone, Serialize)]
+pub struct CoverageWitness {
+    /// Top-level callable function the fuzzer should invoke.
+    pub function_id: u32,
+    /// Block id this witness reaches within that function.
+    pub block_id: u32,
+    /// Concrete input (msg.sender/value, params, environment) reaching the block.
+    pub witness: Witness,
+}
+
 impl Witness {
     /// Extract concrete values from a Z3 model using the CallContext BVs.
     ///

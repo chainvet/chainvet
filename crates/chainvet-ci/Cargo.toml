@@ -11,3 +11,10 @@ path = "src/main.rs"
 chainvet-core = { path = "../chainvet-core" }
 chainvet-orchestrator = { path = "../chainvet-orchestrator" }
 serde_json = "1"
+
+[features]
+default = []
+# Opt-in EVM confirmation of fuzzer findings (pulls in revm via the
+# orchestrator). Build with `--features evm-validation`, then run with
+# CHAINVET_EVM_CONFIRM=1.
+evm-validation = ["chainvet-orchestrator/evm-validation"]
