@@ -16,12 +16,14 @@ pub mod harness;
 pub mod replay;
 pub mod report;
 
-pub use abi::{encode_call, selector, AbiType};
-pub use artifact::{compile, AbiFn, CompiledContract};
+pub use abi::{AbiType, encode_call, selector};
+pub use artifact::{AbiFn, CompiledContract, compile};
 pub use coverage::CoverageInspector;
-pub use harness::{pool_address, CallOutcome, EvmHarness, HarnessError};
-pub use replay::{replay_individual, replay_individual_covered, IndividualReplay, TxReplay, TxStatus};
-pub use report::{diff_report, replay_finding, EvmDiffReport, FindingReplay, FindingReplayVerdict};
+pub use harness::{CallOutcome, EvmHarness, HarnessError, pool_address};
+pub use replay::{
+    IndividualReplay, TxReplay, TxStatus, replay_individual, replay_individual_covered,
+};
+pub use report::{EvmDiffReport, FindingReplay, FindingReplayVerdict, diff_report, replay_finding};
 
 #[cfg(test)]
 mod tests {
@@ -43,9 +45,7 @@ mod tests {
     #[test]
     fn deploy_and_successful_call() {
         // Runtime: MSTORE(0, 42); RETURN(0, 32) — always succeeds, returns 42.
-        let runtime = [
-            0x60, 0x2a, 0x60, 0x00, 0x52, 0x60, 0x20, 0x60, 0x00, 0xf3,
-        ];
+        let runtime = [0x60, 0x2a, 0x60, 0x00, 0x52, 0x60, 0x20, 0x60, 0x00, 0xf3];
         let mut harness = EvmHarness::deploy(creation_code(&runtime)).expect("deploy");
         let outcome = harness.call(1, 0, vec![]).expect("call");
         assert!(outcome.success, "call should succeed");
@@ -107,12 +107,18 @@ mod tests {
         deep.call(1, 0, vec![0x01]).expect("deep call");
         let deep_pcs = deep.covered_pc_count();
 
-        assert!(shallow_pcs >= 3, "shallow path still executes a few opcodes");
+        assert!(
+            shallow_pcs >= 3,
+            "shallow path still executes a few opcodes"
+        );
         assert!(
             deep_pcs > shallow_pcs,
             "deep branch ({deep_pcs}) must reach more PCs than early return ({shallow_pcs})"
         );
         // Constructor PCs are cleared, so the shallow path is exactly its opcodes.
-        assert_eq!(shallow_pcs, 4, "shallow path is CALLDATASIZE,PUSH1,JUMPI,STOP");
+        assert_eq!(
+            shallow_pcs, 4,
+            "shallow path is CALLDATASIZE,PUSH1,JUMPI,STOP"
+        );
     }
 }

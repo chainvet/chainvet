@@ -44,13 +44,22 @@ pub struct IndividualReplay {
 
 impl IndividualReplay {
     pub fn success_count(&self) -> usize {
-        self.txs.iter().filter(|t| matches!(t.status, TxStatus::Success)).count()
+        self.txs
+            .iter()
+            .filter(|t| matches!(t.status, TxStatus::Success))
+            .count()
     }
     pub fn reverted_count(&self) -> usize {
-        self.txs.iter().filter(|t| matches!(t.status, TxStatus::Reverted)).count()
+        self.txs
+            .iter()
+            .filter(|t| matches!(t.status, TxStatus::Reverted))
+            .count()
     }
     pub fn skipped_count(&self) -> usize {
-        self.txs.iter().filter(|t| matches!(t.status, TxStatus::Skipped(_))).count()
+        self.txs
+            .iter()
+            .filter(|t| matches!(t.status, TxStatus::Skipped(_)))
+            .count()
     }
 }
 
@@ -219,7 +228,10 @@ mod tests {
         assert!(result.deployed);
         assert_eq!(result.success_count(), 1, "the mapped call executed");
         assert_eq!(result.reverted_count(), 0);
-        assert!(result.covered_pcs > 0, "EVM coverage was recorded for the sequence");
+        assert!(
+            result.covered_pcs > 0,
+            "EVM coverage was recorded for the sequence"
+        );
     }
 
     #[test]
@@ -235,9 +247,19 @@ mod tests {
         };
         let individual = Individual {
             transactions: vec![
-                Transaction { function_id: 0, args: vec![], sender: 1, value: 0 },
+                Transaction {
+                    function_id: 0,
+                    args: vec![],
+                    sender: 1,
+                    value: 0,
+                },
                 // function_id 9 is not in the fuzzer ABI → skipped.
-                Transaction { function_id: 9, args: vec![], sender: 1, value: 0 },
+                Transaction {
+                    function_id: 9,
+                    args: vec![],
+                    sender: 1,
+                    value: 0,
+                },
             ],
             environment: Environment::default(),
             energy: 1.0,

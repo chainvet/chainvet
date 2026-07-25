@@ -3,8 +3,8 @@ use chainvet_core::norm::NormalizedAst;
 use chainvet_fuzzing::fuzzing::types::{
     ContractAbi, DependencyMap, Environment, FuzzValue, Individual, Transaction, WriteValue,
 };
-use std::collections::{HashMap, HashSet};
 use chainvet_se::symbolic::results::{CoverageWitness, SeFinding, Witness};
+use std::collections::{HashMap, HashSet};
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct HybridSeed {
@@ -549,7 +549,9 @@ mod tests {
                 name: name.to_string(),
                 params: params
                     .into_iter()
-                    .map(|p| ParamInfo { name: p.to_string() })
+                    .map(|p| ParamInfo {
+                        name: p.to_string(),
+                    })
                     .collect(),
                 visibility: Visibility::External,
                 mutability: Mutability::NonPayable,
@@ -594,8 +596,14 @@ mod tests {
         assert_eq!(seeds[0].transactions.len(), 1);
         assert_eq!(seeds[0].transactions[0].function_id, 2);
         assert_eq!(seeds[1].transactions.len(), 2);
-        assert_eq!(seeds[1].transactions[0].function_id, 1, "writer must run first");
-        assert_eq!(seeds[1].transactions[1].function_id, 2, "target must run last");
+        assert_eq!(
+            seeds[1].transactions[0].function_id, 1,
+            "writer must run first"
+        );
+        assert_eq!(
+            seeds[1].transactions[1].function_id, 2,
+            "target must run last"
+        );
     }
 
     #[test]
@@ -645,7 +653,11 @@ mod tests {
         // Must terminate and place the reachable writer without duplication.
         let path = resolve_setup_path(&deps, 1);
         let ids: Vec<u32> = path.iter().map(|s| s.function_id).collect();
-        assert_eq!(ids, vec![2], "cycle broken; the other writer is placed once");
+        assert_eq!(
+            ids,
+            vec![2],
+            "cycle broken; the other writer is placed once"
+        );
     }
 
     #[test]
@@ -689,7 +701,10 @@ mod tests {
 
         let steps = resolve_setup_path(&deps, 3);
         assert_eq!(steps.len(), 1, "one setup writer for the target");
-        assert_eq!(steps[0].function_id, 1, "must pick the param writer, not disable");
+        assert_eq!(
+            steps[0].function_id, 1,
+            "must pick the param writer, not disable"
+        );
         assert_eq!(
             steps[0].arg_overrides,
             vec![(0usize, 2u128)],

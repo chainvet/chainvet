@@ -8,7 +8,7 @@
 //!   cargo test -p chainvet-evm --test e2e_solc -- --ignored --nocapture
 
 use chainvet_core::norm::SourceFile;
-use chainvet_evm::{compile, encode_call, AbiType, EvmHarness};
+use chainvet_evm::{AbiType, EvmHarness, compile, encode_call};
 
 const VAULT: &str = r#"
 // SPDX-License-Identifier: MIT
@@ -52,15 +52,23 @@ fn compiles_deploys_and_coverage_tracks_depth() {
     let types = [AbiType::Uint(256)];
 
     let mut shallow = EvmHarness::deploy(vault.creation_bytecode.clone()).expect("deploy");
-    let zero = encode_call("deposit", &types, &[chainvet_fuzzing::fuzzing::types::FuzzValue::Uint(0)])
-        .expect("encode");
+    let zero = encode_call(
+        "deposit",
+        &types,
+        &[chainvet_fuzzing::fuzzing::types::FuzzValue::Uint(0)],
+    )
+    .expect("encode");
     let out0 = shallow.call(1, 0, zero).expect("call");
     assert!(out0.reverted, "deposit(0) reverts on the require");
     let shallow_pcs = shallow.covered_pc_count();
 
     let mut deep = EvmHarness::deploy(vault.creation_bytecode.clone()).expect("deploy");
-    let five = encode_call("deposit", &types, &[chainvet_fuzzing::fuzzing::types::FuzzValue::Uint(5)])
-        .expect("encode");
+    let five = encode_call(
+        "deposit",
+        &types,
+        &[chainvet_fuzzing::fuzzing::types::FuzzValue::Uint(5)],
+    )
+    .expect("encode");
     let out5 = deep.call(1, 0, five).expect("call");
     assert!(out5.success, "deposit(5) succeeds");
     let deep_pcs = deep.covered_pc_count();

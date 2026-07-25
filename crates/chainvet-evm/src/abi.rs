@@ -11,12 +11,12 @@ use revm::primitives::keccak256;
 /// used for both the selector and the value encoding.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AbiType {
-    Uint(u16),   // uintN, N a multiple of 8 (1..=256)
-    Int(u16),    // intN
-    Bool,        // bool
-    Address,     // address
-    Bytes,       // dynamic bytes
-    StringTy,    // string
+    Uint(u16), // uintN, N a multiple of 8 (1..=256)
+    Int(u16),  // intN
+    Bool,      // bool
+    Address,   // address
+    Bytes,     // dynamic bytes
+    StringTy,  // string
 }
 
 impl AbiType {

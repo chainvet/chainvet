@@ -423,10 +423,7 @@ mod tests {
         // The finding-bearing entry (lowest energy) must be retained despite the
         // cap keeping otherwise-highest-energy entries.
         assert!(
-            corpus
-                .entries
-                .iter()
-                .any(|e| !e.finding_hashes.is_empty()),
+            corpus.entries.iter().any(|e| !e.finding_hashes.is_empty()),
             "finding-bearing entry must survive capping"
         );
     }

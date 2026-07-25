@@ -21,7 +21,7 @@ use std::collections::HashSet;
 use chainvet_fuzzing::fuzzing::types::{ContractAbi, Environment, Individual, Transaction};
 
 use crate::artifact::CompiledContract;
-use crate::replay::{replay_individual_covered, IndividualReplay, TxStatus};
+use crate::replay::{IndividualReplay, TxStatus, replay_individual_covered};
 
 /// The EVM's verdict on replaying a finding's triggering sequence.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -64,10 +64,16 @@ pub struct EvmDiffReport {
 
 impl EvmDiffReport {
     pub fn consistent_count(&self) -> usize {
-        self.findings.iter().filter(|f| f.verdict == FindingReplayVerdict::Consistent).count()
+        self.findings
+            .iter()
+            .filter(|f| f.verdict == FindingReplayVerdict::Consistent)
+            .count()
     }
     pub fn divergent_count(&self) -> usize {
-        self.findings.iter().filter(|f| f.verdict == FindingReplayVerdict::Divergent).count()
+        self.findings
+            .iter()
+            .filter(|f| f.verdict == FindingReplayVerdict::Divergent)
+            .count()
     }
     pub fn inconclusive_count(&self) -> usize {
         self.findings
@@ -204,13 +210,24 @@ mod tests {
     }
 
     fn tx() -> Transaction {
-        Transaction { function_id: 0, args: vec![FuzzValue::Uint(1)], sender: 1, value: 0 }
+        Transaction {
+            function_id: 0,
+            args: vec![FuzzValue::Uint(1)],
+            sender: 1,
+            value: 0,
+        }
     }
 
     #[test]
     fn successful_terminal_tx_is_consistent() {
         let runtime = [0x60, 0x2a, 0x60, 0x00, 0x52, 0x60, 0x20, 0x60, 0x00, 0xf3]; // returns 42
-        let fr = replay_finding(&compiled(&runtime), &abi(0, "f"), "Reentrancy", "msg", &[tx()]);
+        let fr = replay_finding(
+            &compiled(&runtime),
+            &abi(0, "f"),
+            "Reentrancy",
+            "msg",
+            &[tx()],
+        );
         assert_eq!(fr.verdict, FindingReplayVerdict::Consistent);
         assert!(fr.covered_pcs > 0);
     }
@@ -218,7 +235,13 @@ mod tests {
     #[test]
     fn reverting_terminal_tx_is_divergent() {
         let runtime = [0x60, 0x00, 0x60, 0x00, 0xfd]; // always REVERT
-        let fr = replay_finding(&compiled(&runtime), &abi(0, "f"), "Overflow", "msg", &[tx()]);
+        let fr = replay_finding(
+            &compiled(&runtime),
+            &abi(0, "f"),
+            "Overflow",
+            "msg",
+            &[tx()],
+        );
         assert_eq!(fr.verdict, FindingReplayVerdict::Divergent);
     }
 
@@ -226,7 +249,12 @@ mod tests {
     fn unknown_function_is_inconclusive() {
         let runtime = [0x60, 0x2a, 0x60, 0x00, 0x52, 0x60, 0x20, 0x60, 0x00, 0xf3];
         // function_id 9 is not in the ABI → the only tx is skipped → inconclusive.
-        let bad = Transaction { function_id: 9, args: vec![], sender: 1, value: 0 };
+        let bad = Transaction {
+            function_id: 9,
+            args: vec![],
+            sender: 1,
+            value: 0,
+        };
         let fr = replay_finding(&compiled(&runtime), &abi(0, "f"), "K", "m", &[bad]);
         assert!(matches!(fr.verdict, FindingReplayVerdict::Inconclusive(_)));
     }

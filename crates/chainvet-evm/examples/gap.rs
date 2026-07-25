@@ -19,24 +19,24 @@ use std::collections::HashSet;
 
 use chainvet_core::{cfg, ir};
 use chainvet_evm::replay::TxStatus;
-use chainvet_evm::report::{replay_finding, FindingReplayVerdict};
+use chainvet_evm::report::{FindingReplayVerdict, replay_finding};
 use chainvet_evm::{compile, replay_individual_covered};
 use chainvet_frontend::frontend;
 use chainvet_fuzzing::fuzzing::executor::execute_individual;
 use chainvet_fuzzing::fuzzing::runner::FuzzSession;
 use chainvet_fuzzing::fuzzing::types::{
-    build_dependency_map, extract_abis, ContractAbi, FuzzConfig, Individual,
+    ContractAbi, FuzzConfig, Individual, build_dependency_map, extract_abis,
 };
 
 /// Agreement tally between the IR interpreter and the EVM over one corpus.
 #[derive(Default)]
 struct Agreement {
-    agree_complete: usize,   // both ran to completion
-    agree_revert: usize,     // both reverted
+    agree_complete: usize,    // both ran to completion
+    agree_revert: usize,      // both reverted
     ir_opt_evm_revert: usize, // IR completed, EVM reverted (optimistic IR)
-    ir_pess_evm_ok: usize,   // IR reverted, EVM completed (pessimistic IR)
-    deploy_failed: usize,    // EVM could not deploy (e.g. constructor needs args)
-    unreplayable: usize,     // every tx skipped (encoder gap / unknown ids)
+    ir_pess_evm_ok: usize,    // IR reverted, EVM completed (pessimistic IR)
+    deploy_failed: usize,     // EVM could not deploy (e.g. constructor needs args)
+    unreplayable: usize,      // every tx skipped (encoder gap / unknown ids)
 }
 
 impl Agreement {
@@ -88,8 +88,12 @@ fn main() {
     session.run_slice(&[], iters, budget);
 
     // Snapshot the IR side before finalize consumes the session.
-    let corpus: Vec<Individual> =
-        session.corpus().entries.iter().map(|e| e.individual.clone()).collect();
+    let corpus: Vec<Individual> = session
+        .corpus()
+        .entries
+        .iter()
+        .map(|e| e.individual.clone())
+        .collect();
     let ir_covered = session.covered_block_set().len();
     let ir_total = session.reachable_block_total();
     let report = session.finalize();
@@ -186,7 +190,11 @@ fn main() {
                 "inconclusive"
             }
         };
-        println!("  [{tag}] {} — {}", f.kind.as_str(), truncate(&f.message, 60));
+        println!(
+            "  [{tag}] {} — {}",
+            f.kind.as_str(),
+            truncate(&f.message, 60)
+        );
     }
     println!(
         "\n  findings: {consistent} consistent, {divergent} divergent, {inconclusive} inconclusive"
@@ -200,11 +208,23 @@ fn print_agreement(agg: &Agreement, evm_pc_union: usize) {
     println!("-- Per-input agreement (same sequence run on both engines) --");
     println!("  both complete         : {}", agg.agree_complete);
     println!("  both revert           : {}", agg.agree_revert);
-    println!("  IR ok / EVM revert    : {}  (IR too optimistic)", agg.ir_opt_evm_revert);
-    println!("  IR revert / EVM ok    : {}  (IR too pessimistic)", agg.ir_pess_evm_ok);
+    println!(
+        "  IR ok / EVM revert    : {}  (IR too optimistic)",
+        agg.ir_opt_evm_revert
+    );
+    println!(
+        "  IR revert / EVM ok    : {}  (IR too pessimistic)",
+        agg.ir_pess_evm_ok
+    );
     println!("  ---");
-    println!("  EVM deploy failed     : {}  (excluded — e.g. constructor args)", agg.deploy_failed);
-    println!("  unreplayable (skipped): {}  (excluded — encoder/type gaps)", agg.unreplayable);
+    println!(
+        "  EVM deploy failed     : {}  (excluded — e.g. constructor args)",
+        agg.deploy_failed
+    );
+    println!(
+        "  unreplayable (skipped): {}  (excluded — encoder/type gaps)",
+        agg.unreplayable
+    );
     let compared = agg.compared();
     if compared > 0 {
         let rate = 100.0 * agg.agree() as f64 / compared as f64;
@@ -274,12 +294,15 @@ fn print_recommendation(agg: &Agreement, divergent_findings: usize, total_findin
 
 /// Index of the ABI that declares `fid`, if any.
 fn abi_for_fn(abis: &[ContractAbi], fid: u32) -> Option<usize> {
-    abis.iter().position(|a| a.functions.iter().any(|f| f.id == fid))
+    abis.iter()
+        .position(|a| a.functions.iter().any(|f| f.id == fid))
 }
 
 /// Index of the ABI an individual targets, inferred from its first transaction.
 fn abi_for_individual(abis: &[ContractAbi], ind: &Individual) -> Option<usize> {
-    ind.transactions.first().and_then(|tx| abi_for_fn(abis, tx.function_id))
+    ind.transactions
+        .first()
+        .and_then(|tx| abi_for_fn(abis, tx.function_id))
 }
 
 fn truncate(s: &str, n: usize) -> String {

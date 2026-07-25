@@ -53,11 +53,10 @@ pub fn enhance(
     let mut annotations: Vec<(String, &'static str)> = Vec::new();
     for finding in fuzz_findings {
         // Which contract does this finding's sequence target?
-        let Some(abi) = finding
-            .tx_sequence
-            .first()
-            .and_then(|tx| abis.iter().find(|a| a.functions.iter().any(|f| f.id == tx.function_id)))
-        else {
+        let Some(abi) = finding.tx_sequence.first().and_then(|tx| {
+            abis.iter()
+                .find(|a| a.functions.iter().any(|f| f.id == tx.function_id))
+        }) else {
             continue;
         };
         let Some(compiled_c) = compiled.iter().find(|c| c.name == abi.contract_name) else {

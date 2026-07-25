@@ -461,7 +461,11 @@ mod tests {
         ]);
         assert_eq!(cfg.blocks.len(), 2, "expected one live and one dead block");
         let reachable = cfg.reachable_block_ids();
-        assert_eq!(cfg.reachable_block_count(), 1, "dead block must be excluded");
+        assert_eq!(
+            cfg.reachable_block_count(),
+            1,
+            "dead block must be excluded"
+        );
         assert!(reachable.contains(&cfg.blocks[0].id));
         assert!(!reachable.contains(&cfg.blocks[1].id));
     }

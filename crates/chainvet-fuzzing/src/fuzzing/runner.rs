@@ -143,18 +143,16 @@ impl<'a> FuzzSession<'a> {
         // means "total *reachable* blocks" — the honest coverage denominator.
         // Coverage edges are keyed by function id, and ABI functions carry the
         // matching id, so the per-function map drives per-contract scaling.
-        let reachable_by_function: std::collections::HashMap<u32, usize> =
-            cfgs.iter().map(|c| (c.id, c.reachable_block_count())).collect();
+        let reachable_by_function: std::collections::HashMap<u32, usize> = cfgs
+            .iter()
+            .map(|c| (c.id, c.reachable_block_count()))
+            .collect();
         let total_blocks: usize = reachable_by_function.values().sum();
 
         // Size-scale the transaction sequence length by the largest contract's
         // callable-function count. Deep, stateful blocks in a big contract need
         // longer setup→configure→trigger chains than the fixed default reaches.
-        let max_functions = abis
-            .iter()
-            .map(|a| a.functions.len())
-            .max()
-            .unwrap_or(0);
+        let max_functions = abis.iter().map(|a| a.functions.len()).max().unwrap_or(0);
         config.max_sequence_length = (config.max_sequence_length
             + max_functions / FUNCS_PER_EXTRA_TX)
             .min(MAX_SEQUENCE_LENGTH_CAP);

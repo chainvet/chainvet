@@ -5,7 +5,7 @@ mod seeding;
 mod targeting;
 
 pub use budget::HybridBudget;
-pub use orchestrator::{analyze, analyze_full, AnalyzeOutput};
+pub use orchestrator::{AnalyzeOutput, analyze, analyze_full};
 pub use report::{
     HybridFindingRow, HybridJsonReport, HybridRunSummary, deduplicate_rows, print_hybrid_report,
 };

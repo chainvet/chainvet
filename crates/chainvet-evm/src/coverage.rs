@@ -10,9 +10,9 @@
 
 use std::collections::HashSet;
 
+use revm::Inspector;
 use revm::interpreter::interpreter_types::Jumps;
 use revm::interpreter::{Interpreter, InterpreterTypes};
-use revm::Inspector;
 
 /// Accumulates the distinct program counters executed on the EVM. Held inside
 /// the [`crate::harness::EvmHarness`]'s evm so coverage persists across a

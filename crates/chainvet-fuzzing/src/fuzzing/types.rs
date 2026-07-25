@@ -398,9 +398,9 @@ fn is_contract_receiver(value: &IrValue, contract_name: Option<&str>) -> bool {
 fn classify_write_value(src: &IrValue, param_index: &HashMap<&str, usize>) -> Option<WriteValue> {
     match src {
         IrValue::Literal(lit) => literal_to_u128(lit).map(WriteValue::Const),
-        IrValue::Var(IrVar::Named(name)) => {
-            param_index.get(name.as_str()).map(|i| WriteValue::Param(*i))
-        }
+        IrValue::Var(IrVar::Named(name)) => param_index
+            .get(name.as_str())
+            .map(|i| WriteValue::Param(*i)),
         _ => None,
     }
 }
@@ -437,7 +437,10 @@ fn literal_to_u128(lit: &Literal) -> Option<u128> {
         "true" => Some(1),
         "false" => Some(0),
         _ => {
-            if let Some(hex) = value.strip_prefix("0x").or_else(|| value.strip_prefix("0X")) {
+            if let Some(hex) = value
+                .strip_prefix("0x")
+                .or_else(|| value.strip_prefix("0X"))
+            {
                 u128::from_str_radix(hex, 16).ok()
             } else {
                 value.parse::<u128>().ok()

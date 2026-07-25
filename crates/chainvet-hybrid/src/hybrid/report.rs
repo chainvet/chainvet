@@ -186,7 +186,9 @@ pub fn print_hybrid_report(report: &HybridJsonReport, format: OutputFormat) -> R
             );
             println!(
                 "hybrid coverage (SE ∪ fuzz): {}/{} ({:.1}%)",
-                report.hybrid_covered_blocks, report.hybrid_total_blocks, report.hybrid_coverage_pct
+                report.hybrid_covered_blocks,
+                report.hybrid_total_blocks,
+                report.hybrid_coverage_pct
             );
             if let Some(stats) = &report.fuzz_hybrid_stats {
                 println!(

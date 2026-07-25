@@ -246,7 +246,10 @@ fn dependency_aware_sequence(
         .iter()
         .filter(|(id, fd)| {
             !fd.reads.is_empty()
-                && abi.functions.iter().any(|f| f.id == **id && f.is_fuzz_callable())
+                && abi
+                    .functions
+                    .iter()
+                    .any(|f| f.id == **id && f.is_fuzz_callable())
         })
         .map(|(id, _)| *id)
         .collect();
@@ -263,7 +266,11 @@ fn dependency_aware_sequence(
             if txs.len() >= length {
                 break;
             }
-            if let Some(func) = abi.functions.iter().find(|f| f.id == fid && f.is_fuzz_callable()) {
+            if let Some(func) = abi
+                .functions
+                .iter()
+                .find(|f| f.id == fid && f.is_fuzz_callable())
+            {
                 let mut tx = tx_for_func(func, rng, config, dict);
                 tx.sender = chain_sender;
                 txs.push(tx);
@@ -609,7 +616,9 @@ mod tests {
     fn payable_tx_value_biases_nonzero_but_keeps_some_zero() {
         let mut rng = <rand::rngs::StdRng as rand::SeedableRng>::seed_from_u64(7);
         let n = 2000;
-        let zeros = (0..n).filter(|_| payable_tx_value(&mut rng, None) == 0).count();
+        let zeros = (0..n)
+            .filter(|_| payable_tx_value(&mut rng, None) == 0)
+            .count();
         let nonzero_frac = 1.0 - zeros as f64 / n as f64;
         // Payable calls must be nonzero the large majority of the time (so they
         // don't revert on `require(msg.value > 0)`), but not always — a few
@@ -618,7 +627,10 @@ mod tests {
             nonzero_frac > 0.8,
             "payable value should be nonzero most of the time, got {nonzero_frac}"
         );
-        assert!(zeros > 0, "should still produce some zero values for guard coverage");
+        assert!(
+            zeros > 0,
+            "should still produce some zero values for guard coverage"
+        );
     }
 
     #[test]
@@ -630,7 +642,10 @@ mod tests {
         // 3 (target) reads "b". Expected chain: 1 → 2 → 3.
         deps.functions.insert(
             1,
-            FunctionDeps { writes: HashSet::from(["a".to_string()]), ..Default::default() },
+            FunctionDeps {
+                writes: HashSet::from(["a".to_string()]),
+                ..Default::default()
+            },
         );
         deps.functions.insert(
             2,
@@ -642,10 +657,17 @@ mod tests {
         );
         deps.functions.insert(
             3,
-            FunctionDeps { reads: HashSet::from(["b".to_string()]), ..Default::default() },
+            FunctionDeps {
+                reads: HashSet::from(["b".to_string()]),
+                ..Default::default()
+            },
         );
         let chain = setup_chain(&deps, 3, MAX_SETUP_CHAIN);
-        assert_eq!(chain, vec![1, 2, 3], "transitive writers must precede the target reader");
+        assert_eq!(
+            chain,
+            vec![1, 2, 3],
+            "transitive writers must precede the target reader"
+        );
     }
 
     #[test]

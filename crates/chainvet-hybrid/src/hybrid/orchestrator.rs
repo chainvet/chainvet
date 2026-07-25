@@ -109,8 +109,11 @@ pub fn analyze_full(output: &FrontendOutput, budget: &HybridBudget) -> Result<An
         // Seed the fuzzer from SE *coverage* witnesses (not just findings), so it
         // can reach and mutate from blocks it struggles to hit unaided. Setup
         // transactions are derived from the fuzzer's storage dependency map.
-        let coverage_seeds =
-            build_coverage_seeds(&abis, session.dependency_map(), &analysis.coverage_witnesses);
+        let coverage_seeds = build_coverage_seeds(
+            &abis,
+            session.dependency_map(),
+            &analysis.coverage_witnesses,
+        );
         coverage_seed_count += coverage_seeds.len();
         pending_seeds.extend(coverage_seeds);
         all_seeds.extend(seeds);
@@ -200,8 +203,11 @@ pub fn analyze_full(output: &FrontendOutput, budget: &HybridBudget) -> Result<An
             let seeds = build_hybrid_seeds(ast, &abis, &analysis.findings);
             pending_seeds = seeds.iter().map(|s| s.individual.clone()).collect();
             // Coverage-witness seeds from the assist too, not only finding seeds.
-            let coverage_seeds =
-                build_coverage_seeds(&abis, session.dependency_map(), &analysis.coverage_witnesses);
+            let coverage_seeds = build_coverage_seeds(
+                &abis,
+                session.dependency_map(),
+                &analysis.coverage_witnesses,
+            );
             coverage_seed_count += coverage_seeds.len();
             pending_seeds.extend(coverage_seeds);
             all_seeds.extend(seeds);

@@ -11,7 +11,7 @@
 #[ignore = "invokes solc + revm; run with --features evm-validation --ignored"]
 fn evm_layer_annotates_fuzz_findings() {
     use chainvet_frontend::frontend;
-    use chainvet_orchestrator::{scan, HybridBudget, ScanMode};
+    use chainvet_orchestrator::{HybridBudget, ScanMode, scan};
 
     // The reentrancy fixture is a stateful pool whose fuzzer findings do NOT
     // reproduce on a real EVM (state-machine + msg.value gating), so they should

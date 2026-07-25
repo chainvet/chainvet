@@ -12,7 +12,7 @@ use std::process::{Command, Stdio};
 use chainvet_core::norm::SourceFile;
 use chainvet_core::util::error::{Error, Result};
 use chainvet_frontend::frontend::solc_manager::SolcManager;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::abi::AbiType;
 
@@ -137,7 +137,10 @@ fn parse_functions(abi: &[Value]) -> Vec<AbiFn> {
         let mut encodable = true;
         if let Some(params) = entry.get("inputs").and_then(Value::as_array) {
             for param in params {
-                let ty = param.get("type").and_then(Value::as_str).unwrap_or_default();
+                let ty = param
+                    .get("type")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default();
                 match AbiType::parse(ty) {
                     Some(t) => inputs.push(t),
                     None => {
@@ -156,7 +159,10 @@ fn parse_functions(abi: &[Value]) -> Vec<AbiFn> {
 
 /// Decode a hex string (optional `0x` prefix) into bytes; `None` on bad input.
 fn decode_hex(s: &str) -> Option<Vec<u8>> {
-    let s = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")).unwrap_or(s);
+    let s = s
+        .strip_prefix("0x")
+        .or_else(|| s.strip_prefix("0X"))
+        .unwrap_or(s);
     if !s.len().is_multiple_of(2) {
         return None;
     }

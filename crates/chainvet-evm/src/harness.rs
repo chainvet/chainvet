@@ -5,8 +5,8 @@
 
 use std::collections::HashMap;
 
-use revm::context::result::{ExecutionResult, Output};
 use revm::context::TxEnv;
+use revm::context::result::{ExecutionResult, Output};
 use revm::database::{CacheDB, EmptyDB};
 use revm::primitives::{Address, Bytes, TxKind, U256};
 use revm::state::AccountInfo;
