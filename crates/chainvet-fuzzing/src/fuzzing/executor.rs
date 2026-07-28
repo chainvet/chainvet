@@ -1145,6 +1145,37 @@ fn execute_instr(
                             kind: TraceEventKind::SenderChecked,
                         });
                     }
+
+                    // Control-flow effect of the guard, applied AFTER every
+                    // oracle event above (ConditionChecked, UnsafeSendInRequire,
+                    // BalanceInvariantCheck, SenderChecked, checked_calls): a
+                    // require/assert whose condition is falsy terminates the
+                    // transaction, so the loop at executor.rs:265 unwinds it. A
+                    // false comparison lowers to Uint(0) (eval_binary yields 0),
+                    // so resolve_value reports it as non-truthy here and the tx
+                    // reverts just as a real EVM would.
+                    //
+                    // We do NOT revert when the condition is a low-level call
+                    // result (`require(x.send(v))`, `require(ok)` from `.call`).
+                    // The interpreter has no faithful success/failure model for
+                    // those, so their temp defaults to Uint(0) — treating that
+                    // default as a failed guard would revert a call the real EVM
+                    // completes (measured: it turned auction.sol's agreeing
+                    // inputs into false IR-pessimistic reverts). The
+                    // UnsafeSendInRequire oracle already fired above, so skipping
+                    // the revert here costs no detection.
+                    //
+                    // DEFERRED (not a bug): SimState writes made earlier in this
+                    // tx are NOT rolled back. A real EVM discards all state
+                    // changes when a require fails; we only stop forward
+                    // progress. Per-transaction SimState snapshot/restore is out
+                    // of scope for this ticket — do not mistake the retained
+                    // state for correct rollback behaviour.
+                    let arg_is_call_result =
+                        tracked_call_by_var.contains_key(&arg_key) || arg_is_send_result;
+                    if !arg_is_call_result && !resolve_value(first_arg, state, locals).is_truthy() {
+                        trace.reverted = true;
+                    }
                 }
             }
 
@@ -1948,7 +1979,20 @@ fn place_name(place: &IrPlace, contract_name: Option<&str>) -> Option<String> {
             if is_contract_receiver(base, contract_name) {
                 Some(field.clone())
             } else {
-                root.clone()
+                // Environment globals (`msg.value`, `msg.sender`, `block.number`,
+                // `block.timestamp`, `tx.origin`, …) are seeded under their full
+                // dotted key at transaction setup. place_name otherwise collapses
+                // a Member to its root ("msg"), so a Load of `msg.value` missed
+                // the seeded key and defaulted to 0 — which made every
+                // `require(msg.value > x)` guard read as false. Resolve these by
+                // their dotted name so the value is faithful; other members keep
+                // their root (a storage/local base).
+                let base_name = value_name(base);
+                if matches!(base_name.as_str(), "msg" | "block" | "tx") {
+                    Some(format!("{base_name}.{field}"))
+                } else {
+                    root.clone()
+                }
             }
         }
         IrPlace::Index { root, .. } => root.clone(),
