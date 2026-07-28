@@ -602,6 +602,7 @@ fn promoted_runtime_meta_findings(
                 _ => return None,
             };
             Some(FuzzFinding {
+                confidence_override: None,
                 span: None,
                 kind,
                 severity: match finding.severity.as_str() {
@@ -659,6 +660,7 @@ fn detect_shadowing_findings(ast: &NormalizedAst) -> Vec<FuzzFinding> {
                     .unwrap_or("<anonymous>");
                 let detail = format!("{}:{}", function.id, param);
                 findings.push(FuzzFinding {
+                confidence_override: None,
                     span: None,
                     kind: FuzzFindingKind::Shadowing,
                     severity: FuzzSeverity::Medium,
@@ -696,6 +698,7 @@ fn detect_public_mint_burn_findings(
         }
         let detail = format!("{}:{}", function.id, lower);
         findings.push(FuzzFinding {
+            confidence_override: None,
             span: None,
             kind: FuzzFindingKind::PublicMintBurn,
             severity: FuzzSeverity::High,
@@ -800,6 +803,7 @@ fn inject_static_runtime_backstops(
             .and_then(|f| f.name.as_deref())
             .unwrap_or("<unknown>");
         out.push(FuzzFinding {
+                confidence_override: None,
                     span: None,
             kind: FuzzFindingKind::ReentrancyHeuristic,
             severity: FuzzSeverity::Low,
@@ -830,6 +834,7 @@ fn inject_static_runtime_backstops(
             .and_then(|f| f.name.as_deref())
             .unwrap_or("<unknown>");
         out.push(FuzzFinding {
+                confidence_override: None,
                     span: None,
             kind: FuzzFindingKind::DosWithFailedCall,
             severity: FuzzSeverity::Low,
@@ -867,6 +872,7 @@ fn inject_static_runtime_backstops(
             .and_then(|f| f.name.as_deref())
             .unwrap_or("<unknown>");
         out.push(FuzzFinding {
+                confidence_override: None,
                     span: None,
             kind: FuzzFindingKind::DosBlockGasLimit,
             severity: FuzzSeverity::Low,
@@ -897,6 +903,7 @@ fn inject_static_runtime_backstops(
             && injected.insert(("timestamp-dependency", function_id))
         {
             out.push(FuzzFinding {
+                confidence_override: None,
                     span: None,
                 kind: FuzzFindingKind::TimestampDependency,
                 severity: FuzzSeverity::Low,
@@ -917,6 +924,7 @@ fn inject_static_runtime_backstops(
             continue;
         }
         out.push(FuzzFinding {
+                confidence_override: None,
                     span: None,
             kind: FuzzFindingKind::WeakPRNG,
             severity: FuzzSeverity::Low,
@@ -948,6 +956,7 @@ fn inject_static_runtime_backstops(
             .and_then(|f| f.name.as_deref())
             .unwrap_or("<unknown>");
         out.push(FuzzFinding {
+                confidence_override: None,
                     span: None,
             kind: FuzzFindingKind::LockedEther,
             severity: FuzzSeverity::Low,
@@ -977,6 +986,7 @@ fn inject_static_runtime_backstops(
             .and_then(|f| f.name.as_deref())
             .unwrap_or("<unknown>");
         out.push(FuzzFinding {
+                confidence_override: None,
                     span: None,
             kind: FuzzFindingKind::UncheckedCall,
             severity: FuzzSeverity::Low,
@@ -1004,6 +1014,7 @@ fn inject_static_runtime_backstops(
             .and_then(|f| f.name.as_deref())
             .unwrap_or("<unknown>");
         out.push(FuzzFinding {
+                confidence_override: None,
                     span: None,
             kind: FuzzFindingKind::AccessControl,
             severity: FuzzSeverity::Low,
@@ -1509,7 +1520,8 @@ fn json_report(report: &FuzzReport) -> JsonFuzzReport {
                 canonical_kind: finding.kind.canonical_str().to_string(),
                 category: finding.kind.category().to_string(),
                 severity: finding.severity.as_str().to_string(),
-                confidence: finding.kind.confidence().as_str().to_string(),
+                // Override-then-kind, matching the hybrid collect site.
+                confidence: finding.confidence().as_str().to_string(),
                 message: finding.message.clone(),
                 trace_hash: finding.trace_hash.clone(),
                 tx_sequence: finding
@@ -1642,6 +1654,7 @@ mod tests {
 
     fn finding(kind: FuzzFindingKind, message: &str) -> FuzzFinding {
         FuzzFinding {
+            confidence_override: None,
             span: None,
             kind,
             severity: FuzzSeverity::Medium,

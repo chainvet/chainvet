@@ -1,7 +1,8 @@
 use sha2::{Digest, Sha256};
 
 use crate::fuzzing::types::{
-    ExecutionTrace, FuzzFinding, FuzzFindingKind, FuzzSeverity, TraceEventKind, Transaction,
+    ExecutionTrace, FuzzConfidence, FuzzFinding, FuzzFindingKind, FuzzSeverity, TraceEventKind,
+    Transaction,
 };
 use chainvet_core::norm::{NormalizedAst, Visibility};
 
@@ -100,6 +101,7 @@ fn check_supply_conservation(
     if sum > total && !trace.reverted {
         let hash = hash_finding("supply-conservation", 0, &format!("{sum}:{total}"));
         return vec![FuzzFinding {
+            confidence_override: None,
             span: None,
             kind: FuzzFindingKind::InvariantViolation,
             severity: FuzzSeverity::High,
@@ -198,6 +200,7 @@ fn check_reentrancy(
                         format!("{key}:{evidence}").as_str(),
                     );
                     findings.push(FuzzFinding {
+                confidence_override: None,
                     span: None,
                         kind: FuzzFindingKind::Reentrancy,
                         severity: FuzzSeverity::High,
@@ -216,6 +219,7 @@ fn check_reentrancy(
                 {
                     let hash = hash_finding("reentrancy-fallback", event.function_id, key.as_str());
                     findings.push(FuzzFinding {
+                confidence_override: None,
                     span: None,
                         kind: FuzzFindingKind::ReentrancyHeuristic,
                         severity: FuzzSeverity::Low,
@@ -250,6 +254,7 @@ fn check_reentrancy(
                 let hash =
                     hash_finding("reentrancy-pre-call-effects", function_id, detail.as_str());
                 findings.push(FuzzFinding {
+                confidence_override: None,
                     span: None,
                     kind: FuzzFindingKind::ReentrancyHeuristic,
                     severity: FuzzSeverity::Low,
@@ -263,6 +268,7 @@ fn check_reentrancy(
             } else {
                 let hash = hash_finding("reentrancy-callback", function_id, "callback-only");
                 findings.push(FuzzFinding {
+                confidence_override: None,
                     span: None,
                     kind: FuzzFindingKind::ReentrancyHeuristic,
                     severity: FuzzSeverity::Low,
@@ -306,6 +312,7 @@ fn check_timestamp_dependency(
         {
             let hash = hash_finding("timestamp", event.function_id, "branch");
             findings.push(FuzzFinding {
+                confidence_override: None,
                 span: event.span,
                 kind: FuzzFindingKind::TimestampDependency,
                 severity: FuzzSeverity::Medium,
@@ -337,6 +344,7 @@ fn check_unchecked_call(
             if seen.insert(key) {
                 let hash = hash_finding("unchecked-call", event.function_id, callee);
                 findings.push(FuzzFinding {
+                confidence_override: None,
                     span: event.span,
                     kind: FuzzFindingKind::UncheckedCall,
                     severity: FuzzSeverity::Medium,
@@ -373,6 +381,7 @@ fn check_exception_disorder(
                 if seen.insert(key) {
                     let hash = hash_finding("exception-disorder", event.function_id, callee);
                     findings.push(FuzzFinding {
+                confidence_override: None,
                     span: event.span,
                         kind: FuzzFindingKind::ExceptionDisorder,
                         severity: FuzzSeverity::Medium,
@@ -425,6 +434,11 @@ fn check_integer_overflow(trace: &ExecutionTrace, tx_sequence: &[Transaction]) -
                 if seen.insert(key) {
                     let hash = hash_finding("overflow", event.function_id, op);
                     findings.push(FuzzFinding {
+                        // Local runtime evidence: the interpreter witnessed the
+                        // arithmetic actually wrap on concrete operands
+                        // ({lhs} {op} {rhs} = {result}), not a mere pattern
+                        // match. Outrank the per-kind Medium default.
+                        confidence_override: Some(FuzzConfidence::High),
                     span: event.span,
                         kind: FuzzFindingKind::IntegerOverflow,
                         severity: FuzzSeverity::High,
@@ -545,6 +559,7 @@ fn check_access_control(
             let detail = detail_from_slots(&summary.authority_slots);
             let hash = hash_finding("access-control", func_id, "no-sender-check");
             findings.push(FuzzFinding {
+                confidence_override: None,
                     span: None,
                 kind: FuzzFindingKind::AccessControl,
                 severity: FuzzSeverity::High,
@@ -602,6 +617,7 @@ fn check_arbitrary_write(
         if seen.insert(function_id) {
             let hash = hash_finding("arbitrary-write", function_id, detail.as_str());
             findings.push(FuzzFinding {
+                confidence_override: None,
                     span: None,
                 kind: FuzzFindingKind::ArbitraryWrite,
                 severity: FuzzSeverity::High,
@@ -640,6 +656,7 @@ fn check_wrong_constructor_name(
                 function_name.as_str(),
             );
             findings.push(FuzzFinding {
+                confidence_override: None,
                     span: None,
                     kind: FuzzFindingKind::WrongConstructorName,
                     severity: FuzzSeverity::High,
@@ -667,6 +684,7 @@ fn check_tx_origin(trace: &ExecutionTrace, tx_sequence: &[Transaction]) -> Vec<F
         {
             let hash = hash_finding("tx-origin", event.function_id, "used");
             findings.push(FuzzFinding {
+                confidence_override: None,
                     span: event.span,
                     kind: FuzzFindingKind::TxOriginAuth,
                     severity: FuzzSeverity::Medium,
@@ -770,6 +788,7 @@ fn check_selfdestruct(
         {
             let hash = hash_finding("selfdestruct", *func_id, "call");
             findings.push(FuzzFinding {
+                confidence_override: None,
                 span: None,
                 kind: FuzzFindingKind::SelfDestruct,
                 severity: FuzzSeverity::High,
@@ -797,6 +816,7 @@ fn check_dos(trace: &ExecutionTrace, tx_sequence: &[Transaction]) -> Vec<FuzzFin
             if seen.insert(key) {
                 let hash = hash_finding("dos", event.function_id, var_name);
                 findings.push(FuzzFinding {
+                confidence_override: None,
                     span: None,
                     kind: FuzzFindingKind::DenialOfService,
                     severity: FuzzSeverity::Medium,
@@ -845,6 +865,7 @@ fn check_dos_block_gas_limit(
         }
         let hash = hash_finding("dos-block-gas-limit", function_id, "dynamic-loop");
         findings.push(FuzzFinding {
+                confidence_override: None,
                     span: None,
             kind: FuzzFindingKind::DosBlockGasLimit,
             severity: FuzzSeverity::Medium,
@@ -878,6 +899,7 @@ fn check_unsafe_send_in_require(
             if seen.insert(key) {
                 let hash = hash_finding("unsafe-send-in-require", event.function_id, callee);
                 findings.push(FuzzFinding {
+                confidence_override: None,
                     span: None,
                     kind: FuzzFindingKind::UnsafeSendInRequire,
                     severity: FuzzSeverity::High,
@@ -934,6 +956,7 @@ fn check_dos_with_failed_call(
         if function_has_loop_transfer.contains(&function_id) && seen.insert(function_id) {
             let hash = hash_finding("dos-with-failed-call", function_id, "loop-transfer");
             findings.push(FuzzFinding {
+                confidence_override: None,
                     span: None,
                 kind: FuzzFindingKind::DosWithFailedCall,
                 severity: FuzzSeverity::High,
@@ -951,6 +974,7 @@ fn check_dos_with_failed_call(
         if seen.insert(function_id) {
             let hash = hash_finding("dos-with-failed-call", function_id, "require-send");
             findings.push(FuzzFinding {
+                confidence_override: None,
                     span: None,
                 kind: FuzzFindingKind::DosWithFailedCall,
                 severity: FuzzSeverity::High,
@@ -1014,6 +1038,11 @@ fn check_integer_underflow(
             if seen.insert(key) {
                 let hash = hash_finding("underflow", event.function_id, op);
                 findings.push(FuzzFinding {
+                        // Local runtime evidence: the interpreter witnessed the
+                        // subtraction actually underflow on concrete operands
+                        // ({lhs} - {rhs} = {result} > {lhs}), not a pattern
+                        // match. Outrank the per-kind Medium default.
+                        confidence_override: Some(FuzzConfidence::High),
                     span: event.span,
                         kind: FuzzFindingKind::IntegerUnderflow,
                         severity: FuzzSeverity::High,
@@ -1062,6 +1091,7 @@ fn check_unsafe_delegatecall(
         if !functions_with_sender_check.contains(func_id) && seen.insert(*func_id) {
             let hash = hash_finding("unsafe-delegatecall", *func_id, callee);
             findings.push(FuzzFinding {
+                confidence_override: None,
                 span: None,
                 kind: FuzzFindingKind::UnsafeDelegatecall,
                 severity: FuzzSeverity::High,
@@ -1089,6 +1119,7 @@ fn check_weak_prng(trace: &ExecutionTrace, tx_sequence: &[Transaction]) -> Vec<F
         {
             let hash = hash_finding("weak-prng", event.function_id, "block-number");
             findings.push(FuzzFinding {
+                confidence_override: None,
                     span: None,
                     kind: FuzzFindingKind::WeakPRNG,
                     severity: FuzzSeverity::Medium,
@@ -1187,6 +1218,7 @@ fn check_transaction_order_dependency(
         if seen.insert((function_id, detail)) {
             let hash = hash_finding("transaction-order-dependency", function_id, detail);
             findings.push(FuzzFinding {
+                confidence_override: None,
                     span: None,
                 kind: FuzzFindingKind::TransactionOrderDependency,
                 severity: FuzzSeverity::Medium,
@@ -1250,6 +1282,7 @@ fn check_hardcoded_gas(
             if seen.insert(key) {
                 let hash = hash_finding("hardcoded-gas", event.function_id, callee);
                 findings.push(FuzzFinding {
+                confidence_override: None,
                     span: None,
                     kind: FuzzFindingKind::HardcodedGas,
                     severity: FuzzSeverity::Low,
@@ -1293,6 +1326,7 @@ fn check_locked_ether(trace: &ExecutionTrace, tx_sequence: &[Transaction]) -> Ve
         };
         let hash = hash_finding("locked-ether", *function_id, detail);
         return vec![FuzzFinding {
+            confidence_override: None,
             span: None,
             kind: FuzzFindingKind::LockedEther,
             severity: FuzzSeverity::Medium,
@@ -1324,6 +1358,7 @@ fn check_storage_memory(trace: &ExecutionTrace, tx_sequence: &[Transaction]) -> 
                 if seen.insert((event.function_id, "inline-asm".to_string())) {
                     let hash = hash_finding("storage-memory", event.function_id, "inline-asm");
                     findings.push(FuzzFinding {
+                confidence_override: None,
                     span: None,
                         kind: FuzzFindingKind::StorageMemoryIssue,
                         severity: FuzzSeverity::Medium,
@@ -1341,6 +1376,7 @@ fn check_storage_memory(trace: &ExecutionTrace, tx_sequence: &[Transaction]) -> 
             {
                 let hash = hash_finding("storage-memory", event.function_id, callee);
                 findings.push(FuzzFinding {
+                confidence_override: None,
                     span: None,
                         kind: FuzzFindingKind::StorageMemoryIssue,
                         severity: FuzzSeverity::High,
@@ -1373,6 +1409,7 @@ fn check_division_before_multiplication(
         {
             let hash = hash_finding("div-before-mul", *function_id_inner, "pattern");
             findings.push(FuzzFinding {
+                confidence_override: None,
                     span: None,
                     kind: FuzzFindingKind::DivisionBeforeMultiplication,
                     severity: FuzzSeverity::Medium,
@@ -1424,6 +1461,7 @@ fn check_cryptographic(trace: &ExecutionTrace, tx_sequence: &[Transaction]) -> V
         if seen.insert((function_id, "cryptographic")) {
             let hash = hash_finding("cryptographic", function_id, "ecrecover-no-zero-check");
             findings.push(FuzzFinding {
+                confidence_override: None,
                     span: None,
                 kind: FuzzFindingKind::CryptographicIssue,
                 severity: FuzzSeverity::Medium,
@@ -1438,6 +1476,7 @@ fn check_cryptographic(trace: &ExecutionTrace, tx_sequence: &[Transaction]) -> V
         if seen.insert((function_id, "signature-malleability")) {
             let hash = hash_finding("signature-malleability", function_id, "ecrecover");
             findings.push(FuzzFinding {
+                confidence_override: None,
                     span: None,
             kind: FuzzFindingKind::SignatureMalleability,
             severity: FuzzSeverity::Medium,
@@ -1494,6 +1533,7 @@ fn check_unprotected_ether_withdrawal(
         {
             let hash = hash_finding("unprotected-withdrawal", *func_id, callee);
             findings.push(FuzzFinding {
+                confidence_override: None,
                 span: None,
                 kind: FuzzFindingKind::UnprotectedEtherWithdrawal,
                 severity: FuzzSeverity::High,
@@ -1930,6 +1970,16 @@ mod tests {
         let findings = check_integer_overflow(&trace, &make_tx());
         assert_eq!(findings.len(), 1);
         assert_eq!(findings[0].kind, FuzzFindingKind::IntegerOverflow);
+        // A witnessed wrap is local runtime evidence: the oracle sets a High
+        // override, so finding.confidence() outranks the per-kind Medium
+        // default it would otherwise resolve to.
+        assert_eq!(findings[0].confidence_override, Some(FuzzConfidence::High));
+        assert_eq!(findings[0].confidence(), FuzzConfidence::High);
+        assert_eq!(
+            FuzzFindingKind::IntegerOverflow.confidence(),
+            FuzzConfidence::Medium,
+            "guard: the override must differ from the kind default, else it proves nothing"
+        );
     }
 
     #[test]
@@ -2638,6 +2688,7 @@ mod tests {
     #[test]
     fn dedup_removes_duplicates() {
         let f1 = FuzzFinding {
+            confidence_override: None,
             span: None,
             kind: FuzzFindingKind::Reentrancy,
             severity: FuzzSeverity::High,
@@ -2647,6 +2698,7 @@ mod tests {
         };
         let f2 = f1.clone();
         let f3 = FuzzFinding {
+            confidence_override: None,
             span: None,
             trace_hash: "def".to_string(),
             ..f1.clone()
