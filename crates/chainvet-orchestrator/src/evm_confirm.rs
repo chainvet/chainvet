@@ -6,8 +6,8 @@
 //! `tx_sequence` on a real EVM and annotates the corresponding rows:
 //!
 //! - reproduces (terminal tx executes) → provenance `evm-confirmed`
-//! - reverts on the real EVM → provenance `evm-divergent`, and a `confirmed`
-//!   tier is downgraded to `candidate` (likely false positive)
+//! - reverts on the real EVM → provenance `evm-divergent`, and a pure-fuzz
+//!   finding's confidence is demoted to `low` (likely false positive)
 //! - couldn't be replayed → provenance `evm-inconclusive`
 //!
 //! It is doubly gated: compiled only with the `evm-validation` cargo feature
@@ -105,8 +105,8 @@ fn annotate_rows(
             row.provenances.push((*tag).to_string());
         }
         // Demote only *pure fuzz* findings the real EVM refutes — those are the
-        // likeliest false positives. Lower their confidence to `low` (rows no
-        // longer carry a separate tier). A `hybrid-confirmed` finding has
+        // likeliest false positives, by lowering their confidence to `low`. A
+        // `hybrid-confirmed` finding has
         // independent static/SE corroboration (and SE may reach it by a path
         // the fuzzer's sequence doesn't represent), so we annotate it but leave
         // its confidence; the benchmark can still see the `evm-divergent` flag.
