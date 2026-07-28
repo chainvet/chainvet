@@ -120,7 +120,10 @@ impl HybridFindingRow {
                 provenances: vec![provenance.to_string()],
                 kind: canonical,
                 severity: Some(finding.severity.as_str().to_string()),
-                confidence: Some(finding.kind.confidence().as_str().to_string()),
+                // Override-then-kind: an oracle with local runtime evidence sets
+                // finding.confidence_override; otherwise fall back to the per-kind
+                // default. Mirrors static (Finding::confidence) and SE.
+                confidence: Some(finding.confidence().as_str().to_string()),
                 category: Some(finding.kind.category().to_string()),
                 message: finding.message.clone(),
                 function_id,

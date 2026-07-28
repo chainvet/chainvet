@@ -587,6 +587,23 @@ pub struct FuzzFinding {
     /// attribute it to a specific trace event; falls back to the function span
     /// in the report when `None`.
     pub span: Option<Span>,
+    /// Per-instance confidence set by an oracle that has *local runtime
+    /// evidence* for this specific finding (e.g. a witnessed balance decrease
+    /// rather than a heuristic pattern match). When `None`, the row falls back
+    /// to the per-kind default `kind.confidence()`. Mirrors the chainvet-sa
+    /// `confidence_override` convention so every engine ranks on one axis.
+    pub confidence_override: Option<FuzzConfidence>,
+}
+
+impl FuzzFinding {
+    /// Resolve this finding's confidence: the oracle's `confidence_override`
+    /// when it set one, else the per-kind default. Callers (the hybrid collect
+    /// site) use this instead of `kind.confidence()` so instances backed by
+    /// runtime evidence outrank pattern-only ones of the same kind.
+    pub fn confidence(&self) -> FuzzConfidence {
+        self.confidence_override
+            .unwrap_or_else(|| self.kind.confidence())
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -767,7 +784,7 @@ pub enum FuzzSeverity {
     High,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FuzzConfidence {
     Low,
     Medium,
